@@ -1,0 +1,22 @@
+{
+    "json_objective_filename": "Objectives_Examples.json",
+    "screen_size": [
+        2064,
+        864
+    ],
+    "font_scale": 1.0,
+    "orientation_label_color": [
+        255,
+        0,
+        0,
+        255
+    ],
+    "pan_speed": 0.02,
+    "voxel_spacing": [
+        3.0,
+        3.0,
+        3.0
+    ],
+    "use_config_voxel_spacing": true,
+    "zoom_factor": 0.1
+}

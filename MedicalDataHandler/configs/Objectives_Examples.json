@@ -1,0 +1,408 @@
+{
+    "00000001": {
+        "PlanId": {},
+        "StructureSetId": {
+            "STRUCTURESETLABEL": {
+                "PTV_PRST_4000_5": {
+                    "ManualStructNames": [
+                        "PTV_PRST_4000_5"
+                    ],
+                    "Goals": {
+                        "V_4000_cGy": [
+                            ">=_95.0_%"
+                        ],
+                        "D_99_%": [
+                            ">=_3720_cGy"
+                        ],
+                        "MAX": [
+                            "<=_4600_cGy"
+                        ]
+                    }
+                },
+                "PTV_PRST_4500_5": {
+                    "ManualStructNames": [
+                        "PTV_PRST_4500_5"
+                    ],
+                    "Goals": {
+                        "V_4500_cGy": [
+                            ">=_90.0_%"
+                        ],
+                        "D_99_%": [
+                            ">=_4500_cGy"
+                        ],
+                        "MAX": [
+                            "<=_4725_cGy"
+                        ]
+                    }
+                },
+                "Rectal_Wall": {
+                    "ManualStructNames": [
+                        "Rectal_Wall"
+                    ],
+                    "Goals": {
+                        "V_3750_cGy": [
+                            "<=_20.0_cc"
+                        ],
+                        "V_2400_cGy": [
+                            "<=_50.0_%"
+                        ],
+                        "V_1800_cGy": [
+                            "<=_50.0_%"
+                        ],
+                        "MAX": [
+                            "<=_4500_cGy"
+                        ]
+                    }
+                },
+                "Bladder_Wall": {
+                    "ManualStructNames": [
+                        "Bladder_Wall"
+                    ],
+                    "Goals": {
+                        "MAX": [
+                            "<=_4350_cGy"
+                        ],
+                        "V_1830_cGy": [
+                            "<=_18.0_%"
+                        ]
+                    }
+                },
+                "Femur_Head_L": {
+                    "ManualStructNames": [
+                        "Femur_Head_L"
+                    ],
+                    "Goals": {
+                        "V_3000_cGy": [
+                            "<=_10.0_cc"
+                        ]
+                    }
+                },
+                "Femur_Head_R": {
+                    "ManualStructNames": [
+                        "Femur_Head_R"
+                    ],
+                    "Goals": {
+                        "V_3000_cGy": [
+                            "<=_10.0_cc"
+                        ]
+                    }
+                },
+                "Urethra": {
+                    "ManualStructNames": [
+                        "Urethra"
+                    ],
+                    "Goals": {
+                        "MAX": [
+                            "<=_4350_cGy"
+                        ]
+                    }
+                },
+                "Penile Bulb": {
+                    "ManualStructNames": [
+                        "PenileBulb"
+                    ],
+                    "Goals": {
+                        "V_3000_cGy": [
+                            "<=_3.0_cc"
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "00000002": {
+        "PlanId": {},
+        "StructureSetId": {
+            "STRUCTURESETLABEL": {
+                "Heart": {
+                    "ManualStructNames": [
+                        "Heart"
+                    ],
+                    "Goals": {
+                        "MAX": [
+                            "<_6000_cGy"
+                        ],
+                        "D_15_cc": [
+                            "<_4400_cGy"
+                        ]
+                    }
+                },
+                "PTV": {
+                    "ManualStructNames": [
+                        "PTV_High"
+                    ],
+                    "Goals": {
+                        "V_3000_cGy": [
+                            ">_90.0_%"
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "00000003": {
+        "PlanId": {
+            "PLANLABEL": {
+                "Esophagus": {
+                    "ManualStructNames": [
+                        "Esophagus"
+                    ],
+                    "Goals": {
+                        "V_4500_cGy": [
+                            "<_5.0_cc"
+                        ],
+                        "MAX": [
+                            "<_5400_cGy"
+                        ]
+                    }
+                },
+                "Heart": {
+                    "ManualStructNames": [
+                        "Heart"
+                    ],
+                    "Goals": {
+                        "V_4200_cGy": [
+                            "<_15.0_cc"
+                        ],
+                        "MAX": [
+                            "<_4890_cGy"
+                        ]
+                    }
+                },
+                "Skin ring": {
+                    "ManualStructNames": [
+                        "Skin ring"
+                    ],
+                    "Goals": {
+                        "MAX": [
+                            "<_5700_cGy"
+                        ],
+                        "V_5400_cGy": [
+                            "<_10.0_cc"
+                        ]
+                    }
+                },
+                "Liver": {
+                    "ManualStructNames": [
+                        "Liver"
+                    ],
+                    "Goals": {
+                        "CV_3000_cGy": [
+                            ">_700.0_cc",
+                            ">_33.33_%"
+                        ]
+                    }
+                }
+            }
+        },
+        "StructureSetId": {}
+    },
+    "00000004": {
+        "PlanId": {
+            "PLANLABEL": {
+                "Skin": {
+                    "ManualStructNames": [
+                        "Skin"
+                    ],
+                    "Goals": {
+                        "MAX": [
+                            "<_2750_cGy"
+                        ],
+                        "V_2550_cGy": [
+                            "<_10.0_cc"
+                        ]
+                    }
+                },
+                "SpinalCord": {
+                    "ManualStructNames": [
+                        "CORD"
+                    ],
+                    "Goals": {
+                        "V_1000_cGy": [
+                            "<_0.35_cc"
+                        ],
+                        "MAX": [
+                            "<_1400_cGy"
+                        ]
+                    }
+                }
+            }
+        },
+        "StructureSetId": {}
+    },
+    "00000005": {
+        "PlanId": {},
+        "StructureSetId": {
+            "STRUCTURESETLABEL": {
+                "Ipsilat Lung": {
+                    "ManualStructNames": [
+                        "Lung_R"
+                    ],
+                    "Goals": {
+                        "V_2000_cGy": [
+                            "<=_34.0_%"
+                        ]
+                    }
+                },
+                "Contralat Lung": {
+                    "ManualStructNames": [
+                        "Lung_R"
+                    ],
+                    "Goals": {
+                        "V_500_cGy": [
+                            "<=_10.0_%"
+                        ]
+                    }
+                },
+                "Heart_R Side PTV": {
+                    "ManualStructNames": [
+                        "Heart"
+                    ],
+                    "Goals": {
+                        "D_2_%": [
+                            "<=_2500_cGy"
+                        ]
+                    }
+                },
+                "Heart_L Side PTV": {
+                    "ManualStructNames": [
+                        "Heart"
+                    ],
+                    "Goals": {
+                        "D_10_%": [
+                            "<=_2500_cGy"
+                        ]
+                    }
+                },
+                "Heart": {
+                    "ManualStructNames": [
+                        "Heart"
+                    ],
+                    "Goals": {
+                        "MEAN": [
+                            "<=_400_cGy"
+                        ],
+                        "MAX": [
+                            "<_6000_cGy"
+                        ],
+                        "D_15_cc": [
+                            "<_4400_cGy"
+                        ]
+                    }
+                },
+                "SpinalCord": {
+                    "ManualStructNames": [
+                        "SpinalCanal"
+                    ],
+                    "Goals": {
+                        "MAX": [
+                            "<_5200_cGy"
+                        ]
+                    }
+                },
+                "Esophagus": {
+                    "ManualStructNames": [
+                        "Esophagus"
+                    ],
+                    "Goals": {
+                        "MAX": [
+                            "<_6000_cGy"
+                        ],
+                        "D_5_cc": [
+                            "<_5500_cGy"
+                        ]
+                    }
+                },
+                "Ribs": {
+                    "ManualStructNames": [
+                        "Ribs"
+                    ],
+                    "Goals": {
+                        "MAX": [
+                            "<_6600_cGy"
+                        ],
+                        "D_5_cc": [
+                            "<_6000_cGy"
+                        ]
+                    }
+                },
+                "PTV": {
+                    "ManualStructNames": [
+                        "PTVLungL5000_25"
+                    ],
+                    "Goals": {
+                        "D_95_%": [
+                            "<_6000_cGy"
+                        ],
+                        "D_99_%": [
+                            ">_5400_cGy"
+                        ]
+                    }
+                },
+                "Lungs-ITV": {
+                    "ManualStructNames": [
+                        "Lungs-ITV"
+                    ],
+                    "Goals": {
+                        "DC_1500_cc": [
+                            "<_1400_cGy"
+                        ],
+                        "DC_1000_cc": [
+                            "<_1500_cGy"
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "12345678": {
+        "PlanId": {},
+        "StructureSetId": {
+            "EXAMPLE_RTS": {
+                "PTV_LUNG_3000_10": {
+                    "ManualStructNames": [],
+                    "Goals": {
+                        "MAX": [
+                            "<_3300_cGy"
+                        ],
+                        "V_3000_cGy": [
+                            ">_95.0_%"
+                        ]
+                    }
+                },
+                "Lung_L": {
+                    "ManualStructNames": [],
+                    "Goals": {
+                        "V_2000_cGy": [
+                            "<_10.0_%"
+                        ]
+                    }
+                },
+                "Lung_R": {
+                    "ManualStructNames": [],
+                    "Goals": {
+                        "V_2000_cGy": [
+                            "<_30.0_%"
+                        ]
+                    }
+                },
+                "Heart": {
+                    "ManualStructNames": [],
+                    "Goals": {
+                        "MEAN": [
+                            "<_1000_cGy"
+                        ]
+                    }
+                },
+                "SpinalCord": {
+                    "ManualStructNames": [],
+                    "Goals": {
+                        "MAX": [
+                            "<_2000_cGy"
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}
