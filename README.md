@@ -7,6 +7,17 @@
 
 ---
 
+**Contributors:**  
+Austen Maniscalco, Yang Park, Andrew Godley, Mu-Han Lin, Steve Jiang, and Dan Nguyen  
+
+**Affiliation:**  
+Medical Artificial Intelligence and Automation Laboratory, Department of Radiation Oncology, University of Texas Southwestern Medical Center, Dallas, TX, 75390, USA  
+
+**Contact:**  
+Austen Maniscalco ([Austen.Maniscalco@UTSouthwestern.edu](mailto:Austen.Maniscalco@UTSouthwestern.edu))  
+
+---
+
 ## 📌 Overview  
 
 ### **What is MedicalDataHandler?**  
@@ -193,17 +204,6 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✔ **3D RTPLAN beam data representation and beam visualization.**  
 - ✔ **Direct NIfTI imports** and **writing back to DICOM format**.  
 - ✔ **Potential C# re-write** for possible integration with **ESAPI**.  
-
----
-
-**Contributors:**  
-Austen Maniscalco, Yang Park, Andrew Godley, Mu-Han Lin, Steve Jiang, and Dan Nguyen  
-
-**Affiliation:**  
-Medical Artificial Intelligence and Automation Laboratory, Department of Radiation Oncology, University of Texas Southwestern Medical Center, Dallas, TX, 75390, USA  
-
-**Contact:**  
-Austen Maniscalco ([Austen.Maniscalco@UTSouthwestern.edu](mailto:Austen.Maniscalco@UTSouthwestern.edu))  
 
 ---
 
