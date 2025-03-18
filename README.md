@@ -66,8 +66,8 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
   pip install -r requirements.txt
 
 ### **System Requirements**  
-- **Tested on Windows** (Linux/macOS compatibility not verified).  
 - **Recommended specs:**  
+   - **OS:** Windows
    - **CPU:** Any modern multi-core processor (tested with i7-12700)  
    - **RAM:** 32+ GB (tested with 32 GB)  
    - **GPU:** Optional (GUI is GPU-accelerated via [Dear PyGUI](https://github.com/hoffstadt/DearPyGui))  
