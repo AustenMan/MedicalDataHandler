@@ -48,7 +48,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✅ **Enable specialized post-processing**, including:  
    - **CT HU-to-RED conversion** (Hounsfield Units → Relative Electron Density)  
      - **Sample values are provided for convenience**, however, it is **STRONGLY ADVISED** to **update** these values in the configuration files to **align with your institutional data** 
-     - See: **ct_HU_map_vals.json** and **ct_RED_map_vals.json** in the **configs folder**
+       - **ct_HU_map_vals.json** and **ct_RED_map_vals.json** in the **configs folder**
    - **Region-specific RED overrides** for segmented structures.  
    - **Dose Summation** across multiple dose distributions.  
 
