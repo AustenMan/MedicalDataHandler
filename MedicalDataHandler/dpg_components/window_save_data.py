@@ -22,9 +22,10 @@ def create_save_window(sender, app_data, user_data):
     popup_wrap = round(popup_width * 0.9)
     button_height = round(1.5 * dpg.get_text_size("A")[1])
     
+    # Action in progress, so show the existing window
     if dpg.does_item_exist(tag_save_window) and (shared_state_manager.is_action_in_queue() or shared_state_manager.is_cleanup_thread_alive()):
         dpg.configure_item(tag_save_window, width=popup_width, height=popup_height, pos=popup_pos, show=True)
-        print(f"An action is in progress. The save data window cannot be refreshed or regenerated until the action(s) complete, so the previous window will be shown.")
+        print(f"Note: Save window NOT refreshed because an action is in progress. The save data window cannot be refreshed or regenerated until the action(s) complete.")
         return
     
     safe_delete(tag_save_window)
@@ -35,13 +36,10 @@ def create_save_window(sender, app_data, user_data):
     save_data_dict = {"main_checkboxes": {}, "images": [], "rois": [], "plans": [], "doses": []}
     with dpg.window(
         tag=tag_save_window, label="Save Data", width=popup_width, height=popup_height, pos=popup_pos, 
-        no_open_over_existing_popup=False, popup=False, modal=False, no_title_bar=False, no_close=True, 
+        no_open_over_existing_popup=False, popup=False, modal=False, no_title_bar=False, no_close=False, 
+        on_close=lambda: dpg.hide_item(tag_save_window),
         horizontal_scrollbar=True, user_data=save_data_dict, 
         ):
-        add_custom_button(
-            label="Close Save Window", callback=_try_close_save_window, add_spacer_before=True, add_separator_after=True, user_data=tag_save_window,
-            tooltip_text="Hides the save data window.")
-        
         add_custom_button(label="Carefully review the save options below.", theme_tag=get_hidden_button_theme(), add_separator_after=True)
         
         add_custom_button(label="General Options", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_separator_after=True)
@@ -568,20 +566,3 @@ def _process_dose_saving(sender, save_data_dict, base_save_path):
         
         sitk.WriteImage(new_dose_sitk, save_path)
         print(f"SITK RT Dose saved to: {save_path}")
-
-def _try_close_save_window():
-    """ Attempts to close the save window if it exists. """
-    tag_save_window = get_tag("save_sitk_window")
-    if not dpg.does_item_exist(tag_save_window):
-        return
-    
-    shared_state_manager = get_user_data(td_key="shared_state_manager")
-    if shared_state_manager.is_action_in_queue():
-        print("The program is currently busy saving data. Please wait for action completion.")
-        return
-    
-    safe_delete(tag_save_window)
-
-    
-    
-    

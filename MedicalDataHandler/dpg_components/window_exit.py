@@ -1,12 +1,30 @@
 import dearpygui.dearpygui as dpg
-from dpg_components.custom_utils import get_tag
+from dpg_components.custom_utils import get_tag, get_user_data
 from utils.dpg_utils import safe_delete, get_popup_params
+
+def exit_callback(sender, app_data, user_data):
+    """Callback function for exiting the program."""
+    # Get & remove the return button
+    return_button = user_data
+    safe_delete(return_button)
+    
+    # Disable the exit button and update its text
+    dpg.disable_item(sender)
+    dpg.configure_item(sender, label="SAFELY EXITING, PLEASE WAIT...")
+    
+    # Shutdown the shared state manager
+    shared_state_manager = get_user_data(td_key="shared_state_manager")
+    shared_state_manager.shutdown_manager()
+    
+    # Stop the DPG context, which returns to the __init__.py cleanup function
+    dpg.stop_dearpygui()
 
 def create_exit_popup():
     """Creates the exit confirmation popup."""
     tag_exit_window = get_tag("exit_window")
     
-    safe_delete(tag_exit_window)
+    if dpg.does_item_exist(tag_exit_window):
+        return
 
     popup_W, popup_H, popup_pos = get_popup_params()
     button_WH = round(popup_W * 0.3), round(popup_H * 0.1)
@@ -21,7 +39,7 @@ def create_exit_popup():
         no_scroll_with_mouse=False, on_close=lambda: safe_delete(tag_exit_window), show=True
     ):
         with dpg.group(horizontal=False):
-            dpg.add_button(
+            return_button = dpg.add_button(
                 label="RETURN TO PROGRAM", 
                 callback=lambda: safe_delete(tag_exit_window),
                 width=button_WH[0], 
@@ -33,7 +51,8 @@ def create_exit_popup():
             
             dpg.add_button(
                 label="EXIT PROGRAM", 
-                callback=dpg.stop_dearpygui, 
+                callback=exit_callback, 
+                user_data=return_button,
                 width=button_WH[0], 
                 height=button_WH[1], 
                 pos=(button_X, current_Y)

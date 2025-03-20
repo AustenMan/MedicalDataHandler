@@ -183,6 +183,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 
 ### **🛠 Additional Features**  
 - ✔ **Integrated logging window** for debugging.  
+- ✔ **Take screenshots** by pressing Ctrl+S or the Print Screen key. Saves to a screenshot folder.  
 - ✔ **Optimized performance** with **multiprocessing and multithreading** and a **GPU-accelerated GUI**.  
 - ✔ **Settings window** with options such as:  
   - **GUI resizing**  

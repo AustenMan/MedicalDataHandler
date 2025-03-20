@@ -33,7 +33,7 @@ def create_dicom_action_window(sender, app_data, user_data):
         no_open_over_existing_popup=False, 
         no_title_bar=False, 
         no_collapse=True, 
-        on_close=lambda: safe_delete(tag_action_window)
+        on_close=lambda: dpg.hide_item(tag_action_window)
     )
     
     # Add the progress bar
@@ -79,18 +79,18 @@ def _get_directory(sender, app_data, user_data):
     
     def _on_directory_selected(sender, app_data, user_data):
         """Callback that passes the selected directory."""
-        selected_dir = app_data  # `app_data` contains the selected directory
-        _start_action(sender, app_data, user_data=selected_dir)  # Pass directory
+        # App data: keys are "file_path_name", "file_name", "current_path", "current_filter", "min_size", "max_size", "selections"
+        selected_dir = app_data.get("file_path_name")
+        _start_action(sender, app_data, user_data=lambda: dicom_manager.start_processing_dicom_directory(selected_dir))
     
-    # App data: keys are "file_path_name", "file_name", "current_path", "current_filter", "min_size", "max_size", "selections"
     dpg.add_file_dialog(
         tag=tag_fd,
         label="Choose a directory containing DICOM files",
         directory_selector=True,
         default_path=config_manager.get_project_parent_dir(),
         modal=True,
-        callback=lambda s, a, u: _start_action(s, a, lambda: dicom_manager.start_processing_dicom_directory(a.get("file_path_name"))),  
-        cancel_callback=lambda: safe_delete(tag_fd),
+        callback=_on_directory_selected,  
+        cancel_callback=lambda s, a, u: safe_delete(tag_fd),
         width=popup_width,
         height=popup_height,
     )

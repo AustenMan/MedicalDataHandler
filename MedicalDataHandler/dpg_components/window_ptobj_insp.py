@@ -43,7 +43,6 @@ def _create_window_ptobj_inspection(sender, app_data, user_data):
             pos=popup_pos, 
             no_open_over_existing_popup=False, 
             no_title_bar=False, 
-            no_close=False, 
             on_close=lambda: safe_delete(tag_inspect_ptobj),
             horizontal_scrollbar=True
             ):

@@ -14,7 +14,7 @@ def toggle_logger_display(sender, app_data, user_data):
     # Create the logger window if it does not exist
     if not dpg.does_item_exist(tag_logger_window):
         logger_tags = []
-        dpg.add_window(tag=tag_logger_window, label="Logger", width=popup_width, height=popup_height, pos=popup_pos, show=False, no_close=False, user_data=logger_tags)
+        dpg.add_window(tag=tag_logger_window, label="Logger", width=popup_width, height=popup_height, pos=popup_pos, show=False, user_data=logger_tags)
         dpg.bind_item_theme(item=tag_logger_window, theme=get_hidden_button_theme())
         dpg.add_button(parent=tag_logger_window, label="LOG BELOW", width=-1)
     
@@ -35,12 +35,18 @@ def refresh_logger_messages():
     if dpg.does_item_exist(tag_lgr_tooltip_text):
         tag_latest_gui_response = get_tag("latest_gui_response")
         latest_msg = logger.handlers[0].get_latest_message()
-        content_width = dpg.get_viewport_width() * 0.95
-        text_width = dpg.get_text_size("A")[0] * dpg.get_global_font_scale()
-        allowed_chars = int((content_width // text_width) - 3)
-        if allowed_chars < 1:
-            allowed_chars = 100
-        dpg.configure_item(tag_latest_gui_response, label=latest_msg[:allowed_chars] + "..." if len(latest_msg) > allowed_chars else latest_msg)
+        if latest_msg:
+            # Get available space for the text
+            content_width = dpg.get_viewport_client_width()
+            # Calculate text width
+            text_width = dpg.get_text_size(latest_msg)[0] * dpg.get_global_font_scale()
+            # Calculate how many characters fit in the available space, minus 2 for padding
+            allowed_chars = int(len(latest_msg) * (content_width / text_width)) - 2
+            # Ensure at least 50 characters are displayed, in case of issues with the calculation
+            allowed_chars = max(allowed_chars, 50)
+            # Truncate if needed
+            truncated_msg = latest_msg[:allowed_chars-3] + "..." if len(latest_msg) > allowed_chars else latest_msg
+            dpg.configure_item(tag_latest_gui_response, label=truncated_msg)
         dpg.configure_item(tag_lgr_tooltip_text, default_value=latest_msg if latest_msg else "No log message to display.")
     
     # Return early if no visible logger window

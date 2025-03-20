@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import pydicom
 from pydicom.tag import Tag
@@ -139,7 +140,7 @@ def monitor_dicom_read_progress(dicom_dir_string, obj_dir, progbar_fn, shared_st
     
     # Gather all DICOM file paths.
     progbar_fn(0, 0, f"Searching for DICOM files in '{dicom_dir_string}', this may take some time if the directory is large...")
-    dicom_files = get_dicom_files(dicom_dir_string, exit_task_status)
+    dicom_files = get_dicom_files(dicom_dir_string, exit_task_status, progbar_fn)
     if not dicom_files:
         progbar_fn(0, 0, f"No DICOM files found in the specified directory: {dicom_dir_string}")
         return
@@ -413,18 +414,32 @@ def monitor_link_dicom_progress(obj_dir, object_dict, progbar_fn, shared_state_m
     # Finalization
     progbar_fn(futures_length, futures_length, f"Completed building DICOM references for {futures_completed} out of {futures_length} class objects.")
 
-def get_dicom_files(dicom_dir_string, exit_task_status):
+def get_dicom_files(dicom_dir_string, exit_task_status, pbar_fn):
     """Efficiently finds all .dcm files in the given directory."""
     dicom_files = set()
+    num_dcm_found = [0] # Use a list for a mutable counter
+    last_update_time = [time.time()] # Use a list for a mutable time
 
     def scan_dir(directory):
         """Recursively scan directories using os.scandir()."""
+        if exit_task_status():
+            return
+        pbar_fn(0, num_dcm_found[0], f"Scanning directory for DICOM files: {directory}")
+        
         with os.scandir(directory) as entries:
             for entry in entries:
                 if exit_task_status():
                     break
                 if entry.is_file() and entry.name.lower().endswith(".dcm"):
                     dicom_files.add(entry.path)
+                    num_dcm_found[0] += 1
+                    
+                    # Check if 5 seconds have passed since the last update
+                    current_time = time.time()
+                    if current_time - last_update_time[0] >= 5:
+                        pbar_fn(0, num_dcm_found[0], f"Scanning directory for DICOM files: {directory}")
+                        last_update_time[0] = current_time  # Reset timer
+                
                 elif entry.is_dir():  # Recurse into subdirectories
                     scan_dir(entry.path)
 

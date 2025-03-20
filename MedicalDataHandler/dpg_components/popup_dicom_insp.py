@@ -54,7 +54,6 @@ def _create_popup_dicom_inspection(sender, app_data, user_data):
             popup=True,
             modal=True, 
             no_title_bar=False, 
-            no_close=False, 
             on_close=lambda: safe_delete(tag_inspect_dcm),
             horizontal_scrollbar=True
             ):

@@ -30,7 +30,6 @@ def toggle_data_window(force_show=False, label=""):
             height=popup_height, 
             pos=popup_pos, 
             show=True, 
-            no_close=False, 
             on_close=lambda: dpg.hide_item(tag_data_window), 
             user_data={}
         )

@@ -173,7 +173,7 @@ def _popup_inspect_rtimage(sender, app_data, user_data):
     
     with dpg.window(
         tag=tag_inspect_sitk, label="RT Image Info",  width=popup_width, height=popup_height,  pos=popup_pos, no_open_over_existing_popup=False, 
-        popup=True, modal=True, no_title_bar=False, no_close=False, on_close=safe_delete(tag_inspect_sitk)
+        popup=True, modal=True, no_title_bar=False, on_close=safe_delete(tag_inspect_sitk)
         ):
         add_custom_button(label="SITK Image Read-Only Metadata Fields", theme_tag=get_hidden_button_theme(), add_separator_after=True)
         
@@ -387,7 +387,7 @@ def _popup_inspect_rtdose(sender, app_data, user_data):
     
     with dpg.window(
         tag=tag_inspect_sitk, label="RT Dose Info",  width=popup_width, height=popup_height, pos=popup_pos, no_open_over_existing_popup=False, 
-        popup=True, modal=True, no_title_bar=False, no_close=False, on_close=safe_delete(tag_inspect_sitk)
+        popup=True, modal=True, no_title_bar=False, on_close=safe_delete(tag_inspect_sitk)
         ):
         add_custom_button(label="SITK Dose Details", theme_tag=get_hidden_button_theme(), add_separator_after=True)
         
@@ -625,7 +625,7 @@ def _popup_inspect_rtplan_dict(sender, app_data, user_data):
     
     with dpg.window(
         tag=tag_inspect_sitk, label="RT Plan Info", width=popup_width, height=popup_height, pos=popup_pos, 
-        no_open_over_existing_popup=False, popup=True, modal=True, no_title_bar=False, no_close=False, on_close=safe_delete(tag_inspect_sitk)
+        no_open_over_existing_popup=False, popup=True, modal=True, no_title_bar=False, on_close=safe_delete(tag_inspect_sitk)
         ):
         add_custom_button(label="RT Plan Details", theme_tag=get_hidden_button_theme(), add_separator_after=True)
         
@@ -878,7 +878,7 @@ def _popup_inspect_structure_set_info(sender, app_data, user_data):
     
     with dpg.window(
         tag=tag_inspect_sitk, label="Structure Set Info", width=popup_width, height=popup_height, pos=popup_pos,
-        no_open_over_existing_popup=False, popup=True, modal=True, no_title_bar=False, no_close=False,
+        no_open_over_existing_popup=False, popup=True, modal=True, no_title_bar=False,
         on_close=lambda: safe_delete(tag_inspect_sitk)
     ):
         add_custom_button(label="RT Struct Details", theme_tag=get_hidden_button_theme(), add_separator_after=True)
@@ -1197,7 +1197,7 @@ def _popup_inspect_roi(sender, app_data, user_data):
     
     with dpg.window(
         tag=tag_inspect_sitk, label=f"ROI Info", width=popup_width, height=popup_height, pos=popup_pos,
-        no_open_over_existing_popup=False, popup=True, modal=True, no_title_bar=False, no_close=False,
+        no_open_over_existing_popup=False, popup=True, modal=True, no_title_bar=False,
         on_close=lambda: safe_delete(tag_inspect_sitk)
         ):
         add_custom_button(label="ROI Details", theme_tag=get_hidden_button_theme(), add_separator_after=True)

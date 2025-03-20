@@ -47,7 +47,7 @@ def _create_registries(config_manager, dicom_manager, data_manager, shared_state
     """ Creates the handler, item handler, texture, and value registries in Dear PyGUI. """
     # Initialize the tag dictionary
     tag_dict = _create_tag_dict()
-    size_dict = _create_size_dict()
+    size_dict = _create_size_dict(config_manager)
     default_display_dict = _create_default_display_dict()
     
     # Handlers
@@ -271,14 +271,16 @@ def _create_tag_dict():
     
     return tag_dict
 
-def _create_size_dict():
+def _create_size_dict(config_manager):
     """ Creates a dictionary with predefined sizes for DearPyGUI UI elements. """
+    max_screen_size = config_manager.get_max_screen_size()
+    
     size_dict = {
         "table_w": -6, 
         "table_h": -6,
         "button_width": -6, 
         "button_height": 50, 
-        "tooltip_width": 300,
+        "tooltip_width": round(max_screen_size[0] * 0.35),
         "spacer_height": 6
     }
     

@@ -306,12 +306,19 @@ def _handler_KeyPress(sender, app_data, user_data):
         app_data (list): Key pressed (int) and time held (float).
     """
     key_pressed, press_duration = app_data
-    if key_pressed == dpg.mvKey_LControl or key_pressed == dpg.mvKey_RControl:
-        dpg.set_item_user_data(sender, True)
     
-    # If both Ctrl and S keys pressed, capture screenshot. press_duration == 0 ensures that the screenshot is only taken once.
-    if key_pressed == dpg.mvKey_S and dpg.get_item_user_data(sender) and press_duration == 0:
+    # If ctrl is pressed, set user data to true (store that ctrl is pressed)
+    ctrl_pressed = key_pressed == dpg.mvKey_LControl or key_pressed == dpg.mvKey_RControl
+    if ctrl_pressed:
+        dpg.set_item_user_data(sender, True)
+        return
+    
+    # If Ctrl+S or Print key are pressed, and press_duration is 0, capture screenshot. 
+    ctrl_s_pressed = key_pressed == dpg.mvKey_S and dpg.get_item_user_data(sender)
+    print_pressed = key_pressed == dpg.mvKey_Print
+    if (ctrl_s_pressed or print_pressed) and press_duration == 0: 
         capture_screenshot()
+        
 
 def _handler_KeyRelease(sender, app_data, user_data):
     """
