@@ -329,8 +329,8 @@ class RTStructBuilder:
             bool: True if masks are successfully built, False otherwise.
         """
         sitk_image_params = self.sitk_image_params_dict[self.rtstruct_info_dict["ReferencedSeriesInstanceUID"]]
-        tg_263_oar_names_list = self.config_manager.get_tg_263_oar_names_list(ready_for_dpg=True)
-        organ_name_matching_dict = self.config_manager.get_organ_name_matching_dict()
+        tg_263_oar_names_list = self.config_manager.get_tg_263_names(ready_for_dpg=True)
+        organ_name_matching_dict = self.config_manager.get_organ_matching_dict()
         
         futures = []
         list_roi_sitk = []

@@ -336,7 +336,8 @@ def _execute_saving(sender, app_data, user_data):
         patient_id, patient_name = active_pt.return_patient_info()
         active_pt.update_last_processed()
         
-        base_save_path = os.path.join(config_manager.sitk_save_dir, patient_id, patient_name, active_frame_of_reference_uid)
+        save_dir = config_manager.get_sitk_data_dir()
+        base_save_path = os.path.join(save_dir, patient_id, patient_name, active_frame_of_reference_uid)
         os.makedirs(base_save_path, exist_ok=True)
         
         _process_image_saving(sender, save_data_dict, base_save_path)

@@ -10,7 +10,6 @@ def create_exit_popup():
 
     popup_W, popup_H, popup_pos = get_popup_params()
     button_WH = round(popup_W * 0.3), round(popup_H * 0.1)
-    # text_WH = tuple([int(x) for x in dpg.get_text_size("A")])
     button_X = (popup_W - button_WH[0]) // 2
     occupied_Y = round(3 * button_WH[1])
     current_Y = (popup_H - occupied_Y) // 2

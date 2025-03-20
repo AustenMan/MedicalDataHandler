@@ -1,3 +1,4 @@
+import os
 import dearpygui.dearpygui as dpg
 from dpg_components.custom_utils import get_tag, get_user_data
 from dpg_components.texture_updates import request_texture_update
@@ -28,7 +29,6 @@ def create_settings_window(refresh=False):
     config_manager = get_user_data(td_key="config_manager")
     size_dict = get_user_data(td_key="size_dict")
     default_display_dict = get_user_data(td_key="default_display_dict")
-    text_ljust = 30
     
     # Create the window
     dpg.add_window(
@@ -38,129 +38,186 @@ def create_settings_window(refresh=False):
     )
     
     # Fill the window
-    _fill_gui_settings(tag_isw, size_dict, text_ljust, config_manager)
-    _fill_overlay_settings(tag_isw, size_dict, text_ljust)
-    _fill_interactivity_settings(tag_isw, size_dict, text_ljust, config_manager)
-    _fill_data_rot_flip_controls(tag_isw, size_dict, text_ljust, default_display_dict)
-    _fill_data_view_controls(tag_isw, size_dict, text_ljust, default_display_dict)
-    _fill_windowing_controls(tag_isw, size_dict, text_ljust, config_manager, default_display_dict)
-    _fill_spacing_controls(tag_isw, size_dict, text_ljust, config_manager, default_display_dict)
+    _fill_gui_settings(tag_isw, size_dict, config_manager)
+    _fill_overlay_settings(tag_isw, size_dict)
+    _fill_interactivity_settings(tag_isw, size_dict, config_manager)
+    _fill_data_rot_flip_controls(tag_isw, size_dict, default_display_dict)
+    _fill_data_view_controls(tag_isw, size_dict, default_display_dict)
+    _fill_windowing_controls(tag_isw, size_dict, config_manager, default_display_dict)
+    _fill_spacing_controls(tag_isw, size_dict, config_manager, default_display_dict)
 
-def _fill_gui_settings(tag_parent, size_dict, text_ljust, config_manager):
+def _fill_gui_settings(tag_parent, size_dict, config_manager):
     # Pre-generate tags for the input fields
-    tag_width_percent = dpg.generate_uuid()
-    tag_height_percent = dpg.generate_uuid()
-    tag_font_scale = dpg.generate_uuid()
-    tags_popup_settings = (tag_width_percent, tag_height_percent, tag_font_scale)
+    tag_WH_mode_toggle = dpg.generate_uuid()
+    tag_width = dpg.generate_uuid()
+    tag_height = dpg.generate_uuid()
+    tags_popup_settings = (tag_WH_mode_toggle, tag_width, tag_height)
     
-    # Get default values
+    # Get screen mode settings
+    mode_options = ["Percentage", "Pixels"]
+    default_mode = config_manager.get_screen_size_input_mode()
+    if not default_mode or not default_mode in mode_options:
+        default_mode = "Percentage"
+    
+    # Get screen size settings
     current_screen_size = config_manager.get_screen_size()
     max_screen_size = config_manager.get_max_screen_size()
-    width_percentage = round(current_screen_size[0] / max_screen_size[0] * 100)
-    height_percentage = round(current_screen_size[1] / max_screen_size[1] * 100)
-    font_scale = config_manager.get_font_scale()
+    default_width = round(current_screen_size[0] / max_screen_size[0] * 100) if default_mode == "Percentage" else current_screen_size[0]
+    default_height = round(current_screen_size[1] / max_screen_size[1] * 100) if default_mode == "Percentage" else current_screen_size[1]
+    width_limits, height_limits = _get_screen_limits(default_mode)
+    default_width = min(max(default_width, width_limits[0]), width_limits[1])
+    default_height = min(max(default_height, height_limits[0]), height_limits[1])
     
-    # Limits
-    width_limits = (50, 80)
-    height_limits = (50, 80)
-    font_scale_limits = (0.75, 1.25)
+    # Get font settings
+    font_dict = config_manager.get_fonts()
+    font_items = list(font_dict.keys()) if font_dict else []
+    default_font = config_manager.get_user_config_font()
+    if not default_font or not default_font in font_dict:
+        default_font = next(iter(font_dict.keys())) if font_dict else ""
+    default_font_scale = config_manager.get_font_scale()
+    font_scale_limits = (0.5, 1.5)
     
     # Add GUI settings input fields
     with dpg.tree_node(label="GUI", parent=tag_parent, default_open=False):
-        # App Width
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust the application's total width (% of screen size)", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Application Width (%): ".ljust(text_ljust))
-            dpg.add_input_int(
-                tag=tag_width_percent, 
-                default_value=width_percentage, 
-                user_data=tags_popup_settings, 
-                min_value=width_limits[0], 
-                max_value=width_limits[1],
-                min_clamped=True, 
-                max_clamped=True, 
-                on_enter=True,
-                width=size_dict["button_width"], 
-                callback=_update_gui_settings
-            )
-        # App Height
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust the application's total height (% of screen size)", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Application Height (%): ".ljust(text_ljust))
-            dpg.add_input_int(
-                tag=tag_height_percent, 
-                default_value=height_percentage, 
-                user_data=tags_popup_settings, 
-                min_value=height_limits[0], 
-                max_value=height_limits[1],
-                min_clamped=True, 
-                max_clamped=True, 
-                on_enter=True,
-                width=size_dict["button_width"], 
-                callback=_update_gui_settings
-            )
-        # App Font Scale
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust the application's font scale (anything other than 1.0 may be blurry)", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Application Font Scale: ".ljust(text_ljust))
-            dpg.add_input_float(
-                tag=tag_font_scale, 
-                default_value=font_scale, 
-                user_data=tags_popup_settings, 
-                min_value=font_scale_limits[0], 
-                max_value=font_scale_limits[1],
-                min_clamped=True, 
-                max_clamped=True, 
-                on_enter=True,
-                width=size_dict["button_width"], 
-                callback=_update_gui_settings
-            )
-        # JSON objectives filename
-        tag_json_obj_fn_error = dpg.generate_uuid()
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Setting for JSON objectives filename (Note: default location is assumed to be the config folder)", wrap=size_dict["tooltip_width"])
-            dpg.add_text("JSON Objectives Filename: ".ljust(text_ljust))
-            dpg.add_input_text(
-                tag=get_tag("input_objectives_filename"),
-                default_value=config_manager.get_json_objective_filename(),
-                user_data=("json_objective_filename", tag_json_obj_fn_error), # Config key, error tag
-                width=size_dict["button_width"],
-                callback=_update_filename_settings,
-            )
-        # JSON objectives filename error message
-        dpg.add_text(tag=tag_json_obj_fn_error, default_value="", wrap=size_dict["button_width"], color=(192, 57, 43))
-        
-def _fill_overlay_settings(tag_parent, size_dict, text_ljust):
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.3)
+            dpg.add_table_column(init_width_or_weight=0.7)
+            
+            # App W/H Mode Toggle
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Toggle between percentage of screen size and pixel values for the application size.", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Application Size Mode: ")
+                dpg.add_radio_button(items=mode_options, horizontal=True, tag=tag_WH_mode_toggle, default_value=default_mode, user_data=tags_popup_settings, callback=_update_gui_size_mode)
+
+            # App Width
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the application's total width (% of screen size or # pixels)", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Application Width: ")
+                dpg.add_input_int(
+                    tag=tag_width, 
+                    default_value=default_width, 
+                    user_data=tags_popup_settings, 
+                    min_clamped=False, 
+                    max_clamped=False, 
+                    on_enter=True,
+                    width=size_dict["button_width"], 
+                    callback=_update_gui_size
+                )
+                
+            # App Height
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the application's total height (% of screen size or # pixels)", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Application Height: ")
+                dpg.add_input_int(
+                    tag=tag_height, 
+                    default_value=default_height, 
+                    user_data=tags_popup_settings, 
+                    min_clamped=False, 
+                    max_clamped=False, 
+                    on_enter=True,
+                    width=size_dict["button_width"], 
+                    callback=_update_gui_size
+                )
+            
+            # App Font Choice
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the application's font type.", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Application Font Choice: ")
+                with dpg.group(horizontal=True):
+                    dpg.add_combo(
+                        items=font_items,
+                        default_value=default_font, 
+                        user_data=default_font, 
+                        width=size_dict["button_width"], 
+                        callback=_update_gui_font
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
+            
+            # App Font Scale
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the application's font scale (multiplication factor).", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Application Font Scale: ")
+                dpg.add_input_float(
+                    default_value=default_font_scale, 
+                    min_value=font_scale_limits[0], 
+                    max_value=font_scale_limits[1],
+                    min_clamped=True, 
+                    max_clamped=True, 
+                    on_enter=True,
+                    width=size_dict["button_width"], 
+                    callback=_update_gui_font_scale
+                )
+            
+            # JSON Objectives Filename
+            tag_json_obj_fn_error = dpg.generate_uuid()
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Setting for JSON objectives filename (Note: default location is assumed to be the config folder)", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("JSON Objectives Filename: ")
+                with dpg.group(horizontal=False):
+                    dpg.add_input_text(
+                        tag=get_tag("input_objectives_filename"),
+                        default_value=config_manager.get_objectives_filename(),
+                        user_data=("json_objective_filename", tag_json_obj_fn_error), # Config key, error tag
+                        width=size_dict["button_width"],
+                        callback=_update_filename_settings,
+                    )
+                    # JSON objectives filename error message
+                    dpg.add_text(tag=tag_json_obj_fn_error, default_value="", wrap=size_dict["button_width"], color=(192, 57, 43))
+
+def _fill_overlay_settings(tag_parent, size_dict):
     """ Add Image Overlay Settings """
     with dpg.tree_node(label="Image Overlay", parent=tag_parent, default_open=False):
-        with dpg.group(horizontal=True):
-            dpg.add_text("Toggle Crosshairs:".ljust(text_ljust))
-            dpg.add_checkbox(
-                tag=get_tag("img_tags")["show_crosshairs"], 
-                default_value=True, 
-                callback=request_texture_update, 
-                user_data=True
-            )
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Toggle the display of slice crosshairs overlaid on the images", wrap=size_dict["tooltip_width"])
-        
-        with dpg.group(horizontal=True):
-            dpg.add_text("Toggle Orientation Labels:".ljust(text_ljust))
-            dpg.add_checkbox(
-                tag=get_tag("img_tags")["show_orientation_labels"], 
-                default_value=True, 
-                callback=request_texture_update, 
-                user_data=True
-            )
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Toggle the display of orientation labels overlaid on the images", wrap=size_dict["tooltip_width"])
-            dpg.add_button(label="Change orientation label color", width=size_dict["button_width"], callback=create_orientation_label_color_picker)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.3)
+            dpg.add_table_column(init_width_or_weight=0.7)
 
-def _fill_interactivity_settings(tag_parent, size_dict, text_ljust, config_manager):
+            # Toggle Crosshairs
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Toggle the display of slice crosshairs overlaid on the images", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Toggle Crosshairs:")
+                dpg.add_checkbox(
+                    tag=get_tag("img_tags")["show_crosshairs"], 
+                    default_value=True, 
+                    callback=request_texture_update, 
+                    user_data=True
+                )
+            
+            # Toggle Orientation Labels
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Toggle the display of orientation labels overlaid on the images", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Toggle Orientation Labels:")
+                dpg.add_checkbox(
+                    tag=get_tag("img_tags")["show_orientation_labels"], 
+                    default_value=True, 
+                    callback=request_texture_update, 
+                    user_data=True
+                )
+            
+            # Orientation Label Color
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Change the color of the orientation labels", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Orientation Label Color:")
+                dpg.add_button(label="Change orientation label color", width=size_dict["button_width"], callback=create_orientation_label_color_picker)
+
+def _fill_interactivity_settings(tag_parent, size_dict, config_manager):
     """ Add Image Interactivity Settings """
     # Get panning parameters
     current_pan_speed = config_manager.get_pan_speed()
@@ -174,29 +231,41 @@ def _fill_interactivity_settings(tag_parent, size_dict, text_ljust, config_manag
     
     # Add to the window
     with dpg.tree_node(label="Interactivity", parent=tag_parent, default_open=False):
-        with dpg.group(horizontal=True):
-            dpg.add_text("Panning Speed:".ljust(text_ljust))
-            dpg.add_combo(
-                tag=get_tag("img_tags")["pan_speed"], 
-                items=list(pan_speed_dict.keys()), 
-                default_value=pan_speed_default_val, 
-                user_data=pan_speed_dict, 
-                width=size_dict["button_width"], 
-                callback=_update_panning_speed
-            )
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.3)
+            dpg.add_table_column(init_width_or_weight=0.7)
         
-        with dpg.group(horizontal=True):
-            dpg.add_text("Zoom Speed:".ljust(text_ljust))
-            dpg.add_combo(
-                tag=get_tag("img_tags")["zoom_factor"], 
-                items=list(zoom_factor_dict.keys()), 
-                default_value=zoom_factor_default_val, 
-                user_data=zoom_factor_dict, 
-                width=size_dict["button_width"], 
-                callback=_update_zoom_factor
-            )
+            # Panning Speed
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the panning speed", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Panning Speed:")
+                dpg.add_combo(
+                    tag=get_tag("img_tags")["pan_speed"], 
+                    items=list(pan_speed_dict.keys()), 
+                    default_value=pan_speed_default_val, 
+                    user_data=pan_speed_dict, 
+                    width=size_dict["button_width"], 
+                    callback=_update_panning_speed
+                )
+            
+            # Zoom Speed
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the zoom speed", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Zoom Speed:")
+                dpg.add_combo(
+                    tag=get_tag("img_tags")["zoom_factor"], 
+                    items=list(zoom_factor_dict.keys()), 
+                    default_value=zoom_factor_default_val, 
+                    user_data=zoom_factor_dict, 
+                    width=size_dict["button_width"], 
+                    callback=_update_zoom_factor
+                )
 
-def _fill_data_rot_flip_controls(tag_parent, size_dict, text_ljust, default_display_dict):
+def _fill_data_rot_flip_controls(tag_parent, size_dict, default_display_dict):
     """ Add Data Rotations and Flips Settings """
     # Get rotation parameters
     rotations = ["0", "90", "180", "270"]
@@ -213,34 +282,49 @@ def _fill_data_rot_flip_controls(tag_parent, size_dict, text_ljust, default_disp
     default_display_dict.update({"ROTATION": default_rotation, "FLIP_LR": flip_defaults[0], "FLIP_AP": flip_defaults[1], "FLIP_SI": flip_defaults[2]})
     
     with dpg.tree_node(label="Data Rotations and Flip Controls", parent=tag_parent, default_open=False):
-        with dpg.group(horizontal=True):
-            dpg.add_text("Rotate Data (degrees):".ljust(text_ljust))
-            dpg.add_combo(
-                tag=get_tag("img_tags")["rotation"], 
-                items=rotations, 
-                default_value=default_rotation, 
-                user_data=default_rotation, 
-                width=size_dict["button_width"], 
-                callback=request_texture_update
-            )
-            dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
-        
-        with dpg.group(horizontal=True):
-            dpg.add_text("Flip Data:".ljust(text_ljust))
-            dpg.add_button(label="Reset", width=50, user_data=list(flip_tag_dict.values()), callback=_reset_img_setting)
-            for (axis, tag), flip_default in zip(flip_tag_dict.items(), flip_defaults):
-                dpg.add_text(f"{axis}:")
-                dpg.add_checkbox(
-                    tag=tag, 
-                    default_value=flip_default, 
-                    callback=request_texture_update, 
-                    user_data=flip_default
-                )
-                with dpg.tooltip(parent=dpg.last_item()):
-                    flip_type = "left/right" if axis == "LR" else "anterior/posterior" if axis == "AP" else "superior/inferior" if axis == "SI" else "unknown"
-                    dpg.add_text(f"Flip data along the {flip_type} axis.", wrap=size_dict["tooltip_width"])
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.3)
+            dpg.add_table_column(init_width_or_weight=0.7)
+
+            # Rotate Data
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Rotate the data orientation by 0, 90, 180, or 270 degrees.", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Rotate Data (degrees):")
+                with dpg.group(horizontal=True):
+                    dpg.add_combo(
+                        tag=get_tag("img_tags")["rotation"], 
+                        items=rotations, 
+                        default_value=default_rotation, 
+                        user_data=default_rotation, 
+                        width=size_dict["button_width"], 
+                        callback=request_texture_update
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
+            
+            # Flip Data
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Flip the data orientation along the chosen axis.", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Flip Data:")
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label="Reset", user_data=list(flip_tag_dict.values()), callback=_reset_setting)
+                    for (axis, tag), flip_default in zip(flip_tag_dict.items(), flip_defaults):
+                        with dpg.group(horizontal=True):
+                            with dpg.tooltip(parent=dpg.last_item()):
+                                flip_type = "left/right" if axis == "LR" else "anterior/posterior" if axis == "AP" else "superior/inferior" if axis == "SI" else "unknown"
+                                dpg.add_text(f"Flip data along the {flip_type} axis.", wrap=size_dict["tooltip_width"])
+                            dpg.add_text(f"{axis}:")
+                            dpg.add_checkbox(
+                                tag=tag, 
+                                default_value=flip_default, 
+                                callback=request_texture_update, 
+                                user_data=flip_default
+                            )
     
-def _fill_data_view_controls(tag_parent, size_dict, text_ljust, default_display_dict):
+def _fill_data_view_controls(tag_parent, size_dict, default_display_dict):
     """ Add Data View Controls """
     # Get dim ranges
     backup_dim_ranges = [(0, 599), (0, 599), (0, 599)]
@@ -296,101 +380,121 @@ def _fill_data_view_controls(tag_parent, size_dict, text_ljust, default_display_
     
     # Add to the window
     with dpg.tree_node(label="Data View Controls", parent=tag_parent, default_open=False):
-        # Viewed Slices
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust viewed slices for X, Y, and Z dimensions.", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Viewed Slices:".ljust(text_ljust))
-            dpg.add_input_intx(
-                tag=get_tag("img_tags")["viewed_slices"], 
-                size=len(default_view_slices), 
-                default_value=default_view_slices, 
-                user_data=default_view_slices, 
-                min_value=min([dim_min for dim_min, _ in default_dim_ranges]),
-                max_value=max([dim_max for _, dim_max in default_dim_ranges]),
-                min_clamped=True, 
-                max_clamped=True, 
-                on_enter=True,
-                width=size_dict["button_width"], 
-                callback=request_texture_update
-            )
-            dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
-        # Display Alphas
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust alpha blending for: Images / Masks / Doses", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Display Percentage:".ljust(text_ljust))
-            dpg.add_input_intx(
-                tag=get_tag("img_tags")["display_alphas"], 
-                size=len(default_alphas), 
-                default_value=default_alphas, 
-                user_data=default_alphas, 
-                min_value=alpha_limits[0], 
-                max_value=alpha_limits[1], 
-                min_clamped=True, 
-                max_clamped=True, 
-                on_enter=True,
-                width=size_dict["button_width"], 
-                callback=request_texture_update
-            )
-            dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
-        # Dose Display Range
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust the minimum and maximum percentages for dose display.", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Dose Display Range (% DMax):".ljust(text_ljust))
-            dpg.add_input_intx(
-                tag=get_tag("img_tags")["dose_thresholds"], 
-                size=len(default_dose_range), 
-                default_value=default_dose_range, 
-                user_data=default_dose_range, 
-                min_value=dose_range_limits[0], 
-                max_value=dose_range_limits[1], 
-                min_clamped=True, 
-                max_clamped=True, 
-                on_enter=True,
-                width=size_dict["button_width"], 
-                callback=request_texture_update
-            )
-            dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
-        # Contour Thickness
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust the contour thickness.", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Contour Thickness:".ljust(text_ljust))
-            dpg.add_input_int(
-                tag=get_tag("img_tags")["contour_thickness"], 
-                default_value=default_contour_thickness, 
-                user_data=default_contour_thickness, 
-                min_value=cthick_limits[0], 
-                max_value=cthick_limits[1],
-                min_clamped=True, 
-                max_clamped=True, 
-                on_enter=True,
-                width=size_dict["button_width"], 
-                callback=request_texture_update
-            )
-            dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
-        # Dimension Ranges
-        for axis, default_dim_range in zip(["X", "Y", "Z"], default_dim_ranges):
-            with dpg.group(horizontal=True):
-                dpg.add_text(f"{axis} Dimension Range:".ljust(text_ljust))
-                dpg.add_input_intx(
-                    tag=get_tag("img_tags")[f"{axis.lower()}range"], 
-                    size=len(default_dim_range),
-                    default_value=default_dim_range, 
-                    user_data=default_dim_range, 
-                    min_value=default_dim_range[0], 
-                    max_value=default_dim_range[1], 
-                    min_clamped=True, 
-                    max_clamped=True, 
-                    on_enter=True,
-                    width=size_dict["button_width"], 
-                    callback=request_texture_update
-                )
-                dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.3)
+            dpg.add_table_column(init_width_or_weight=0.7)
+        
+            # Viewed Slices
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust viewed slices for X, Y, and Z dimensions.", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Viewed Slices:")
+                with dpg.group(horizontal=True):
+                    dpg.add_input_intx(
+                        tag=get_tag("img_tags")["viewed_slices"], 
+                        size=len(default_view_slices), 
+                        default_value=default_view_slices, 
+                        user_data=default_view_slices, 
+                        min_value=min([dim_min for dim_min, _ in default_dim_ranges]),
+                        max_value=max([dim_max for _, dim_max in default_dim_ranges]),
+                        min_clamped=True, 
+                        max_clamped=True, 
+                        on_enter=True,
+                        width=size_dict["button_width"], 
+                        callback=request_texture_update
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
+            
+            # Display Alphas
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust alpha blending for: Images / Masks / Doses", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Display Percentage:")
+                with dpg.group(horizontal=True):
+                    dpg.add_input_intx(
+                        tag=get_tag("img_tags")["display_alphas"], 
+                        size=len(default_alphas), 
+                        default_value=default_alphas, 
+                        user_data=default_alphas, 
+                        min_value=alpha_limits[0], 
+                        max_value=alpha_limits[1], 
+                        min_clamped=True, 
+                        max_clamped=True, 
+                        on_enter=True,
+                        width=size_dict["button_width"], 
+                        callback=request_texture_update
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
+            
+            # Dose Display Range
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the minimum and maximum percentages for dose display.", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Dose Display Range (% DMax):")
+                with dpg.group(horizontal=True):
+                    dpg.add_input_intx(
+                        tag=get_tag("img_tags")["dose_thresholds"], 
+                        size=len(default_dose_range), 
+                        default_value=default_dose_range, 
+                        user_data=default_dose_range, 
+                        min_value=dose_range_limits[0], 
+                        max_value=dose_range_limits[1], 
+                        min_clamped=True, 
+                        max_clamped=True, 
+                        on_enter=True,
+                        width=size_dict["button_width"], 
+                        callback=request_texture_update
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
+            
+            # Contour Thickness
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the contour thickness.", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Contour Thickness:")
+                with dpg.group(horizontal=True):
+                    dpg.add_input_int(
+                        tag=get_tag("img_tags")["contour_thickness"], 
+                        default_value=default_contour_thickness, 
+                        user_data=default_contour_thickness, 
+                        min_value=cthick_limits[0], 
+                        max_value=cthick_limits[1],
+                        min_clamped=True, 
+                        max_clamped=True, 
+                        on_enter=True,
+                        width=size_dict["button_width"], 
+                        callback=request_texture_update
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
+            
+            # Dimension Ranges
+            for axis, default_dim_range in zip(["X", "Y", "Z"], default_dim_ranges):
+                with dpg.table_row():
+                    with dpg.group(horizontal=True):
+                        with dpg.tooltip(parent=dpg.last_item()):
+                            dpg.add_text(f"Adjust the range of the {axis} dimension.", wrap=size_dict["tooltip_width"])
+                        dpg.add_text(f"{axis} Dimension Range:")
+                    with dpg.group(horizontal=True):
+                        dpg.add_input_intx(
+                            tag=get_tag("img_tags")[f"{axis.lower()}range"], 
+                            size=len(default_dim_range),
+                            default_value=default_dim_range, 
+                            user_data=default_dim_range, 
+                            min_value=default_dim_range[0], 
+                            max_value=default_dim_range[1], 
+                            min_clamped=True, 
+                            max_clamped=True, 
+                            on_enter=True,
+                            width=size_dict["button_width"], 
+                            callback=request_texture_update
+                        )
+                        dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
 
-def _fill_windowing_controls(tag_parent, size_dict, text_ljust, config_manager, default_display_dict):
+def _fill_windowing_controls(tag_parent, size_dict, config_manager, default_display_dict):
     """ Add Windowing Controls """
     # Get preset dict
     window_preset_dict = config_manager.get_window_presets()
@@ -432,52 +536,64 @@ def _fill_windowing_controls(tag_parent, size_dict, text_ljust, config_manager, 
     
     # Add to the window
     with dpg.tree_node(label="Windowing Controls", parent=tag_parent, default_open=False):
-        # Window Presets
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust the window presets", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Window Presets:".ljust(text_ljust))
-            dpg.add_combo(
-                tag=get_tag("img_tags")["window_preset"], 
-                items=window_preset_items, 
-                default_value=default_preset, 
-                user_data=default_preset, 
-                width=size_dict["button_width"], 
-                callback=request_texture_update
-            )
-            dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
-        # Window Width
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust the window width", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Window Width:".ljust(text_ljust))
-            dpg.add_slider_int(
-                tag=get_tag("img_tags")["window_width"], 
-                default_value=default_ww, 
-                user_data=default_ww, 
-                min_value=ww_limits[0], 
-                max_value=ww_limits[1], 
-                width=size_dict["button_width"], 
-                callback=request_texture_update
-            )
-            dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
-        # Window Level
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust the window level", wrap=size_dict["tooltip_width"])
-            dpg.add_text("Window Level:".ljust(text_ljust))
-            dpg.add_slider_int(
-                tag=get_tag("img_tags")["window_level"], 
-                default_value=default_wl, 
-                user_data=default_wl, 
-                min_value=wl_limits[0], 
-                max_value=wl_limits[1], 
-                width=size_dict["button_width"], 
-                callback=request_texture_update
-            )
-            dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.3)
+            dpg.add_table_column(init_width_or_weight=0.7)
+        
+            # Window Presets
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the window presets", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Window Presets:")
+                with dpg.group(horizontal=True):
+                    dpg.add_combo(
+                        tag=get_tag("img_tags")["window_preset"], 
+                        items=window_preset_items, 
+                        default_value=default_preset, 
+                        user_data=default_preset, 
+                        width=size_dict["button_width"], 
+                        callback=request_texture_update
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
+                
+            # Window Width
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the window width", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Window Width:")
+                with dpg.group(horizontal=True):
+                    dpg.add_slider_int(
+                        tag=get_tag("img_tags")["window_width"], 
+                        default_value=default_ww, 
+                        user_data=default_ww, 
+                        min_value=ww_limits[0], 
+                        max_value=ww_limits[1], 
+                        width=size_dict["button_width"], 
+                        callback=request_texture_update
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
+                
+            # Window Level
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the window level", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Window Level:")
+                with dpg.group(horizontal=True):
+                    dpg.add_slider_int(
+                        tag=get_tag("img_tags")["window_level"], 
+                        default_value=default_wl, 
+                        user_data=default_wl, 
+                        min_value=wl_limits[0], 
+                        max_value=wl_limits[1], 
+                        width=size_dict["button_width"], 
+                        callback=request_texture_update
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
 
-def _fill_spacing_controls(tag_parent, size_dict, text_ljust, config_manager, default_display_dict):
+def _fill_spacing_controls(tag_parent, size_dict, config_manager, default_display_dict):
     """ Add Voxel Spacing Controls """
     # Get the default voxel spacing
     backup_voxel_spacing = [3.0, 3.0, 3.0]
@@ -493,38 +609,41 @@ def _fill_spacing_controls(tag_parent, size_dict, text_ljust, config_manager, de
     
     # Add to the window
     with dpg.tree_node(label="Voxel Spacing Controls", parent=tag_parent, default_open=False):
-        # Voxel Spacing
-        with dpg.group(horizontal=True):
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Adjust the voxel spacing in mm (X, Y, Z). Type, then press Enter to confirm change. Input will be contained to values between 0.5mm and 10mm.", wrap=size_dict["tooltip_width"])
-            
-            # Checkbox for using config voxel spacing
-            dpg.add_checkbox(
-                tag=get_tag("img_tags")["voxel_spacing_cbox"], 
-                default_value=config_manager.get_bool_use_config_voxel_spacing(),
-                callback=_update_spacing_settings
-            )
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text("Checked: Use the config voxel spacing (a standardized spacing) for all patients. Unchecked: Only use the data's native voxel spacing.", wrap=size_dict["tooltip_width"])
-            
-            # Input for voxel spacing
-            dpg.add_text("Voxel Spacing (mm):".ljust(text_ljust))
-            dpg.add_input_floatx(
-                tag=get_tag("img_tags")["voxel_spacing"], 
-                size=len(default_voxel_spacing), 
-                default_value=default_voxel_spacing, 
-                user_data=default_voxel_spacing, 
-                min_value=voxel_spacing_limits[0],
-                max_value=voxel_spacing_limits[1], 
-                min_clamped=True, 
-                max_clamped=True, 
-                on_enter=True,
-                width=size_dict["button_width"], 
-                callback=request_texture_update
-            )
-            dpg.add_button(label="Reset", width=50, before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_img_setting)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.3)
+            dpg.add_table_column(init_width_or_weight=0.7)
 
-def _reset_img_setting(sender, app_data, user_data):
+            # Voxel Spacing
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Adjust the voxel spacing in mm (X, Y, Z). Type, then press Enter to confirm change. Input will be contained to values between 0.5mm and 10mm.", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("Voxel Spacing (mm):")
+                with dpg.group(horizontal=True):
+                    # Checkbox for using config voxel spacing
+                    dpg.add_checkbox(
+                        tag=get_tag("img_tags")["voxel_spacing_cbox"], 
+                        default_value=config_manager.get_bool_use_config_voxel_spacing(),
+                        callback=_update_spacing_settings
+                    )
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Checked: Use the config voxel spacing (a standardized spacing) for all patients. Unchecked: Only use the data's native voxel spacing.", wrap=size_dict["tooltip_width"])
+                    dpg.add_input_floatx(
+                        tag=get_tag("img_tags")["voxel_spacing"], 
+                        size=len(default_voxel_spacing), 
+                        default_value=default_voxel_spacing, 
+                        user_data=default_voxel_spacing, 
+                        min_value=voxel_spacing_limits[0],
+                        max_value=voxel_spacing_limits[1], 
+                        min_clamped=True, 
+                        max_clamped=True, 
+                        on_enter=True,
+                        width=size_dict["button_width"], 
+                        callback=request_texture_update
+                    )
+                    dpg.add_button(label="Reset", before=dpg.last_item(), user_data=dpg.last_item(), callback=_reset_setting)
+
+def _reset_setting(sender, app_data, user_data):
     """
     Resets a UI element to its default value and triggers its callback.
     
@@ -535,7 +654,7 @@ def _reset_img_setting(sender, app_data, user_data):
     """
     if isinstance(user_data, (list, tuple, set)):
         for item_tag in user_data:
-            _reset_img_setting(sender, app_data, item_tag)
+            _reset_setting(sender, app_data, item_tag)
         return
     
     item_tag = user_data
@@ -564,21 +683,107 @@ def _update_spacing_settings(sender, app_data, user_data):
     
     request_texture_update(texture_action_type="update")
 
-def _update_gui_settings(sender, app_data, user_data):
-    """ Updates the GUI configuration settings and the viewport based on user input, including viewport dimensions and font scale. """
-    tag_width_percent, tag_height_percent, tag_font_scale = user_data
+def _update_gui_font(sender, app_data, user_data):
+    """ Updates the GUI font based on the selected value. """
+    font_name = app_data
+    if not font_name:
+        print("Error: No font name was selected. No change will be made.")
+        dpg.set_value(sender, "")
+        return
+    
     config_manager = get_user_data(td_key="config_manager")
+    font_dict = config_manager.get_fonts()
+    if not font_dict or not font_name in font_dict:
+        print(f"Error: The font '{font_name}' is not a valid font in the configuration file. No change will be made.")
+        dpg.set_value(sender, "")
+        return
     
-    width_ratio = dpg.get_value(tag_width_percent) / 100
-    height_ratio = dpg.get_value(tag_height_percent) / 100
+    font_size = font_dict.get(font_name)
+    if not font_size or not isinstance(font_size, int) or font_size <= 0:
+        print(f"Error: The font size '{font_size}' for font '{font_name}' is not a valid size in the configuration file. No change will be made.")
+        dpg.set_value(sender, "")
+        return
     
+    font_tag = get_tag("font")
+    if not dpg.does_item_exist(font_tag):
+        print(f"Error: The font tag '{font_tag}' does not exist. No change will be made.")
+        dpg.set_value(sender, "")
+        return
+    
+    font_dir = config_manager.get_font_dir()
+    font_fpath = os.path.join(font_dir, font_name + ".ttf")
+    if not os.path.isfile(font_fpath):
+        print(f"Error: The font file '{font_fpath}' does not exist. No change will be made.")
+        dpg.set_value(sender, "")
+        return
+    
+    # Update the font in the configuration file
+    config_manager.update_user_config({"font": font_name})
+    
+    # Update the displayed font
+    dpg.set_value(sender, font_name)
+    
+    safe_delete(font_tag)
+    dpg.add_font(tag=font_tag, parent=get_tag("font_registry"), file=font_fpath, size=font_size)
+    dpg.bind_font(font_tag)
+    
+    request_texture_update(texture_action_type="update")
+
+def _update_gui_size(sender, app_data, user_data):
+    """ Updates the viewport size based on user input. """
+    tag_WH_mode_toggle, tag_width, tag_height = user_data
+    
+    config_manager = get_user_data(td_key="config_manager")
     max_screen_size = config_manager.get_max_screen_size()
-    new_screen_size = (round(max_screen_size[0] * width_ratio), round(max_screen_size[1] * height_ratio))
-    config_manager.update_setting("screen_size", new_screen_size)
+    mode = dpg.get_value(tag_WH_mode_toggle)
+    width_limits, height_limits = _get_screen_limits(mode)
     
-    font_scale = dpg.get_value(tag_font_scale)
-    config_manager.update_setting("font_scale", font_scale)
+    width = min(max(dpg.get_value(tag_width), width_limits[0]), width_limits[1])
+    height = min(max(dpg.get_value(tag_height), height_limits[0]), height_limits[1])
+    new_screen_size = (round(max_screen_size[0] * width / 100), round(max_screen_size[1] * height / 100)) if mode == "Percentage" else (width, height)
     
+    dpg.set_value(tag_width, width)
+    dpg.set_value(tag_height, height)
+    
+    config_manager.update_user_config({"screen_size": new_screen_size})
+    
+    request_texture_update(texture_action_type="update")
+
+def _update_gui_size_mode(sender, app_data, user_data):
+    """ Updates the GUI size mode based on user input. """
+    mode = app_data
+    tag_WH_mode_toggle, tag_width, tag_height = user_data
+    
+    if mode not in ["Percentage", "Pixels"]:
+        print(f"Error: The mode '{mode}' is not a valid mode. Setting to 'Percentage'.")
+        mode = "Percentage"
+        dpg.set_value(tag_WH_mode_toggle, mode)
+    
+    config_manager = get_user_data(td_key="config_manager")
+    max_screen_size = config_manager.get_max_screen_size()
+    width_limits, height_limits = _get_screen_limits(mode)
+    print(f"max_screen_size: {max_screen_size}, Previous Width: {dpg.get_value(tag_width)}, Previous Height: {dpg.get_value(tag_height)}, width_limits: {width_limits}, height_limits: {height_limits}")
+    # Convert from Pixels to Percentage
+    if mode == "Percentage":
+        width = min(max(round(dpg.get_value(tag_width) / max_screen_size[0] * 100), width_limits[0]), width_limits[1])
+        height = min(max(round(dpg.get_value(tag_height) / max_screen_size[1] * 100), height_limits[0]), height_limits[1])
+    elif mode == "Pixels":
+        width = min(max(round(dpg.get_value(tag_width) * max_screen_size[0] / 100), width_limits[0]), width_limits[1])
+        height = min(max(round(dpg.get_value(tag_height) * max_screen_size[1] / 100), height_limits[0]), height_limits[1])
+    print(f"New Width: {width}, New Height: {height}")
+    dpg.set_value(tag_width, width)
+    dpg.set_value(tag_height, height)
+    
+    config_manager.update_user_config({"screen_size_input_mode": mode})
+    
+    request_texture_update(texture_action_type="update")
+
+def _update_gui_font_scale(sender, app_data, user_data):
+    """ Callback to update the GUI font scale. """
+    font_scale = app_data
+    config_manager = get_user_data(td_key="config_manager")
+    config_manager.update_user_config({"font_scale": font_scale})
+    dpg.set_global_font_scale(font_scale)
     request_texture_update(texture_action_type="update")
 
 def _update_filename_settings(sender, app_data, user_data):
@@ -587,14 +792,15 @@ def _update_filename_settings(sender, app_data, user_data):
     input_text = app_data
     config_key, error_tag = user_data
     config_manager = get_user_data(td_key="config_manager")
-    previous_text = config_manager.get_setting(config_key)
+    previous_text = config_manager.get_user_setting(config_key)
     
-    if not verify_input_directory(config_manager.config_dir, input_tag, error_tag):
+    configs_dir = config_manager.get_configs_dir()
+    if not verify_input_directory(configs_dir, input_tag, error_tag):
         dpg.set_value(input_tag, previous_text)
         return
     
-    config_manager.update_setting(config_key, input_text)
-    dpg.configure_item(error_tag, default_value=f"\t\tSuccessfully saved filename for {config_key}: {input_text}", color=(39, 174, 96))
+    config_manager.update_user_config({config_key: input_text})
+    dpg.configure_item(error_tag, default_value=f"Successfully saved filename for {config_key}: {input_text}", color=(39, 174, 96))
 
 def _update_panning_speed(sender, app_data, user_data):
     """
@@ -610,7 +816,7 @@ def _update_panning_speed(sender, app_data, user_data):
     pan_speed_value = pan_speed_dict[pan_speed_key]
     
     config_manager = get_user_data(td_key="config_manager")
-    config_manager.update_setting("pan_speed", pan_speed_value)
+    config_manager.update_user_config({"pan_speed": pan_speed_value})
 
 def _update_zoom_factor(sender, app_data, user_data):
     """
@@ -626,5 +832,22 @@ def _update_zoom_factor(sender, app_data, user_data):
     zoom_factor_value = zoom_factor_dict[zoom_factor_key]
     
     config_manager = get_user_data(td_key="config_manager")
-    config_manager.update_setting("zoom_factor", zoom_factor_value)
+    config_manager.update_user_config({"zoom_factor": zoom_factor_value})
 
+def _get_screen_limits(mode):
+    """ Returns the screen size limits for width and height. """
+    config_manager = get_user_data(td_key="config_manager")
+    max_screen_size = config_manager.get_max_screen_size()
+    
+    if mode not in ["Percentage", "Pixels"]:
+        print(f"Error: The mode '{mode}' is not a valid mode. Returning limits for 'Percentage' mode.")
+        mode = "Percentage"
+    
+    if mode == "Pixels":
+        width_limits = (round(0.5 * max_screen_size[0]), max_screen_size[0])
+        height_limits = (round(0.5 * max_screen_size[1]), max_screen_size[1])
+    elif mode == "Percentage":
+        width_limits = (50, 100)
+        height_limits = (50, 100)
+    
+    return width_limits, height_limits

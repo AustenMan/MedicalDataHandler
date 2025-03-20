@@ -3,7 +3,7 @@ import re
 import json
 import string
 import traceback
-from tkinter import Tk, filedialog
+from tkinter import Tk
 from pathlib import Path
 
 def get_traceback(exception):
@@ -175,21 +175,6 @@ def safe_type_conversion(value, req_type, uppercase=False, lowercase=False):
     except ValueError:
         print(f"Failed to convert value {value} to type {req_type}. Returning as-is.")
         return value
-
-def select_directory() -> Path:
-    """ Opens a dialog to select a directory and returns the selected directory. """
-    root = Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    selected_dir = filedialog.askdirectory()
-    root.destroy()
-    
-    selected_dir = os.path.abspath(str(selected_dir).strip())
-    
-    if not os.path.isabs(selected_dir) or not os.path.isdir(selected_dir):
-        return None
-    
-    return selected_dir  
 
 def validate_directory(path_str):
     """

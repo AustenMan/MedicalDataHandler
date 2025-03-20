@@ -24,7 +24,7 @@ def launch_gui(config_manager, dicom_manager, data_manager, shared_state_manager
     # Customize the theme
     dpg.bind_theme(get_global_theme())
     
-    # Set the global font scale
+    # Set font scale
     dpg.set_global_font_scale(config_manager.get_font_scale())
     
     # Set callbacks
@@ -77,6 +77,28 @@ def _create_registries(config_manager, dicom_manager, data_manager, shared_state
     dpg.add_bool_value(tag=tag_dict["dicom_manager"], parent=tag_dict["value_registry"], default_value=True, user_data=dicom_manager)
     dpg.add_bool_value(tag=tag_dict["data_manager"], parent=tag_dict["value_registry"], default_value=True, user_data=data_manager)
     dpg.add_bool_value(tag=tag_dict["shared_state_manager"], parent=tag_dict["value_registry"], default_value=True, user_data=shared_state_manager)
+    
+    # Font registry update
+    font_name = config_manager.get_user_config_font()
+    if not font_name:
+        print("Warning: No font specified in the user configuration. Sticking with DPG default font.")
+        return
+    font_dict = config_manager.get_fonts()
+    font_size = font_dict.get(font_name)
+    if not font_name in font_dict:
+        print(f"Warning: The font '{font_name}' is  is not available in the font dictionary: {font_dict}. Sticking with DPG default font.")
+        return
+    if not isinstance(font_size, int) or font_size <= 0:
+        print(f"Warning: The font '{font_name}' has an invalid size '{font_size}'. Sticking with DPG default font.")
+        return
+    font_dir = config_manager.get_font_dir()
+    font_fpath = os.path.join(font_dir, font_name + ".ttf")
+    if not os.path.isfile(font_fpath):
+        print(f"Warning: The font file '{font_fpath}' does not exist. Sticking with DPG default font.")
+        return
+    dpg.add_font_registry(tag=tag_dict["font_registry"])
+    custom_font = dpg.add_font(tag=tag_dict["font"], parent=tag_dict["font_registry"], file=font_fpath, size=font_size)
+    dpg.bind_font(custom_font)
 
 def _start_viewport(config_manager):
     """
@@ -91,15 +113,15 @@ def _start_viewport(config_manager):
     # Retrieve the maximum screen size, the desired viewport size, and the icon file
     max_screen_size = config_manager.get_max_screen_size()
     viewport_WH = config_manager.get_screen_size()
-    ico_file = config_manager.ico_file
+    ico_file = config_manager.get_icon_file()
     
     # Validate
     if not isinstance(max_screen_size, (tuple, list)) or len(max_screen_size) != 2 or not all(isinstance(v, int) for v in max_screen_size) or not all(v > 0 for v in max_screen_size):
         raise ValueError(f"Error creating Dear PyGui viewport: The maximum screen size must be a list or tuple of two integers greater than 0. Received: {max_screen_size}")
     if not isinstance(viewport_WH, (tuple, list)) or len(viewport_WH) != 2 or not all(isinstance(v, int) for v in viewport_WH) or not all(v > 0 for v in viewport_WH):
         raise ValueError(f"Error creating Dear PyGui viewport: The viewport width and height must be a list or tuple of two integers greater than 0. Received: {viewport_WH}")
-    if ico_file is None or not os.path.isfile(ico_file):
-        print(f"Warning: The icon file '{ico_file}' does not exist. No icon will be used for the viewport.")
+    if ico_file is None or not os.path.isfile(ico_file) or not ico_file.endswith(".ico"):
+        print(f"Warning: The icon file '{ico_file}' does not exist or is invalid. No icon will be used for the viewport.")
         ico_file = ""
     
     # Calculate the viewport position
@@ -146,6 +168,9 @@ def _create_tag_dict():
         "item_handler_registry": dpg.generate_uuid(), 
         "texture_registry": dpg.generate_uuid(), 
         "value_registry": dpg.generate_uuid(),
+        "font_registry": dpg.generate_uuid(),
+        
+        "font": dpg.generate_uuid(),
         
         "key_down_tag": dpg.generate_uuid(),
         "mouse_release_tag": dpg.generate_uuid(),
@@ -252,7 +277,7 @@ def _create_size_dict():
         "table_w": -6, 
         "table_h": -6,
         "button_width": -6, 
-        "button_height": 40, 
+        "button_height": 50, 
         "tooltip_width": 300,
         "spacer_height": 6
     }
@@ -283,3 +308,5 @@ def _create_default_display_dict():
     }
     return default_display_dict
 
+
+    

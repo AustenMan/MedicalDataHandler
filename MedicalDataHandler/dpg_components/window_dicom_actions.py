@@ -51,8 +51,7 @@ def create_dicom_action_window(sender, app_data, user_data):
     add_custom_button(
         label="Choose a DICOM directory", 
         parent_tag=tag_action_window, 
-        callback=_start_action, 
-        user_data=dicom_manager.start_processing_dicom_directory,
+        callback=_get_directory, 
         add_spacer_before=True, 
         add_spacer_after=True
     )
@@ -65,6 +64,37 @@ def create_dicom_action_window(sender, app_data, user_data):
         add_spacer_after=True
     )
 
+def _get_directory(sender, app_data, user_data):
+    """ Gets the directory path from the user. """
+    # Check if an action is already in progress
+    shared_state_manager = get_user_data(td_key="shared_state_manager")
+    if shared_state_manager.is_action_in_queue() or shared_state_manager.is_cleanup_thread_alive():
+        print("An action is in progress. Please wait for the action(s) to complete.")
+        return
+    
+    config_manager = get_user_data(td_key="config_manager")
+    dicom_manager = get_user_data(td_key="dicom_manager")
+    popup_width, popup_height, popup_pos = get_popup_params(height_ratio=0.5)
+    tag_fd = dpg.generate_uuid()
+    
+    def _on_directory_selected(sender, app_data, user_data):
+        """Callback that passes the selected directory."""
+        selected_dir = app_data  # `app_data` contains the selected directory
+        _start_action(sender, app_data, user_data=selected_dir)  # Pass directory
+    
+    # App data: keys are "file_path_name", "file_name", "current_path", "current_filter", "min_size", "max_size", "selections"
+    dpg.add_file_dialog(
+        tag=tag_fd,
+        label="Choose a directory containing DICOM files",
+        directory_selector=True,
+        default_path=config_manager.get_project_parent_dir(),
+        modal=True,
+        callback=lambda s, a, u: _start_action(s, a, lambda: dicom_manager.start_processing_dicom_directory(a.get("file_path_name"))),  
+        cancel_callback=lambda: safe_delete(tag_fd),
+        width=popup_width,
+        height=popup_height,
+    )
+
 def _start_action(sender, app_data, user_data):
     """ Initiates the user-specified action. """
     # Check if an action is already in progress
@@ -72,7 +102,7 @@ def _start_action(sender, app_data, user_data):
     if shared_state_manager.is_action_in_queue() or shared_state_manager.is_cleanup_thread_alive():
         print("An action is in progress. Please wait for the action(s) to complete.")
         return
-    
+    print(f"sender: {sender}, app_data: {app_data}, user_data: {user_data}")
     action_to_take = user_data
     
     def action_to_take_wrapper():

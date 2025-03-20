@@ -1,5 +1,5 @@
 import dearpygui.dearpygui as dpg
-from dpg_components.custom_utils import get_tag, get_user_data
+from dpg_components.custom_utils import get_tag, get_user_data, capture_screenshot
 from dpg_components.texture_updates import request_texture_update
 from utils.dpg_utils import safe_delete
 
@@ -303,10 +303,15 @@ def _handler_KeyPress(sender, app_data, user_data):
     
     Args:
         sender (int): The tag of the keyboard event handler.
-        app_data (list): Key press data (e.g., key code).
+        app_data (list): Key pressed (int) and time held (float).
     """
-    if app_data[0] == dpg.mvKey_LControl or app_data[0] == dpg.mvKey_RControl:
+    key_pressed, press_duration = app_data
+    if key_pressed == dpg.mvKey_LControl or key_pressed == dpg.mvKey_RControl:
         dpg.set_item_user_data(sender, True)
+    
+    # If both Ctrl and S keys pressed, capture screenshot. press_duration == 0 ensures that the screenshot is only taken once.
+    if key_pressed == dpg.mvKey_S and dpg.get_item_user_data(sender) and press_duration == 0:
+        capture_screenshot()
 
 def _handler_KeyRelease(sender, app_data, user_data):
     """
@@ -356,3 +361,4 @@ def _itemhandler_MouseHover(sender, app_data, user_data):
                     dpg.add_text(default_value=current_roi_name, color=roi_display_color)
         else:
             dpg.add_text(default_value=f"\tNo masks found at this voxel.")
+

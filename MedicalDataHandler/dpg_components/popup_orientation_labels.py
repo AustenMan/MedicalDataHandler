@@ -39,6 +39,6 @@ def _update_orientation_label_color(sender, app_data, user_data):
     new_color = tuple([round(min(max(255 * x, 0), 255)) for x in app_data])
     
     config_manager = get_user_data(td_key="config_manager")
-    config_manager.update_setting("orientation_label_color", new_color)
+    config_manager.update_user_config({"orientation_label_color": new_color})
     
     request_texture_update(texture_action_type="update")

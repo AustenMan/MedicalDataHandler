@@ -4,7 +4,7 @@ import pydicom
 from pydicom.tag import Tag
 from concurrent.futures import as_completed, Future
 from utils.dicom_objects import PatientData
-from utils.general_utils import get_traceback, select_directory
+from utils.general_utils import get_traceback
 
 def get_dicom_tag_value(dicom_data, tag, reformat_str=False):
     """
@@ -463,12 +463,11 @@ class DicomManager():
             return
         self.progbar_fn = pbar_fn
     
-    def start_processing_dicom_directory(self):
+    def start_processing_dicom_directory(self, dicom_dir_string):
         """ Scans a selected directory recursively for '.dcm' files, reads their metadata, and saves them as JSON objects. """
         # Ask user to select a directory
         self.progbar_fn(0, 0, description="Ready to find DICOM files. Select a directory that contains DICOM files using the button below.")
-        print("Waiting for your directory selection... ")
-        dicom_dir_string = select_directory()
+        
         if dicom_dir_string is None:
             print("Invalid directory provided. Please select again.")
             return
@@ -477,12 +476,12 @@ class DicomManager():
             print(f"Invalid DICOM directory provided: {dicom_dir_string}")
             return
         
-        obj_dir = self.config_manager.dcm_processor_objs_dir
-        if not os.path.isdir(obj_dir):
-            print(f"Invalid object directory path provided, cannot process directory: {obj_dir}")
+        objects_dir = self.config_manager.get_patient_objects_dir()
+        if not os.path.isdir(objects_dir):
+            print(f"Invalid object directory path provided, cannot process directory: {objects_dir}")
             return
         
-        monitor_dicom_read_progress(dicom_dir_string, obj_dir, self.progbar_fn, self.shared_state_manager)
+        monitor_dicom_read_progress(dicom_dir_string, objects_dir, self.progbar_fn, self.shared_state_manager)
     
     def load_dicom_objects(self, return_object_dict=False):
         """
@@ -497,7 +496,8 @@ class DicomManager():
         Returns:
             dict: The populated `self.object_dict` if `return_object_dict` is True, otherwise None.
         """
-        for obj_filepath in [os.path.join(self.config_manager.dcm_processor_objs_dir, f) for f in os.listdir(self.config_manager.dcm_processor_objs_dir) if f.endswith('.json')]:
+        patient_objs_dir = self.config_manager.get_patient_objects_dir()
+        for obj_filepath in [os.path.join(patient_objs_dir, f) for f in os.listdir(patient_objs_dir) if f.endswith('.json')]:
             with open(obj_filepath, 'rt') as obj_file:
                 try:
                     obj_data = json.load(obj_file)
@@ -513,9 +513,9 @@ class DicomManager():
     
     def start_linking_all_dicoms(self):
         """ Start the process of linking all DICOM objects in the `object_dict`. """
-        obj_dir = self.config_manager.dcm_processor_objs_dir
-        if not os.path.isdir(obj_dir):
-            print(f"Invalid object directory path provided, cannot link DICOMs: {obj_dir}")
+        patient_objs_dir = self.config_manager.get_patient_objects_dir()
+        if not os.path.isdir(patient_objs_dir):
+            print(f"Invalid object directory path provided, cannot link DICOMs: {patient_objs_dir}")
             return
         
         self.load_dicom_objects()
@@ -524,5 +524,5 @@ class DicomManager():
             print("Cannot link DICOMs as there are no patient objects to link. Try finding DICOMs first.")
             return
         
-        monitor_link_dicom_progress(obj_dir, self.object_dict, self.progbar_fn, self.shared_state_manager)
+        monitor_link_dicom_progress(patient_objs_dir, self.object_dict, self.progbar_fn, self.shared_state_manager)
 

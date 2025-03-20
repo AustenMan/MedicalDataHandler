@@ -1,0 +1,15 @@
+{ 
+    "Custom": [375, 40], 
+    "Brain: General": [80, 40],
+    "Brain: Subdural": [200, 75],
+    "Brain: Stroke": [8, 32],
+    "Bone: Option 1": [1800, 400],
+    "Bone: Option 2": [2800, 600],
+    "Bone: Option 3": [4000, 700],
+    "Soft Tissue: Option 1": [250, 50],
+    "Soft Tissue: Option 2": [350, 20],
+    "Soft Tissue: Option 3": [400, 60],
+    "Soft Tissue: Option 4": [375, 40],
+    "Lung": [1500, -600],
+    "Liver": [150, 30]
+}

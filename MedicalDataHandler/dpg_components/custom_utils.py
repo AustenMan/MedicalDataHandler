@@ -1,3 +1,5 @@
+import os
+import time
 import dearpygui.dearpygui as dpg
 
 def get_tag(key):
@@ -142,7 +144,7 @@ def add_custom_button(
     size_dict = get_user_data(td_key="size_dict")
     
     tag = tag or dpg.generate_uuid()
-    height = height or size_dict["button_height"]
+    height = height or (size_dict["button_height"] if not label else 0)
     width = width or size_dict["button_width"]
 
     # Pre-button spacing/separators
@@ -212,5 +214,18 @@ def add_custom_checkbox(
         dpg.add_spacer(height=size_dict["spacer_height"])
     return tag
 
+def capture_screenshot():
+    """ Captures the viewport as an image and saves it to the 'screenshots' folder with a timestamp. """
+    # Get screenshots directory
+    config_manager = get_user_data(td_key="config_manager")
+    screenshot_dir = config_manager.get_screenshots_dir()
+    os.makedirs(screenshot_dir, exist_ok=True)
     
+    # Generate timestamped filename
+    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    screenshot_path = os.path.join(screenshot_dir, f"screenshot_{timestamp}.png")
     
+    # Outputs frame buffer as png
+    dpg.output_frame_buffer(screenshot_path)
+    print(f"Screenshot saved: {screenshot_path}")
+

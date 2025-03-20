@@ -286,13 +286,13 @@ class DataManager:
             print("No patient ID found. Cannot update SITK RTSTRUCT with goals.")
             return
         
-        json_objective_file = self.config_manager.get_json_objective_filepath()
+        objectives_fpath = self.config_manager.get_objectives_filepath()
         
-        if not json_objective_file or not json_objective_file.endswith(".json") or not os.path.exists(json_objective_file):
-            print(f"Objective JSON file not found at location: {json_objective_file}. Cannot update SITK RTSTRUCT with goals.")
+        if not objectives_fpath or not objectives_fpath.endswith(".json") or not os.path.exists(objectives_fpath):
+            print(f"Objective JSON file not found at location: {objectives_fpath}. Cannot update SITK RTSTRUCT with goals.")
             return
         
-        with open(json_objective_file, 'rt') as file:
+        with open(objectives_fpath, 'rt') as file:
             patient_objectives = json.load(file).get(patient_id, {})
         if not patient_objectives:
             print(f"No objectives found for patient with ID '{patient_id}' in the JSON file.")

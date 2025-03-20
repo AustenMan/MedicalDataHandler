@@ -71,15 +71,18 @@ def _create_popup_dicom_inspection(sender, app_data, user_data):
             tag_apply_button = dpg.generate_uuid()
             with dpg.group(horizontal=False):
                 dpg.add_text(default_value="NOTE: Applying filters is currently experimental and may crash the program if there are an extremely large number of items.")
-                with dpg.group(horizontal=True):
-                    dpg.add_text(default_value="Search for a Key:".ljust(20), bullet=True)
-                    dpg.add_input_text(tag=tag_search_key, width=size_dict["button_width"], height=size_dict["button_height"])
-                with dpg.group(horizontal=True):
-                    dpg.add_text(default_value="Search for a VR:".ljust(20), bullet=True)
-                    dpg.add_input_text(tag=tag_search_vr, width=size_dict["button_width"], height=size_dict["button_height"])
-                with dpg.group(horizontal=True):
-                    dpg.add_text(default_value="Search for a Value:".ljust(20), bullet=True)
-                    dpg.add_input_text(tag=tag_search_value, width=size_dict["button_width"], height=size_dict["button_height"])
+                with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+                    dpg.add_table_column(init_width_or_weight=0.3)
+                    dpg.add_table_column(init_width_or_weight=0.7)
+                    with dpg.table_row():
+                        dpg.add_text(default_value="Search for a Key:", bullet=True)
+                        dpg.add_input_text(tag=tag_search_key, width=size_dict["button_width"], height=size_dict["button_height"])
+                    with dpg.table_row():
+                        dpg.add_text(default_value="Search for a VR:", bullet=True)
+                        dpg.add_input_text(tag=tag_search_vr, width=size_dict["button_width"], height=size_dict["button_height"])
+                    with dpg.table_row():
+                        dpg.add_text(default_value="Search for a Value:", bullet=True)
+                        dpg.add_input_text(tag=tag_search_value, width=size_dict["button_width"], height=size_dict["button_height"])
                 add_custom_button(tag=tag_apply_button, label="Apply Filters", callback=_try_filter_dicom_inspection, user_data=(tag_tree_group, tag_search_key, tag_search_vr, tag_search_value), add_separator_after=True)
         
         # Add the DICOM dataset to the tree

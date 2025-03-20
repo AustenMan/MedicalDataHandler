@@ -22,7 +22,6 @@ def _update_textures(*args, **kwargs):
     display_alphas, dose_range, contour_thickness, image_window_width, image_window_level = _get_visual_texture_params()
     
     # Update general display & viewport, then get image length & texture size
-    update_font_scale(config_manager.get_font_scale())
     current_screen_size = (dpg.get_viewport_width(), dpg.get_viewport_height())
     new_screen_size = config_manager.get_screen_size()
     WH_ratios = update_viewport_and_popups(new_screen_size, current_screen_size)
@@ -208,14 +207,14 @@ def _get_image_length(WH_ratios=(1.0, 1.0)):
     """
     width_ratio, height_ratio = WH_ratios
     ax_W, ax_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_topleft"))
-    misc_W, misc_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_topright"))
+    # misc_W, misc_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_topright"))
     cor_W, cor_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_bottomleft"))
     sag_W, sag_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_bottomright"))
     min_size = min(
         ax_W * width_ratio, 
         ax_H * height_ratio,
-        misc_W * width_ratio,
-        misc_H * height_ratio,
+        # misc_W * width_ratio,
+        # misc_H * height_ratio,
         cor_W * width_ratio, 
         cor_H * height_ratio,
         sag_W * width_ratio,

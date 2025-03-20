@@ -23,7 +23,7 @@ def cleanup(shared_state_manager):
         shared_state_manager.shutdown_manager()
     except Exception as e:
         print(get_traceback(e))
-    
+
 def signal_handler(signum, frame, shared_state_manager):
     """Handle termination signals by invoking cleanup."""
     cleanup(shared_state_manager)

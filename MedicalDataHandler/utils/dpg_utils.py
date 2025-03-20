@@ -96,12 +96,12 @@ def verify_input_directory(directory, input_tag, error_tag):
     filepath = os.path.join(directory, input_filename)
     is_valid, abs_path, message = validate_directory(filepath)
     if not is_valid:
-        dpg.configure_item(error_tag, default_value=f"\t\t{message}", color=(192, 57, 43))  # Red color for errors
+        dpg.configure_item(error_tag, default_value=message, color=(192, 57, 43))  # Red color for errors
         return False
     else:
         if dpg.does_item_exist(input_tag):
             dpg.set_value(input_tag, input_filename)
-            dpg.configure_item(error_tag, default_value=f"\t\t{message}", color=(39, 174, 96))  # Green color for success
+            dpg.configure_item(error_tag, default_value=message, color=(39, 174, 96))  # Green color for success
         return True
 
 def add_data_to_tree(
@@ -190,7 +190,7 @@ def add_data_to_tree(
             if data:
                 data_str = str(data)
                 if data_str.endswith(".dcm") and callable(dcm_viewing_callback):
-                    dpg.add_button(label=data_str, height=25, indent=8, callback=dcm_viewing_callback, user_data=return_callback if callable(return_callback) else None)
+                    dpg.add_button(label=data_str, indent=8, callback=dcm_viewing_callback, user_data=return_callback if callable(return_callback) else None)
                 else:
                     dpg.add_text(default_value=f"\t{data_str}", wrap=text_wrap_width, color=text_color_two)
             else:

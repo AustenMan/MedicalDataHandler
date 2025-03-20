@@ -243,8 +243,12 @@ def _create_modality_table(sender, app_data, user_data):
     dpg.add_table_column(parent=tag_data_table, label="Toggle inclusion/exclusion of data", width_stretch=True)
     with dpg.table_row(parent=tag_data_table):
         with dpg.group(horizontal=True):
-            dpg.add_button(label="Go Back", width=150, height=size_dict["button_height"], callback=_modify_button_after_callback, user_data=active_pt)
-            dpg.add_button(label="Load Selected Data", callback=_try_load_selected_data, width=150, height=size_dict["button_height"], user_data=(active_pt, active_frame_of_reference_uid, all_rti_data_dict, all_rt_links_dict, checkbox_states))
+            gb_btn_label = "Go Back"
+            gb_btn_width = round(dpg.get_text_size(gb_btn_label)[0] * 2)
+            dpg.add_button(label=gb_btn_label, width=gb_btn_width, callback=_modify_button_after_callback, user_data=active_pt)
+            load_btn_label = "Load Selected Data"
+            load_btn_width = round(dpg.get_text_size(load_btn_label)[0] * 2)
+            dpg.add_button(label=load_btn_label, callback=_try_load_selected_data, width=load_btn_width, user_data=(active_pt, active_frame_of_reference_uid, all_rti_data_dict, all_rt_links_dict, checkbox_states))
     with dpg.table_row(parent=tag_data_table):
         with dpg.group(horizontal=True):
             dpg.add_checkbox(callback=_checkbox_toggle_all_callback, user_data=checkbox_states)

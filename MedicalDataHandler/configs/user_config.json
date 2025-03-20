@@ -1,8 +1,8 @@
 {
-    "json_objective_filename": "Objectives_Examples.json",
+    "json_objective_filename": "objectives.json",
     "screen_size": [
-        2064,
-        864
+        1800,
+        1350
     ],
     "font_scale": 1.0,
     "orientation_label_color": [
@@ -18,5 +18,7 @@
         3.0
     ],
     "use_config_voxel_spacing": true,
-    "zoom_factor": 0.1
+    "zoom_factor": 0.1,
+    "screen_size_input_mode": "Pixels",
+    "font": "Inter_18pt-Medium"
 }

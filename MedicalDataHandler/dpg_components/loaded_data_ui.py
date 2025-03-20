@@ -24,15 +24,20 @@ def fill_right_col_ptdata(active_pt, active_frame_of_reference_uid):
     tag_save_button = get_tag("save_button")
     
     # Patient Info Section
-    dpg.add_button(tag=tag_ptinfo_button, parent="mw_right", label="Patient Info", width=size_dict["button_width"], height=size_dict["button_height"], user_data=(active_pt, active_frame_of_reference_uid))
+    ptinfo_label = "Patient Info"
+    btn_width = round(dpg.get_text_size(str(ptinfo_label))[0] * 1.5)
+    btn_height = 0 if ptinfo_label else size_dict["button_height"]
+    dpg.add_button(tag=tag_ptinfo_button, parent="mw_right", label="Patient Info", width=btn_width, height=btn_height, user_data=(active_pt, active_frame_of_reference_uid))
     dpg.bind_item_theme(item=dpg.last_item(), theme=get_hidden_button_theme())
     patient_id, patient_name = active_pt.return_patient_info()
     with dpg.group(parent="mw_right", horizontal=True):
         dpg.add_text(default_value="ID/MRN:", bullet=True)
-        dpg.add_input_text(default_value=patient_id, width=size_dict["button_width"], height=size_dict["button_height"], readonly=True, hint="Patient ID")
+        btn_height = 0 if patient_id else size_dict["button_height"]
+        dpg.add_input_text(default_value=patient_id, width=size_dict["button_width"], height=btn_height, readonly=True, hint="Patient ID")
     with dpg.group(parent="mw_right", horizontal=True):
         dpg.add_text(default_value="Name:", bullet=True)
-        dpg.add_input_text(default_value=patient_name, width=size_dict["button_width"], height=size_dict["button_height"], readonly=True, hint="Patient Name")
+        btn_height = 0 if patient_name else size_dict["button_height"]
+        dpg.add_input_text(default_value=patient_name, width=size_dict["button_width"], height=btn_height, readonly=True, hint="Patient Name")
     add_custom_button(
         label="Save Data", tag=tag_save_button, parent_tag="mw_right", 
         callback=create_save_window, user_data={}, add_spacer_before=True, add_separator_after=True, visible=False)
@@ -163,34 +168,8 @@ def _popup_inspect_rtimage(sender, app_data, user_data):
     rti_siuid, sitk_image_ref, tag_tooltip = user_data
     
     popup_width, popup_height, popup_pos = get_popup_params()
-    input_width = popup_width // 2
-    
-    # Helper function to add input fields
-    def add_input_field(field_label, default_value, readonly=False):
-        """
-        Adds an input field to display metadata.
-        
-        Args:
-            field_label (str): The label for the metadata field.
-            default_value (str): The value to display in the input field.
-            readonly (bool): If True, the input field will be read-only.
-        """
-        # Determine the title to display
-        if "_" in field_label:
-            title = field_label.replace('_', ' ').title()
-        else:
-            title = field_label
-        
-        # Format the title to a fixed width
-        title = f"{title[:38]}:".ljust(40)
-        
-        with dpg.group(horizontal=True):
-            dpg.add_text(title)
-            input_kwargs = {'default_value': default_value, 'width': input_width, 'readonly': readonly}
-            dpg.add_input_text(**input_kwargs)
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text(f"MetaData key: {str(field_label)}\nMetaData value: {default_value}", wrap=size_dict["tooltip_width"])
-        dpg.add_spacer(height=size_dict["spacer_height"])
+    text_W = dpg.get_text_size("A")[0]
+    char_fit = max(round((popup_width * 0.4) / text_W), 10)
     
     with dpg.window(
         tag=tag_inspect_sitk, label="RT Image Info",  width=popup_width, height=popup_height,  pos=popup_pos, no_open_over_existing_popup=False, 
@@ -206,8 +185,27 @@ def _popup_inspect_rtimage(sender, app_data, user_data):
         metadata_dict = {key: sitk_image_ref().GetMetaData(key) for key in metadata_keys}
         
         sorted_keys = sorted(metadata_dict.keys())
-        for key in sorted_keys:
-            add_input_field(field_label=key, default_value=str(metadata_dict[key]), readonly=True)
+        
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+            
+            for key in sorted_keys:
+                title = str(key)
+                if "_" in title:
+                    title = title.replace('_', ' ').title()
+                # Format the title to a fixed width
+                if len(title) > char_fit:
+                    title = f"{title[:char_fit-3]}..."
+                with dpg.table_row():
+                    with dpg.group(horizontal=True):
+                        with dpg.tooltip(parent=dpg.last_item(), hide_on_activity=True):
+                            dpg.add_text(f"MetaData key: {str(key)}", wrap=size_dict["tooltip_width"])
+                        dpg.add_text(title)
+                    with dpg.group(horizontal=True):
+                        with dpg.tooltip(parent=dpg.last_item(), hide_on_activity=True):
+                            dpg.add_text(f"MetaData value: {metadata_dict[key]}", wrap=size_dict["tooltip_width"])
+                        dpg.add_input_text(default_value=str(metadata_dict[key]), width=size_dict["button_width"], readonly=True)
 
 ### MATCHED RT DOSE AND RT PLAN FUNCTIONS ###
 
@@ -362,55 +360,8 @@ def _popup_inspect_rtdose(sender, app_data, user_data):
     rtd_sopiuid, sitk_dose_ref, tag_tooltip = user_data
     
     popup_width, popup_height, popup_pos = get_popup_params()
-    input_width = popup_width // 2
-    
-    # Helper function to add input fields
-    def add_input_field(field_label, default_value, readonly=False, tooltip_texts=[], callback=None, user_data=None, custom_title=None, spacer_after=True):
-        """
-        Adds an input field to display or edit RT Dose metadata.
-        
-        Args:
-            field_label (str): The label for the metadata field.
-            default_value (any): The value to display or edit.
-            readonly (bool): If True, the field will be read-only.
-            tooltip_texts (list, optional): Tooltips to display.
-            callback (function, optional): Function to call when the field value changes.
-            user_data (tuple, optional): Data to pass to the callback.
-            custom_title (str, optional): Custom title for the field.
-            spacer_after (bool): If True, adds spacing after the field.
-        """
-        # Determine the title to display
-        if custom_title:
-            title = custom_title
-        elif field_label:
-            if "_" in field_label:
-                title = field_label.replace('_', ' ').title()
-                title = title.replace("Rt", "RT").replace("RTd", "RTD").replace("Cgy", "cGy")
-            else:
-                title = field_label
-        else:
-            title = "MISSING TITLE"
-        
-        # Format the title to a fixed width
-        title = f"{title[:38]}:".ljust(40)
-        
-        with dpg.group(horizontal=True):
-            dpg.add_text(title)
-            input_kwargs = {'default_value': default_value, 'width': input_width, 'readonly': readonly, 'callback': callback, 'user_data': user_data}
-            if isinstance(default_value, int):
-                input_kwargs.update({'min_value': 0, 'max_value': 9999, 'min_clamped': True, 'max_clamped': True,})
-                dpg.add_input_int(**input_kwargs)
-            else:
-                dpg.add_input_text(**input_kwargs)
-            
-            # Add tooltip to the last item added (the input widget)
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text(f"MetaData key: {str(field_label)}\nMetaData value: {default_value}", wrap=size_dict["tooltip_width"])
-                for tooltip_text in tooltip_texts:
-                    dpg.add_text(tooltip_text, wrap=size_dict["tooltip_width"])
-        
-        if spacer_after:
-            dpg.add_spacer(height=size_dict["spacer_height"])
+    text_W = dpg.get_text_size("A")[0]
+    char_fit = max(round((popup_width * 0.4) / text_W), 10)
     
     # Define the callback function to update the sitk metadata
     def update_sitk_metadata(sender, app_data, user_data):
@@ -439,33 +390,71 @@ def _popup_inspect_rtdose(sender, app_data, user_data):
         popup=True, modal=True, no_title_bar=False, no_close=False, on_close=safe_delete(tag_inspect_sitk)
         ):
         add_custom_button(label="SITK Dose Details", theme_tag=get_hidden_button_theme(), add_separator_after=True)
-        add_custom_button(label="Editable Fields (Used to scale the dose! Read the tooltips!)", theme_tag=get_hidden_button_theme(), add_spacer_after=True)
+        
         if sitk_dose_ref() is None:
             return
         
         # Get all metadata keys and values
         metadata_keys = sitk_dose_ref().GetMetaDataKeys()
         metadata_dict = {key: sitk_dose_ref().GetMetaData(key) for key in metadata_keys}
+        sorted_keys = sorted(metadata_dict.keys())
         
-        number_of_fractions_planned = int(metadata_dict.get("number_of_fractions_planned", 0) or 0)
-        number_of_fractions_rtdose = int(metadata_dict.get("number_of_fractions_rtdose", 0) or 0)
+        # Add editable fields for the number of fractions
+        add_custom_button(label="Editable Fields (Used to scale the dose! Read the tooltips!)", theme_tag=get_hidden_button_theme(), add_spacer_after=True)
         
-        add_input_field(
-            field_label="number_of_fractions_planned", default_value=number_of_fractions_planned, readonly=False, callback=update_sitk_metadata, user_data=(sitk_dose_ref, "number_of_fractions_planned"), 
-            tooltip_texts=["This should be the number of fractions that you WANT the dose to represent."]
-        )
-        add_input_field(
-            field_label="number_of_fractions_rtdose", default_value=number_of_fractions_rtdose, readonly=False, callback=update_sitk_metadata, user_data=(sitk_dose_ref, "number_of_fractions_rtdose"), spacer_after=False,
-            tooltip_texts=["This should be the number of fractions that the dose CURRENTLY represents.", "The dose will be scaled to RTPLAN number of fractions: (Dose * (RTP/RTD)). If 0 fractions, no dose scaling occurs."]
-        )
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+            
+            for key in ["number_of_fractions_planned", "number_of_fractions_rtdose"]:
+                if key in sorted_keys:
+                    sorted_keys.remove(key)
+                    title = str(key)
+                    if "_" in title:
+                        title = title.replace('_', ' ').title()
+                        title = title.replace("Rt", "RT").replace("RTd", "RTD").replace("Cgy", "cGy")
+                    # Format the title to a fixed width
+                    if len(title) > char_fit:
+                        title = f"{title[:char_fit-3]}..."
+                    with dpg.table_row():
+                        with dpg.group(horizontal=True):
+                            with dpg.tooltip(parent=dpg.last_item(), hide_on_activity=True):
+                                dpg.add_text(f"MetaData key: {str(key)}", wrap=size_dict["tooltip_width"])
+                            dpg.add_text(title)
+                        with dpg.group(horizontal=True):
+                            if key in ["number_of_fractions_planned", "number_of_fractions_rtdose"]:
+                                dict_value = int(metadata_dict.get(key, 0) or 0)
+                                dpg.add_input_int(default_value=dict_value, width=size_dict["button_width"], callback=update_sitk_metadata, user_data=(sitk_dose_ref, key), min_value=0, max_value=9999, min_clamped=True, max_clamped=True)
+                                with dpg.tooltip(parent=dpg.last_item()):
+                                    if key == "number_of_fractions_planned":
+                                        dpg.add_text("This should be the number of fractions that you WANT the dose to represent.", wrap=size_dict["tooltip_width"])
+                                    elif key == "number_of_fractions_rtdose":
+                                        dpg.add_text("This should be the number of fractions that the dose CURRENTLY represents.", wrap=size_dict["tooltip_width"])
         
+        # Add read-only fields for the remaining metadata
         add_custom_button(label="Read-Only Metadata Fields", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_spacer_after=True)
         
-        sorted_keys = sorted(metadata_dict.keys())
-        for key in sorted_keys:
-            if key in ["number_of_fractions_planned", "number_of_fractions_rtdose"]:
-                continue  # Skip the two editable fields
-            add_input_field(field_label=key, default_value=str(metadata_dict[key]), readonly=True)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+            
+            for key in sorted_keys:
+                title = str(key)
+                if "_" in title:
+                    title = title.replace('_', ' ').title()
+                    title = title.replace("Rt", "RT").replace("RTd", "RTD").replace("Cgy", "cGy")
+                # Format the title to a fixed width
+                if len(title) > char_fit:
+                    title = f"{title[:char_fit-3]}..."
+                with dpg.table_row():
+                    with dpg.group(horizontal=True):
+                        with dpg.tooltip(parent=dpg.last_item(), hide_on_activity=True):
+                            dpg.add_text(f"MetaData key: {str(key)}", wrap=size_dict["tooltip_width"])
+                        dpg.add_text(title)
+                    with dpg.group(horizontal=True):
+                        with dpg.tooltip(parent=dpg.last_item(), hide_on_activity=True):
+                            dpg.add_text(f"MetaData value: {metadata_dict[key]}", wrap=size_dict["tooltip_width"])
+                        dpg.add_input_text(default_value=str(metadata_dict[key]), width=size_dict["button_width"], readonly=True)
 
 ### RT PLAN FUNCTIONS ###
 
@@ -525,7 +514,7 @@ def _add_rtp_button(tag_modality_node, rtp_sopiuid, rtplan_info_dict):
         
         tag_button = dpg.generate_uuid()
         tag_tooltip = dpg.generate_uuid()
-        dpg.add_button(tag=tag_button, label="RTP", width=size_dict["button_width"], callback=popup_inspect_rtplan_dict, user_data=(rtp_sopiuid, rtplan_info_dict, tag_tooltip))
+        dpg.add_button(tag=tag_button, label="RTP", width=size_dict["button_width"], callback=_popup_inspect_rtplan_dict, user_data=(rtp_sopiuid, rtplan_info_dict, tag_tooltip))
         dpg.bind_item_theme(item=tag_button, theme=get_colored_button_theme((90, 110, 70)))
         _update_rtp_button_tooltip(tag_button)
 
@@ -549,7 +538,7 @@ def _update_rtp_button_tooltip(tag_button):
                 value = rtplan_info_dict.get(key, "")
                 dpg.add_text(f"{key}: {value}", wrap=size_dict["tooltip_width"])
 
-def popup_inspect_rtplan_dict(sender, app_data, user_data):
+def _popup_inspect_rtplan_dict(sender, app_data, user_data):
     """ 
     Opens a popup window to display and modify RT Plan attributes. 
     
@@ -580,8 +569,8 @@ def popup_inspect_rtplan_dict(sender, app_data, user_data):
     rtp_sopiuid, rtplan_info_dict, tag_tooltip = user_data
     
     config_manager = get_user_data("config_manager")
-    disease_site_list = config_manager.get_disease_site_list(ready_for_dpg=True)
-    machine_list = config_manager.get_machine_names_list(ready_for_dpg=True)
+    disease_site_list = config_manager.get_disease_sites(ready_for_dpg=True)
+    machine_list = config_manager.get_machine_names(ready_for_dpg=True)
     
     # Starts as a dict and becomes a string when overriden, so need to check for dict type
     ReviewerName = rtplan_info_dict.get("ReviewerName", {})
@@ -614,70 +603,8 @@ def popup_inspect_rtplan_dict(sender, app_data, user_data):
     num_unique_isocenters = len(unique_isocenters)
     
     popup_width, popup_height, popup_pos = get_popup_params()
-    input_width = popup_width // 2
     
-    # Create a mapping of field names to GUI item tags
-    field_tags = {}
     tag_base = f"{tag_inspect_sitk}_"
-    
-    # Function to create input fields and store their tags
-    def add_input_field(field_name, default_value, hint="", readonly=False, items=None, tooltip_texts=[], custom_title=None, callback=None, spacer_after=True):
-        """
-        Adds an input field to the GUI for RT Plan attributes.
-        
-        Args:
-            field_name (str): The key for the field.
-            default_value (any): The default value to display.
-            hint (str): Hint text for input fields.
-            readonly (bool): If True, the field will be read-only.
-            items (list, optional): If provided, creates a combo box with these items.
-            tooltip_texts (list, optional): Tooltips to display.
-            custom_title (str, optional): Custom title for the field.
-            callback (function, optional): Function to call when the field value changes.
-            spacer_after (bool): If True, adds spacing after the field.
-        """
-        # Generate the field tag
-        if field_name:
-            field_tag = f"{tag_base}{field_name}"
-            field_tags[field_name] = field_tag
-        else:
-            field_tag = dpg.generate_uuid()
-        
-        # Determine the title to display
-        if custom_title:
-            title = custom_title
-        elif field_name:
-            title = field_name.replace('_', ' ').title()
-            title = title.replace("Rt", "RT").replace("Cgy", "cGy")
-        else:
-            title = "MISSING TITLE"
-        
-        # Format the title to a fixed width
-        title = f"{title[:38]}:".ljust(40)
-        
-        with dpg.group(horizontal=True):
-            dpg.add_text(title)
-            
-            # Common kwargs for input widgets
-            input_kwargs = {'tag': field_tag, 'default_value': default_value, 'width': input_width, 'callback': callback, 'user_data': field_name}
-            
-            if items:
-                dpg.add_combo(items=items, **input_kwargs)
-            elif isinstance(default_value, int):
-                input_kwargs.update({'min_value': 0, 'max_value': 9999, 'min_clamped': True, 'max_clamped': True, 'readonly': readonly})
-                dpg.add_input_int(**input_kwargs)
-            else:
-                input_kwargs.update({'height': size_dict["button_height"] // 2, 'hint': hint, 'readonly': readonly})
-                dpg.add_input_text(**input_kwargs)
-            
-            # Add tooltip to the last item added (the input widget)
-            with dpg.tooltip(parent=dpg.last_item()):
-                dpg.add_text(f"MetaData key: {str(field_name)}\nMetaData value: {default_value}", wrap=size_dict["tooltip_width"])
-                for tooltip_text in tooltip_texts:
-                    dpg.add_text(tooltip_text, wrap=size_dict["tooltip_width"])
-        
-        if spacer_after:
-            dpg.add_spacer(height=size_dict["spacer_height"])
     
     # Callback function to update the rtplan_info_dict
     def update_rtplan_info_dict(sender, app_data, user_data):
@@ -703,31 +630,105 @@ def popup_inspect_rtplan_dict(sender, app_data, user_data):
         add_custom_button(label="RT Plan Details", theme_tag=get_hidden_button_theme(), add_separator_after=True)
         
         add_custom_button(label="Editable Fields", theme_tag=get_hidden_button_theme(), add_spacer_after=True)
-        add_input_field("RTPlanLabel", RTPlanLabel, hint="Enter a label for the plan", custom_title="RT Plan Label", callback=update_rtplan_info_dict)
-        add_input_field("rt_plan_disease_site", plan_disease_site, items=disease_site_list, custom_title="Disease Site", callback=update_rtplan_info_dict)
-        add_input_field("rt_plan_machine", treatment_machine, items=machine_list, custom_title="Treatment Machine", callback=update_rtplan_info_dict)
-        add_input_field("target_prescription_dose_cgy", target_rx_dose_cgy, callback=update_rtplan_info_dict)
-        add_input_field("number_of_fractions_planned", number_of_fractions_planned, tooltip_texts=["On saving, the plan name will include this number of fractions."], callback=update_rtplan_info_dict, spacer_after=False)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+            
+            with dpg.table_row():
+                dpg.add_text("RT Plan Label:")
+                dpg.add_input_text(tag=f"{tag_base}RTPlanLabel", width=size_dict["button_width"], default_value=RTPlanLabel, hint="Enter a label for the plan", callback=update_rtplan_info_dict, user_data="RTPlanLabel")
+            
+            with dpg.table_row():
+                dpg.add_text("Disease Site:")
+                dpg.add_combo(tag=f"{tag_base}rt_plan_disease_site", width=size_dict["button_width"], default_value=plan_disease_site, items=disease_site_list, callback=update_rtplan_info_dict, user_data="rt_plan_disease_site")
+            
+            with dpg.table_row():
+                dpg.add_text("Treatment Machine:")
+                dpg.add_combo(tag=f"{tag_base}rt_plan_machine", width=size_dict["button_width"], default_value=treatment_machine, items=machine_list, callback=update_rtplan_info_dict, user_data="rt_plan_machine")
+            
+            with dpg.table_row():
+                dpg.add_text("Target Prescription Dose (cGy):")
+                dpg.add_input_int(tag=f"{tag_base}target_prescription_dose_cgy", width=size_dict["button_width"], default_value=target_rx_dose_cgy, callback=update_rtplan_info_dict, user_data="target_prescription_dose_cgy", min_value=0, max_value=9999, min_clamped=True, max_clamped=True)
+            
+            with dpg.table_row():
+                dpg.add_text("Number Of Fractions Planned:")
+                dpg.add_input_int(tag=f"{tag_base}number_of_fractions_planned", width=size_dict["button_width"], default_value=number_of_fractions_planned, callback=update_rtplan_info_dict, user_data="number_of_fractions_planned", min_value=0, max_value=9999, min_clamped=True, max_clamped=True)
+                with dpg.tooltip(parent=dpg.last_item()):
+                    dpg.add_text("On saving, the plan name will include this number of fractions.", wrap=size_dict["tooltip_width"])
         
         add_custom_button(label="Read-only Fields", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_spacer_after=True)
-        add_input_field("RTPlanName", RTPlanName, hint="Missing a name for the plan", readonly=True, custom_title="RT Plan Name")
-        add_input_field("RTPlanDescription", RTPlanDescription, hint="Missing a description for the plan", readonly=True, custom_title="RT Plan Description")
-        add_input_field("rt_plan_radiation_type", radiation_type_string, hint="Missing radiation type for the plan", readonly=True)
-        add_input_field("patient_position", patient_position, hint="Missing a patient position for the plan", readonly=True)
-        add_input_field("setup_technique", setup_technique, hint="Missing a setup technique for the plan", readonly=True)
-        add_input_field("RTPlanDate", RTPlanDate, hint="Missing a date for the plan", readonly=True, custom_title="RT Plan Date")
-        add_input_field("ApprovalStatus", ApprovalStatus, hint="Missing an approval status for the plan", readonly=True, custom_title="Approval Status")
-        add_input_field("ReviewerName", ReviewerName, hint="Missing a reviewer for the plan", readonly=True, custom_title="Reviewer Name", spacer_after=False)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+            
+            with dpg.table_row():
+                dpg.add_text("RT Plan Name:")
+                dpg.add_input_text(tag=f"{tag_base}RTPlanName", width=size_dict["button_width"], default_value=RTPlanName, hint="Missing a name for the plan", readonly=True, user_data="RTPlanName")
+            
+            with dpg.table_row():
+                dpg.add_text("RT Plan Description:")
+                dpg.add_input_text(tag=f"{tag_base}RTPlanDescription", width=size_dict["button_width"], default_value=RTPlanDescription, hint="Missing a description for the plan", readonly=True, user_data="RTPlanDescription")
+            
+            with dpg.table_row():
+                dpg.add_text("Patient Position:")
+                dpg.add_input_text(tag=f"{tag_base}patient_position", width=size_dict["button_width"], default_value=patient_position, hint="Missing a patient position for the plan", readonly=True, user_data="patient_position")
+            
+            with dpg.table_row():
+                dpg.add_text("Setup Technique:")
+                dpg.add_input_text(tag=f"{tag_base}setup_technique", width=size_dict["button_width"], default_value=setup_technique, hint="Missing a setup technique for the plan", readonly=True, user_data="setup_technique")
+            
+            with dpg.table_row():
+                dpg.add_text("RT Plan Date:")
+                dpg.add_input_text(tag=f"{tag_base}RTPlanDate", width=size_dict["button_width"], default_value=RTPlanDate, hint="Missing a date for the plan", readonly=True, user_data="RTPlanDate")
+            
+            with dpg.table_row():
+                dpg.add_text("Approval Status:")
+                dpg.add_input_text(tag=f"{tag_base}ApprovalStatus", width=size_dict["button_width"], default_value=ApprovalStatus, hint="Missing an approval status for the plan", readonly=True, user_data="ApprovalStatus")
+            
+            with dpg.table_row():
+                dpg.add_text("Reviewer Name:")
+                dpg.add_input_text(tag=f"{tag_base}ReviewerName", width=size_dict["button_width"], default_value=ReviewerName, hint="Missing a reviewer for the plan", readonly=True, user_data="ReviewerName")
         
         add_custom_button(label="Read-only Beam Info", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_spacer_after=True)
-        add_input_field(None, total_num_beams, hint="Total number of beams in the plan", readonly=True, custom_title="Number Of Beams")
-        add_input_field(None, num_treatment_beams, hint="Number of treatment beams in the plan", readonly=True, custom_title="Number Of Treatment Beams")
-        add_input_field(None, num_unique_isocenters, hint="Number of unique isocenters in the plan", readonly=True, custom_title="Number Of Unique Isocenters")
-        add_input_field(None, unique_isocenters, hint="Unique isocenter positions in the plan", readonly=True, custom_title="Unique Isocenter Positions")
-        add_input_field(None, len(beam_numbers_with_wedge), hint="Number of beams with wedges", readonly=True, custom_title="Number Of Beams With Wedges")
-        add_input_field(None, len(beam_numbers_with_compensator), hint="Number of beams with compensators", readonly=True, custom_title="Number Of Beams With Compensators")
-        add_input_field(None, len(beam_numbers_with_bolus), hint="Number of beams with bolus", readonly=True, custom_title="Number Of Beams With Bolus")
-        add_input_field(None, len(beam_numbers_with_block), hint="Number of beams with blocks", readonly=True, custom_title="Number Of Beams With Blocks")
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+            
+            with dpg.table_row():
+                dpg.add_text("Radiation Type(s):")
+                dpg.add_input_text(tag=f"{tag_base}radiation_type", width=size_dict["button_width"], default_value=radiation_type_string, hint="Radiation type(s) for the plan", readonly=True)
+            
+            with dpg.table_row():
+                dpg.add_text("Number of Beams:")
+                dpg.add_input_text(tag=f"{tag_base}number_of_beams", width=size_dict["button_width"], default_value=total_num_beams, hint="Total number of beams in the plan", readonly=True)
+            
+            with dpg.table_row():
+                dpg.add_text("Number of Treatment Beams:")
+                dpg.add_input_text(tag=f"{tag_base}number_of_treatment_beams", width=size_dict["button_width"], default_value=num_treatment_beams, hint="Number of treatment beams in the plan", readonly=True)
+            
+            with dpg.table_row():
+                dpg.add_text("Number of Unique Isocenters:")
+                dpg.add_input_text(tag=f"{tag_base}number_of_unique_isocenters", width=size_dict["button_width"], default_value=num_unique_isocenters, hint="Number of unique isocenters in the plan", readonly=True)
+            
+            with dpg.table_row():
+                dpg.add_text("Unique Isocenter Positions:")
+                dpg.add_input_text(tag=f"{tag_base}unique_isocenters", width=size_dict["button_width"], default_value=unique_isocenters, hint="Unique isocenter positions in the plan", readonly=True)
+            
+            with dpg.table_row():
+                dpg.add_text("Number of Beams with Wedges:")
+                dpg.add_input_text(tag=f"{tag_base}number_of_beams_with_wedge", width=size_dict["button_width"], default_value=len(beam_numbers_with_wedge), hint="Number of beams with wedges", readonly=True)
+            
+            with dpg.table_row():
+                dpg.add_text("Number of Beams with Compensators:")
+                dpg.add_input_text(tag=f"{tag_base}number_of_beams_with_compensator", width=size_dict["button_width"], default_value=len(beam_numbers_with_compensator), hint="Number of beams with compensators", readonly=True)
+            
+            with dpg.table_row():
+                dpg.add_text("Number of Beams with Bolus:")
+                dpg.add_input_text(tag=f"{tag_base}number_of_beams_with_bolus", width=size_dict["button_width"], default_value=len(beam_numbers_with_bolus), hint="Number of beams with bolus", readonly=True)
+            
+            with dpg.table_row():
+                dpg.add_text("Number of Beams with Blocks:")
+                dpg.add_input_text(tag=f"{tag_base}number_of_beams_with_block", width=size_dict["button_width"], default_value=len(beam_numbers_with_block), hint="Number of beams with blocks", readonly=True)
 
 ### RT STRUCT FUNCTIONS ###
 
@@ -869,53 +870,11 @@ def _popup_inspect_structure_set_info(sender, app_data, user_data):
     tag_button = sender
     rts_sopiuid, rtstruct_info_dict, tag_tooltip = user_data
     
-    StructureSetLabel = rtstruct_info_dict.get("StructureSetLabel", "")
-    StructureSetName = rtstruct_info_dict.get("StructureSetName", "")
-    StructureSetDate = rtstruct_info_dict.get("StructureSetDate", "")
-    StructureSetTime = rtstruct_info_dict.get("StructureSetTime", "")
-    ReferencedSeriesInstanceUID = rtstruct_info_dict.get("ReferencedSeriesInstanceUID", "")
-    
     popup_width, popup_height, popup_pos = get_popup_params()
-    input_width = popup_width // 2
+    text_W = dpg.get_text_size("A")[0]
+    char_fit = max(round((popup_width * 0.4) / text_W), 10)
     
-    # Helper function to add input fields
-    def add_input_field(label, default_value, readonly=False, callback=None, user_data=None, spacer_after=True):
-        """
-        Adds an input field to display or edit RT Structure Set metadata.
-        
-        Args:
-            label (str): The label for the metadata field.
-            default_value (any): The value to display or edit.
-            readonly (bool): If True, the field will be read-only.
-            callback (function, optional): Function to call when the field value changes.
-            user_data (any, optional): Data to pass to the callback.
-            spacer_after (bool): If True, adds spacing after the field.
-        """
-        with dpg.group(horizontal=True):
-            dpg.add_text(f"{label}:".ljust(40))
-            input_kwargs = {'default_value': default_value, 'width': input_width, 'callback': callback, 'user_data': user_data}
-            if isinstance(default_value, int):
-                dpg.add_input_int(readonly=readonly, **input_kwargs)
-            else:
-                dpg.add_input_text(readonly=readonly, **input_kwargs)
-        
-        if spacer_after:
-            dpg.add_spacer(height=size_dict["spacer_height"])
-    
-    # Callback to update rtstruct_info_dict
-    def update_rtstruct_info(sender, app_data, user_data):
-        """
-        Updates the RT Structure Set metadata dictionary.
-        
-        Args:
-            sender (int): The tag of the sender.
-            app_data (any): The new value for the metadata field.
-            user_data (str): The metadata field name to update.
-        """
-        field_name = user_data
-        rtstruct_info_dict[field_name] = app_data
-        _update_rts_button_and_tooltip(tag_button)
-        print(f"Updated rtstruct_info_dict[{field_name}] = {app_data}")
+    keys_to_show = ["StructureSetLabel", "StructureSetName", "StructureSetDate", "StructureSetTime", "ReferencedSeriesInstanceUID"]
     
     with dpg.window(
         tag=tag_inspect_sitk, label="Structure Set Info", width=popup_width, height=popup_height, pos=popup_pos,
@@ -924,15 +883,30 @@ def _popup_inspect_structure_set_info(sender, app_data, user_data):
     ):
         add_custom_button(label="RT Struct Details", theme_tag=get_hidden_button_theme(), add_separator_after=True)
         
-        # add_custom_button(label="Editable Fields", theme_tag=get_hidden_button_theme(), add_separator_after=True)
-        # add_input_field(label="Structure Set Label", default_value=StructureSetLabel, callback=update_rtstruct_info, user_data="StructureSetLabel", spacer_after=False)
+        add_custom_button(label="Read-Only Fields", theme_tag=get_hidden_button_theme(), add_spacer_after=True)
         
-        add_custom_button(label="Read-Only Fields", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_spacer_after=True)
-        add_input_field(label="Structure Set Label", default_value=StructureSetLabel, readonly=True)
-        add_input_field(label="Structure Set Name", default_value=StructureSetName, readonly=True)
-        add_input_field(label="Structure Set Date", default_value=StructureSetDate, readonly=True)
-        add_input_field(label="Structure Set Time", default_value=StructureSetTime, readonly=True)
-        add_input_field(label="Referenced Series Instance UID", default_value=ReferencedSeriesInstanceUID, readonly=True)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+            
+            for key in keys_to_show:
+                value = str(rtstruct_info_dict.get(key, ""))
+                title = str(key)
+                if "_" in title:
+                    title = title.replace('_', ' ').title()
+                    title = title.replace("Rt", "RT").replace("RTd", "RTD").replace("Cgy", "cGy")
+                # Format the title to a fixed width
+                if len(title) > char_fit:
+                    title = f"{title[:char_fit-3]}..."
+                with dpg.table_row():
+                    with dpg.group(horizontal=True):
+                        with dpg.tooltip(parent=dpg.last_item(), hide_on_activity=True):
+                            dpg.add_text(f"MetaData key: {str(key)}", wrap=size_dict["tooltip_width"])
+                        dpg.add_text(title)
+                    with dpg.group(horizontal=True):
+                        with dpg.tooltip(parent=dpg.last_item(), hide_on_activity=True):
+                            dpg.add_text(f"MetaData value: {value}", wrap=size_dict["tooltip_width"])
+                        dpg.add_input_text(default_value=value, width=size_dict["button_width"], readonly=True)
 
 def _add_rts_roi_buttons(roi_checkboxes, tag_modality_node, rts_sopiuid, list_roi_idx_sitk_refs):
     """
@@ -969,7 +943,8 @@ def _add_rts_roi_buttons(roi_checkboxes, tag_modality_node, rts_sopiuid, list_ro
                 dpg.add_text("Display ROI", wrap=size_dict["tooltip_width"])
             
             # Color picker to customize ROI color
-            dpg.add_button(width=30, callback=_popup_roi_color_picker, user_data=roi_sitk_ref)
+            btn_width = round(dpg.get_text_size("CLR")[0] * 1.1)
+            dpg.add_button(width=btn_width, callback=_popup_roi_color_picker, user_data=roi_sitk_ref)
             tag_colorbutton = dpg.last_item()
             with dpg.tooltip(parent=tag_colorbutton):
                 dpg.add_text(default_value="Customize ROI color", wrap=size_dict["tooltip_width"])
@@ -1084,59 +1059,40 @@ def _popup_inspect_roi(sender, app_data, user_data):
     roi_rx_dose = get_metadata(roi_sitk_ref, "roi_rx_dose", default=0, cast_func=lambda x: int(float(x)))
     roi_rx_fractions = get_metadata(roi_sitk_ref, "roi_rx_fractions", default=0, cast_func=lambda x: int(float(x)))
     roi_rx_site = get_metadata(roi_sitk_ref, "roi_rx_site", default="")
+    roi_color = [x for x in get_sitk_roi_display_color(roi_sitk_ref())][:3]
     
     # Get necessary data from config_manager
-    tg_263_oar_names_list = config_manager.get_tg_263_oar_names_list(ready_for_dpg=True)
-    organ_name_matching_dict = config_manager.get_organ_name_matching_dict()
-    disease_site_list = config_manager.get_disease_site_list(ready_for_dpg=True)
+    tg_263_oar_names_list = config_manager.get_tg_263_names(ready_for_dpg=True)
+    organ_name_matching_dict = config_manager.get_organ_matching_dict()
+    disease_site_list = config_manager.get_disease_sites(ready_for_dpg=True)
     
     # Get popup parameters
     popup_width, popup_height, popup_pos = get_popup_params()
-    input_width = popup_width // 2
     
     # Create unique DPG tags for the input fields
     name_option_tag = dpg.generate_uuid()
-    custom_name_group_tag = dpg.generate_uuid()
+    custom_name_row_tag = dpg.generate_uuid()
     custom_name_input_tag = dpg.generate_uuid()
-    templated_name_group_tag = dpg.generate_uuid()
+    templated_name_row_tag = dpg.generate_uuid()
+    templated_filter_row_tag = dpg.generate_uuid()
     templated_name_input_tag = dpg.generate_uuid()
-    ptv_inputs_group_tag = dpg.generate_uuid()
+    ptv_dose_row_tag = dpg.generate_uuid()
+    ptv_fractions_row_tag = dpg.generate_uuid()
+    ptv_site_row_tag = dpg.generate_uuid()
     rx_dose_input_tag = dpg.generate_uuid()
     rx_fractions_input_tag = dpg.generate_uuid()
     rx_site_input_tag = dpg.generate_uuid()
+    tag_goalerrortext = dpg.generate_uuid()
     
-    # Helper function to add input fields
-    def add_input_field(label, default_value, readonly=False, items=None, callback=None, user_data=None, tag=None, spacer_after=True):
-        """
-        Adds an input field to the popup for displaying or editing metadata.
+    # Name option selection
+    name_options = ["Match by Templated ROI Name", "Set Custom ROI Name"]
+    if any(current_roi_name == x for x in tg_263_oar_names_list):
+        default_option = "Match by Templated ROI Name"
+        templated_roi_name = current_roi_name
+    else:
+        default_option = "Set Custom ROI Name"
+        templated_roi_name = find_reformatted_mask_name(original_roi_name, rt_roi_interpreted_type, tg_263_oar_names_list, organ_name_matching_dict)
         
-        Args:
-            label (str): The label for the input field.
-            default_value (any): The default value for the field.
-            readonly (bool): Whether the field is read-only.
-            items (list, optional): List of items for a combo box input.
-            callback (function, optional): Callback function for input changes.
-            user_data (any, optional): Data passed to the callback.
-            tag (int, optional): Unique tag for the input field.
-            spacer_after (bool): Whether to add a spacer after the field.
-        """
-        if not tag:
-            tag = dpg.generate_uuid()
-        with dpg.group(horizontal=True):
-            dpg.add_text(f"{label}:".ljust(40))
-            input_kwargs = {'tag': tag, 'default_value': default_value, 'width': input_width, 'callback': callback, 'user_data': user_data}
-            if items:
-                dpg.add_combo(items=items, **input_kwargs)
-            elif isinstance(default_value, int):
-                dpg.add_input_int(readonly=readonly, **input_kwargs)
-            elif isinstance(default_value, (tuple, list)) and all(isinstance(item, int) for item in default_value):
-                dpg.add_input_intx(min_value=0, max_value=255, min_clamped=True, max_clamped=True, size=len(default_value), readonly=readonly, **input_kwargs)
-            else:
-                dpg.add_input_text(readonly=readonly, **input_kwargs)
-        
-        if spacer_after:
-            dpg.add_spacer(height=size_dict["spacer_height"])
-    
     # Callback to update SITK metadata
     def update_roi_metadata(sender, app_data, user_data):
         """
@@ -1169,15 +1125,16 @@ def _popup_inspect_roi(sender, app_data, user_data):
         """
         use_templated_roi_name = app_data == "Match by Templated ROI Name"
         
+        dpg.configure_item(custom_name_row_tag, show=not use_templated_roi_name)
+        dpg.configure_item(templated_name_row_tag, show=use_templated_roi_name)
+        dpg.configure_item(templated_filter_row_tag, show=use_templated_roi_name)
+        
         if use_templated_roi_name:
             new_name = dpg.get_value(templated_name_input_tag)
         else:
             new_name = dpg.get_value(custom_name_input_tag)
         
         on_name_change(None, new_name, None)
-        
-        dpg.configure_item(custom_name_group_tag, show=not use_templated_roi_name)
-        dpg.configure_item(templated_name_group_tag, show=use_templated_roi_name)
     
     # Callback to update SITK when name changes
     def on_name_change(sender, app_data, user_data):
@@ -1193,8 +1150,10 @@ def _popup_inspect_roi(sender, app_data, user_data):
         
         # Check if "ptv" is in the new name (case-insensitive) to show or hide the rx input fields
         is_ptv = "ptv" in new_name.lower()
-        if dpg.does_item_exist(ptv_inputs_group_tag):
-            dpg.configure_item(ptv_inputs_group_tag, show=is_ptv)
+        ptv_tags = [ptv_dose_row_tag, ptv_fractions_row_tag, ptv_site_row_tag]
+        for ptv_tag in ptv_tags:
+            if dpg.does_item_exist(ptv_tag):
+                dpg.configure_item(ptv_tag, show=is_ptv)
         
         update_roi_metadata(None, new_name, (roi_sitk_ref, "current_roi_name"))
     
@@ -1209,7 +1168,7 @@ def _popup_inspect_roi(sender, app_data, user_data):
             user_data (any): Additional data passed to the callback.
         """
         filter_text = app_data.lower()
-        templated_name_items = config_manager.get_tg_263_oar_names_list(ready_for_dpg=True)
+        templated_name_items = config_manager.get_tg_263_names(ready_for_dpg=True)
         filtered_items = [choice for choice in templated_name_items if filter_text in choice.lower()]
         dpg.configure_item(templated_name_input_tag, items=filtered_items)
     
@@ -1243,42 +1202,59 @@ def _popup_inspect_roi(sender, app_data, user_data):
         ):
         add_custom_button(label="ROI Details", theme_tag=get_hidden_button_theme(), add_separator_after=True)
         
+        # Add input fields for ROI metadata
         add_custom_button(label="Editable ROI Name", theme_tag=get_hidden_button_theme(), add_spacer_after=True)
-        
-        # Name option selection
-        name_options = ["Match by Templated ROI Name", "Set Custom ROI Name"]
-        if any(current_roi_name == x for x in tg_263_oar_names_list):
-            default_option = "Match by Templated ROI Name"
-            templated_roi_name = current_roi_name
-        else:
-            default_option = "Set Custom ROI Name"
-            templated_roi_name = find_reformatted_mask_name(original_roi_name, rt_roi_interpreted_type, tg_263_oar_names_list, organ_name_matching_dict)
-        
-        add_input_field(tag=name_option_tag, label="Naming Option", default_value=default_option, items=name_options, callback=on_name_option_change, spacer_after=False)
-        
-        # Templated name input (combo box) with filter
-        with dpg.group(tag=templated_name_group_tag, show=(default_option == "Match by Templated ROI Name")):
-            add_input_field(tag=templated_name_input_tag, label="Templated Name", default_value=templated_roi_name, items=tg_263_oar_names_list, callback=on_name_change, spacer_after=False)
-            add_input_field(label="Template Filter", default_value="", callback=on_roi_template_filter)
-        
-        # Custom name input
-        with dpg.group(tag=custom_name_group_tag, show=(default_option == "Set Custom ROI Name")):
-            add_input_field(tag=custom_name_input_tag, label="Custom Name", default_value=current_roi_name or "", callback=on_name_change)
-        
-        # PTV-specific input fields
-        is_ptv = "ptv" in current_roi_name.lower() 
-        with dpg.group(tag=ptv_inputs_group_tag, show=is_ptv):
-            add_custom_button(label="Editable PTV Fields", theme_tag=get_hidden_button_theme(), add_spacer_after=True)
-            add_input_field(tag=rx_dose_input_tag, label="Rx Dose (cGy)", default_value=roi_rx_dose, callback=update_roi_metadata, user_data=(roi_sitk_ref, "roi_rx_dose"), spacer_after=False)
-            add_input_field(tag=rx_fractions_input_tag, label="Rx Fractions", default_value=roi_rx_fractions, callback=update_roi_metadata,user_data=(roi_sitk_ref, "roi_rx_fractions"), spacer_after=False)
-            add_input_field(tag=rx_site_input_tag,label="Disease Site", default_value=roi_rx_site or disease_site_list[0], items=disease_site_list, callback=update_roi_metadata, user_data=(roi_sitk_ref, "roi_rx_site"), spacer_after=False)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+            
+            # Name option selection
+            with dpg.table_row():
+                dpg.add_text("Naming Option:")
+                dpg.add_radio_button(tag=name_option_tag, items=name_options, default_value=default_option, callback=on_name_option_change)
+            
+            # Templated name input (combo box)
+            with dpg.table_row(tag=templated_name_row_tag, show=(default_option == "Match by Templated ROI Name")):
+                dpg.add_text("Templated Name:")
+                dpg.add_combo(tag=templated_name_input_tag, items=tg_263_oar_names_list, default_value=templated_roi_name, callback=on_name_change)
+            
+            # Templated combo box filter
+            with dpg.table_row(tag=templated_filter_row_tag, show=(default_option == "Match by Templated ROI Name")):
+                dpg.add_text("Template Filter:")
+                dpg.add_input_text(callback=on_roi_template_filter)
+
+            # Custom name input
+            with dpg.table_row(tag=custom_name_row_tag, show=(default_option == "Set Custom ROI Name")):
+                dpg.add_text("Custom Name:")
+                dpg.add_input_text(tag=custom_name_input_tag, default_value=current_roi_name or "", callback=on_name_change)
+            
+            # PTV-specific input fields
+            is_ptv = "ptv" in current_roi_name.lower()
+            with dpg.table_row(tag=ptv_dose_row_tag, show=is_ptv):
+                dpg.add_text("PTV Rx Dose (cGy):")
+                dpg.add_input_int(tag=rx_dose_input_tag, default_value=roi_rx_dose, callback=update_roi_metadata, user_data=(roi_sitk_ref, "roi_rx_dose"))
+            with dpg.table_row(tag=ptv_fractions_row_tag, show=is_ptv):
+                dpg.add_text("PTV Rx Fractions:")
+                dpg.add_input_int(tag=rx_fractions_input_tag, default_value=roi_rx_fractions, callback=update_roi_metadata, user_data=(roi_sitk_ref, "roi_rx_fractions"))
+            with dpg.table_row(tag=ptv_site_row_tag, show=is_ptv):
+                dpg.add_text("PTV Disease Site:")
+                dpg.add_combo(tag=rx_site_input_tag, items=disease_site_list, default_value=roi_rx_site or disease_site_list[0], callback=update_roi_metadata, user_data=(roi_sitk_ref, "roi_rx_site"))
+            
+            # Goals input field
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("ROI Goals must be a dictionary that meet the rules described below.", wrap=size_dict["tooltip_width"])
+                    dpg.add_text("ROI Goals:")
+                dpg.add_input_text(default_value=roi_goals, callback=verify_roi_goal_input, user_data=(roi_sitk_ref, tag_roi_button, tag_goalerrortext))
+            
+            # Goals error output
+            with dpg.table_row():
+                dpg.add_text()
+                dpg.add_text(tag=tag_goalerrortext, default_value="", color=(192, 57, 43), wrap=round(popup_width * 0.9))
         
         # Goals input field
-        add_custom_button(label="Editable ROI Goals", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_spacer_after=True)
-        tag_goalerrortext = dpg.generate_uuid()
-        add_input_field(label="Goals", default_value=roi_goals, readonly=False, callback=verify_roi_goal_input, user_data=(roi_sitk_ref, tag_roi_button, tag_goalerrortext))
-        dpg.add_text(tag=tag_goalerrortext, default_value="", color=(192, 57, 43), wrap=round(popup_width * 0.9))
-        dpg.add_spacer(height=size_dict["spacer_height"])
+        add_custom_button(label="Rules for ROI Goals", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_spacer_after=True)
         dpg.add_text(
             wrap=round(popup_width * 0.9), 
             default_value=(
@@ -1304,13 +1280,29 @@ def _popup_inspect_roi(sender, app_data, user_data):
         
         # Read-only fields
         add_custom_button(label="Read-Only Fields", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_spacer_after=True)
-        add_input_field(label="Original Name", default_value=original_roi_name, readonly=True)
-        add_input_field(label="ROI Number", default_value=roi_number, readonly=True)
-        add_input_field(label="ROI Display Color", default_value=get_sitk_roi_display_color(roi_sitk_ref()), readonly=True)
-        add_input_field(label="Interpreted Type", default_value=rt_roi_interpreted_type, readonly=True)
-        add_input_field(label="Physical Properties", default_value=roi_physical_properties, readonly=True)
-        add_input_field(label="Material ID", default_value=material_id, readonly=True)
-    
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+            
+            with dpg.table_row():
+                dpg.add_text("Original Name:")
+                dpg.add_input_text(default_value=original_roi_name, readonly=True)
+            with dpg.table_row():
+                dpg.add_text("ROI Number:")
+                dpg.add_input_int(default_value=roi_number, readonly=True)
+            with dpg.table_row():
+                dpg.add_text("ROI Display Color:")
+                dpg.add_input_intx(default_value=roi_color, size=len(roi_color), readonly=True, min_value=0, max_value=255, min_clamped=True, max_clamped=True)
+            with dpg.table_row():
+                dpg.add_text("Interpreted Type:")
+                dpg.add_input_text(default_value=rt_roi_interpreted_type, readonly=True)
+            with dpg.table_row():
+                dpg.add_text("Physical Properties:")
+                dpg.add_input_text(default_value=roi_physical_properties, readonly=True)
+            with dpg.table_row():
+                dpg.add_text("Material ID:")
+                dpg.add_input_text(default_value=material_id, readonly=True)
+
 def _remove_roi(sender, app_data, user_data):
     """
     Removes an ROI from the Data Manager after user confirmation.
@@ -1423,7 +1415,7 @@ def _update_new_roi_name(roi_sitk_ref, tag_roi_button=None, tag_roitooltiptext=N
     
     if not roi_rx_site:
         config_manager = get_user_data("config_manager")
-        disease_site_list_base = config_manager.get_disease_site_list(ready_for_dpg=True)[0]
+        disease_site_list_base = config_manager.get_disease_sites(ready_for_dpg=True)[0]
         found_disease_site = find_disease_site(None, None, [current_roi_name, original_roi_name])
         
         if not found_disease_site or found_disease_site == disease_site_list_base:
