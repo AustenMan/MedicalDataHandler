@@ -46,7 +46,8 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
    - **Automated Structure Name Matching & Renaming** following [TG-263](https://www.aapm.org/pubs/reports/RPT_263.pdf).  
 - ✅ **Provide research-focused validation tools** to analyze DICOM metadata and catch errors before they propagate in downstream applications.  
 - ✅ **Enable specialized post-processing**, including:  
-   - **CT HU-to-RED conversion** (Hounsfield Units → Relative Electron Density).  
+   - **CT HU-to-RED conversion** (Hounsfield Units → Relative Electron Density)  
+     - **Sample values are provided for convenience**, however, it is **STRONGLY ADVISED** to **update** these values in the configuration files to **align with your institutional data**.  
    - **Region-specific RED overrides** for segmented structures.  
    - **Dose Summation** across multiple dose distributions.  
 
