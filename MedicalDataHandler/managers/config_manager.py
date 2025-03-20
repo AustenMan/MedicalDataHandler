@@ -49,6 +49,8 @@ class ConfigManager:
             "user_config": ("user_config.json", dict),
             "organ_matching": ("organ_matching.json", dict),
             "window_presets": ("window_presets.json", dict),
+            "ct_HU_map_vals": ("ct_HU_map_vals.json", list),
+            "ct_RED_map_vals": ("ct_RED_map_vals.json", list),
             "disease_sites": ("disease_sites.json", list),
             "machine_names": ("machine_names.json", list),
             "tg_263_names": ("tg263_names.json", list),
@@ -353,6 +355,14 @@ class ConfigManager:
     def get_window_presets(self):
         """ Retrieve the window_presets dictionary. """
         return self.configs.get("window_presets", {})
+    
+    def get_ct_HU_map_vals(self):
+        """ Retrieve the CT HU map values list. """
+        return self.configs.get("ct_HU_map_vals", [])
+
+    def get_ct_RED_map_vals(self):
+        """ Retrieve the CT RED map values list. """
+        return self.configs.get("ct_RED_map_vals", [])
     
     def get_disease_sites(self, ready_for_dpg=False):
         """ Retrieve the disease_sites list. """

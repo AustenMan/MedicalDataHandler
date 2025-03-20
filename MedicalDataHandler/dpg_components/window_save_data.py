@@ -366,6 +366,7 @@ def _process_image_saving(sender, save_data_dict, base_save_path):
     keep_custom_params = dpg.get_value(save_data_dict["main_checkboxes"]["keep_custom_params"])
     save_in_bulk = sender == save_data_dict["execute_bulk_save_tag"]
     data_manager = get_user_data(td_key="data_manager")
+    config_manager = get_user_data(td_key="config_manager")
     
     convert_ct_hu_to_red = dpg.get_value(save_data_dict["main_checkboxes"]["convert_ct_hu_to_red"])
     override_image_with_roi_RED = dpg.get_value(save_data_dict["main_checkboxes"]["override_image_with_roi_RED"])
@@ -394,7 +395,7 @@ def _process_image_saving(sender, save_data_dict, base_save_path):
         modality = image_dict["modality"]
         if modality.upper().strip() == "CT" and convert_ct_hu_to_red:
             data_array = sitk_to_array(image_sitk)
-            data_array = create_HU_to_RED_map()(data_array) # Convert HU to RED
+            data_array = create_HU_to_RED_map(hu_values=config_manager.get_ct_HU_map_vals(), red_values=config_manager.get_ct_RED_map_vals())(data_array) # Convert HU to RED
             
             if roi_overrides:
                 for roi_sitk_ref, roi_red in roi_overrides:
