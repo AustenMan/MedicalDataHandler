@@ -4,6 +4,7 @@
 
 <h1 align="center">MedicalDataHandler</h1>  
 <p align="center"><em>A Research-Oriented Graphical User Interface for DICOM Processing, Image Analysis, and Data Management</em></p>
+<p align="center"><em><a href="https://github.com/AustenMan/MedicalDataHandler/releases"><strong>🔗 Only looking for the latest EXE? Click here!</strong></a></em></p>
 
 ---
 
