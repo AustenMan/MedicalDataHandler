@@ -268,7 +268,7 @@ class PatientData:
             raise ValueError("Can only merge another PatientData instance.")
 
         if self.MRN != other.MRN or self.Name.lower() != other.Name.lower():
-            logger.error(f"Merge aborted due to mismatch in MRN/Name: ({self.MRN}, {self.Name}) != ({other.MRN}, {other.Name})")
+            logger.error(f"Merge aborted due to mismatch in MRN/Name: ({self.MRN}, {self.Name}) != ({other.MRN}, {other.Name}), previous data may be lost.")
             return
 
         for frame, modalities in other.DicomDict.items():

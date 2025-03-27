@@ -271,7 +271,7 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
     dpg.set_value(tag_table_page_input, table_page)
     
     # Load relevant patient data
-    subset_pt_data = dcm_mgr.get_patient_data_objects(subset_size=num_table_rows, subset_idx=table_index)
+    subset_pt_data = dcm_mgr.load_patient_data_objects(subset_size=num_table_rows, subset_idx=table_index)
     dpg.set_item_user_data(tag_data_window, subset_pt_data)
     
     # Show the data window and create a new data table

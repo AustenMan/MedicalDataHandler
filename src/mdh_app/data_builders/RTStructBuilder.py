@@ -328,33 +328,41 @@ class RTStructBuilder:
         organ_match_dict = self.conf_mgr.get_organ_matching_dict()
         unmatched_organ_name = self.conf_mgr.get_unmatched_organ_name()
 
-        self.ss_mgr.startup_executor(use_process_pool=True)
-        if self._should_exit():
-            return False
-
-        futures: List[Future] = [
-            future for roi_info_dict in self.roi_info_dicts.values() if (
-                future := self.ss_mgr.submit_executor_action(
-                    build_single_mask, roi_info_dict, sitk_image_params, tg_263_names, organ_match_dict, unmatched_organ_name
-                )
-            ) is not None
-        ]
-        
         masks: List[sitk.Image] = []
-        for future in as_completed(futures):
-            if self._should_exit():
-                break
-            try:
-                result = future.result()
-                if result is not None:
-                    masks.append(result)
-            except Exception as e:
-                logger.error(f"Failed to build an ROI mask." + get_traceback(e))
-            finally:
-                if isinstance(future, Future) and not future.done():
-                    future.cancel()
         
-        self.ss_mgr.shutdown_executor()
+        self.ss_mgr.startup_executor(use_process_pool=True)
+        try:
+            futures = [
+                future for roi_info_dict in self.roi_info_dicts.values() 
+                if 
+                (
+                    not self._should_exit() and
+                    (
+                        future := self.ss_mgr.submit_executor_action(
+                            build_single_mask, roi_info_dict, sitk_image_params, tg_263_names, organ_match_dict, unmatched_organ_name
+                        )
+                    ) is not None
+                )
+            ] if not self._should_exit() else []
+            
+            for future in as_completed(futures):
+                if self._should_exit():
+                    break
+                
+                try:
+                    result = future.result()
+                    if result is not None:
+                        masks.append(result)
+                except Exception as e:
+                    logger.error(f"Failed to build an ROI mask." + get_traceback(e))
+                finally:
+                    if isinstance(future, Future) and not future.done():
+                        future.cancel()
+        except Exception as e:
+            logger.error(f"Error during mask building: {e}" + get_traceback(e))
+        finally:
+            self.ss_mgr.shutdown_executor()
+        
         if self._should_exit():
             return False
 

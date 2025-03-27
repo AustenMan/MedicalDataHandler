@@ -499,51 +499,56 @@ class RTPlanBuilder:
             self.rt_plan_info_dict["number_of_treatment_beams"] = 0
             return
         
-        self.ss_mgr.startup_executor(use_process_pool=True)
         beam_dose_info = self._extract_beam_dose()
+        beam_dict: Dict[Any, Any] = {}
         futures = []
         
-        for beam_sequence_item in beam_sequence:
-            if self._should_exit():
-                break
+        self.ss_mgr.startup_executor(use_process_pool=True)
+        try:
+            for beam_sequence_item in beam_sequence:
+                if self._should_exit():
+                    break
+                
+                # Backend beam number for linking in DICOM format
+                beam_number = get_dict_tag_values(beam_sequence_item, "300A00C0") 
+                if beam_number is None:
+                    continue
+                
+                # Type should be one of: TREATMENT, OPEN_PORTFILM, TRMT_PORTFILM, CONTINUATION, SETUP
+                treatment_delivery_type = get_dict_tag_values(beam_sequence_item, "300A00CE") 
+                if treatment_delivery_type != "TREATMENT":
+                    continue
+                
+                beam_dose = beam_dose_info.get(beam_number, {}).get('beam_dose')
+                beam_meterset = beam_dose_info.get(beam_number, {}).get('beam_meterset')
+                
+                # Process each beam in a separate future
+                future = self.ss_mgr.submit_executor_action(
+                    process_single_beam, beam_sequence_item, beam_number, treatment_delivery_type, beam_dose, beam_meterset, self.read_beam_cp_data,
+                )
+                if future is not None:
+                    futures.append(future)
             
-            # Backend beam number for linking in DICOM format
-            beam_number = get_dict_tag_values(beam_sequence_item, "300A00C0") 
-            if beam_number is None:
-                continue
-            
-            # Type should be one of: TREATMENT, OPEN_PORTFILM, TRMT_PORTFILM, CONTINUATION, SETUP
-            treatment_delivery_type = get_dict_tag_values(beam_sequence_item, "300A00CE") 
-            if treatment_delivery_type != "TREATMENT":
-                continue
-            
-            beam_dose = beam_dose_info.get(beam_number, {}).get('beam_dose')
-            beam_meterset = beam_dose_info.get(beam_number, {}).get('beam_meterset')
-            
-            # Process each beam in a separate future
-            future = self.ss_mgr.submit_executor_action(
-                process_single_beam, beam_sequence_item, beam_number, treatment_delivery_type, beam_dose, beam_meterset, self.read_beam_cp_data,
-            )
-            if future is not None:
-                futures.append(future)
+            # Collect results from futures
+            for future in as_completed(futures):
+                if self._should_exit():
+                    break
+                
+                try:
+                    beam_info = future.result()
+                    if beam_info:
+                        beam_number = beam_info["beam_number"]
+                        beam_dict[beam_number] = beam_info
+                except Exception as e:
+                    logger.error("Failed to process beam information." + get_traceback(e))
+                finally:
+                    if isinstance(future, Future) and not future.done():
+                        future.cancel()
+        except Exception as e:
+            logger.error("Failed to extract beam information." + get_traceback(e))
+        finally:
+            self.ss_mgr.shutdown_executor()
         
-        # Collect results from futures
-        beam_dict: Dict[Any, Any] = {}
-        for future in as_completed(futures):
-            if self._should_exit():
-                break
-            try:
-                beam_info = future.result()
-                if beam_info:
-                    beam_number = beam_info["beam_number"]
-                    beam_dict[beam_number] = beam_info
-            except Exception as e:
-                logger.error("Failed to process beam information." + get_traceback(e))
-            finally:
-                if isinstance(future, Future) and not future.done():
-                    future.cancel()
-        
-        self.ss_mgr.shutdown_executor()
         if self._should_exit():
             return
         

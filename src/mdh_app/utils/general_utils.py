@@ -10,7 +10,7 @@ import functools
 from tkinter import Tk
 from pathlib import Path
 from itertools import islice
-from typing import Any, Iterable, Iterator, List, Tuple, Union, Optional, Dict, Callable
+from typing import Any, Iterable, Iterator, List, Tuple, Union, Optional, Dict, Callable, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -134,14 +134,51 @@ def get_source_dir() -> str:
     source_dir = os.path.dirname(mdh_app_dir)
     return source_dir
 
-def format_time(seconds: Optional[float]) -> str:
-    """Convert seconds to a formatted string HH:MM:SS."""
-    if seconds is None:
-        return "00:00:00"
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    return f"{hours:02}:{minutes:02}:{secs:02}"
+def format_time(
+    seconds: Optional[float],
+    at_least: Optional[Literal["h", "m", "s", "ms"]] = None,
+    hide_ms_if_seconds_gt_1: bool = True,
+) -> str:
+    """
+    Convert seconds (float) to a formatted string like '03h 05m 09s 041ms',
+    omitting leading zero-value units unless `at_least` specifies a minimum unit,
+    and optionally hides milliseconds if seconds > 1.
+
+    Args:
+        seconds (Optional[float]): Time in seconds.
+        at_least (str, optional): Minimum unit to include. One of 'h', 'm', 's', 'ms'.
+        hide_ms_if_seconds_gt_1 (bool): If True, milliseconds are hidden if seconds > 1.
+
+    Returns:
+        str: Formatted time string.
+    """
+    if seconds is None or seconds < 0:
+        return "00ms"
+
+    total_ms = int(seconds * 1000)
+    hours = total_ms // 3600000
+    total_ms %= 3600000
+    minutes = total_ms // 60000
+    total_ms %= 60000
+    secs = total_ms // 1000
+    ms = total_ms % 1000
+
+    unit_order = ["h", "m", "s", "ms"]
+    at_least_idx = unit_order.index(at_least) if at_least in unit_order else -1
+
+    parts = []
+    if hours or at_least_idx <= 0:
+        parts.append(f"{hours:02}h")
+    if minutes or (hours and not parts) or at_least_idx <= 1:
+        parts.append(f"{minutes:02}m")
+    if secs or (minutes and not parts) or at_least_idx <= 2:
+        parts.append(f"{secs:02}s")
+
+    show_ms = not (hide_ms_if_seconds_gt_1 and seconds > 1)
+    if not parts or (ms and show_ms):
+        parts.append(f"{ms:03}ms")
+
+    return " ".join(parts)
 
 def get_main_screen_size() -> Tuple[int, int]:
     """Return the width and height of the main screen."""

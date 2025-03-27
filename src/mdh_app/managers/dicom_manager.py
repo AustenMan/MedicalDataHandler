@@ -3,7 +3,6 @@ import json
 import logging
 import pydicom
 from pydicom.tag import Tag
-from time import time
 from concurrent.futures import as_completed, Future
 from typing import Callable, Optional, Set, Dict, List, Tuple, Any
 
@@ -53,51 +52,49 @@ LINK_WORKER_DICOM_TAGS = [
 # -----------------------------------------------------------------------------
 # Helper Functions
 # -----------------------------------------------------------------------------
-def find_dicom_files(
-    directory: str,
-    check_exit: Optional[Callable[[], bool]] = None,
-    progress_callback: Optional[Callable[[int, int, str], None]] = None
-) -> Set[str]:
-    """Recursively find all DICOM (.dcm) files in the specified directory."""
-    check_exit = check_exit or (lambda: False)
-    progress_callback = progress_callback or (lambda current, total, text, terminated: logger.info(text))
+
+def collect_independent_subdirs(base_dir: str, min_paths: int) -> List[str]:
+    """
+    Try to collect at least `min_paths` subdirectories under `base_dir`, 
+    preferring shallowest directories first.
     
-    dicom_files: Set[str] = set()
-    dcm_suffix = ".dcm"
+    Args:
+        base_dir (str): The root directory to search.
+        min_paths (int): The ideal minimum number of independent subdirectories to return.
+
+    Returns:
+        List[str]: A list of directories under `base_dir` with size >= min_paths.
+    """
+    if not os.path.isdir(base_dir):
+        return []
     
-    # Speed up by avoiding repeated function lookups
-    join_fn = os.path.join
-    lower_fn = str.lower
-    endswith_fn = str.endswith
-    dcm_add_fn = dicom_files.add
+    dirs = [subdir for d in os.listdir(base_dir) if (subdir := os.path.join(base_dir, d)) and os.path.isdir(subdir)]
     
-    # Walk through the directory to find all DICOM files
-    for dirpath, _, filenames in os.walk(directory):
-        progress_callback(0, len(dicom_files), f"Searching for DICOMs: {dirpath}")
-        for filename in filenames:
-            if check_exit():
-                return set()
-            if endswith_fn(lower_fn(filename), dcm_suffix):
-                dcm_add_fn(join_fn(dirpath, filename))
-    
+    i = 0
+    while len(dirs) < min_paths and i < len(dirs):
+        current = dirs[i]
+        try:
+            children = [os.path.join(current, d) for d in os.listdir(current)
+                        if os.path.isdir(os.path.join(current, d))]
+            if children:
+                # Replace parent with children
+                dirs = dirs[:i] + children + dirs[i+1:]
+                # Do not increment i, stay at same position to check new children
+                continue
+        except Exception:
+            pass
+        i += 1
+
+    return dirs
+
+def scan_folder_for_dicom(folder: str) -> List[str]:
+    """Recursively scan a folder for DICOM files."""
+    dicom_files = []
+    for root, _, files in os.walk(folder):
+        dicom_files.extend(os.path.join(root, f) for f in files if f.lower().endswith(".dcm"))
     return dicom_files
 
-def add_dicom_to_patient_data(
-    patient_dict: Dict[Tuple[str, str], PatientData],
-    filepath: str,
-    patient_id: str,
-    patient_name: str,
-    for_uid: str,
-    modality: str,
-    sop_instance_uid: str
-) -> None:
-    """Add a DICOM file's metadata to the corresponding PatientData object."""
-    key = (patient_id, patient_name)
-    if key not in patient_dict:
-        patient_dict[key] = PatientData(patient_id, patient_name)
-    patient_dict[key].add_to_dicom_dict(for_uid, modality, sop_instance_uid, filepath, update_obj=False)
-
-def read_dicom_metadata_worker(filepath: str) -> Optional[Tuple[str, str, str, str, str, str]]:
+def read_dicom_metadata(filepath: str) -> Optional[Tuple[str, str, str, str, str, str]]:
     """
     Read essential metadata from a DICOM file.
 
@@ -140,7 +137,22 @@ def read_dicom_metadata_worker(filepath: str) -> Optional[Tuple[str, str, str, s
     
     return (filepath, patient_id, patient_name, for_uid, modality, sop_instance_uid)
 
-def link_dicom_references_worker(filepath: str) -> Dict[str, Any]:
+def add_dicom_to_patient_data(
+    patient_dict: Dict[Tuple[str, str], PatientData],
+    filepath: str,
+    patient_id: str,
+    patient_name: str,
+    for_uid: str,
+    modality: str,
+    sop_instance_uid: str
+) -> None:
+    """Add a DICOM file's metadata to the corresponding PatientData object."""
+    key = (patient_id, patient_name)
+    if key not in patient_dict:
+        patient_dict[key] = PatientData(patient_id, patient_name)
+    patient_dict[key].add_to_dicom_dict(for_uid, modality, sop_instance_uid, filepath, update_obj=False)
+
+def link_dicom_references(filepath: str) -> Dict[str, Any]:
     """
     Read a DICOM file and extract its linked references.
 
@@ -229,70 +241,19 @@ def link_dicom_references_worker(filepath: str) -> Dict[str, Any]:
     
     return {filepath: links}
 
-def return_patient_data_objects_count(directory: str) -> int:
-    """Returns the number of patient data objects in the directory."""
-    if not directory or not os.path.isdir(directory):
-        logger.error(f"Invalid patient data directory provided: {directory}")
-        return 0
-    
+def load_pdata_object(file_path: str) -> Optional[PatientData]:
+    """Load a PatientData object from a JSON file."""
     try:
-        json_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".json")]
+        with open(file_path, "r") as file:
+            data = json.load(file)
+        patient_data = PatientData.from_dict(data)
+        patient_data.update_object_path(file_path)
+        return patient_data
     except Exception as e:
-        logger.error(f"Failed to list directory {directory}." + get_traceback(e))
-        return 0
-    
-    return len(json_files)
+        logger.error(f"Failed to read file '{file_path}'." + get_traceback(e))
+        return None
 
-def load_patient_data_objects(
-    directory: str,
-    check_exit: Optional[Callable[[], bool]] = None,
-    progress_callback: Optional[Callable[[int, int, str], None]] = None,
-    subset_size: Optional[int] = None,
-    subset_idx: Optional[int] = None
-) -> Dict[Tuple[str, str], PatientData]:
-    """Load all PatientData objects from JSON files in the given directory."""
-    if not directory or not os.path.isdir(directory):
-        logger.error(f"Invalid patient data directory provided: {directory}")
-        return {}
-    
-    check_exit = check_exit or (lambda: False)
-    patient_data_dict: Dict[Tuple[str, str], PatientData] = {}
-    
-    try:
-        json_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".json")]
-    except Exception as e:
-        logger.error(f"Failed to list directory {directory}." + get_traceback(e))
-        return {}
-    
-    if isinstance(subset_size, int) and isinstance(subset_idx, int):
-        if subset_size <= 0 or subset_idx < 0:
-            logger.error(f"Invalid subset size or index: {subset_size}, {subset_idx}")
-            return {}
-        json_files = json_files[subset_idx * subset_size : (subset_idx + 1) * subset_size]
-    
-    if progress_callback is not None:
-        progress_callback(0, 0, "Loading patient data from found files...")
-    
-    files_read = 0
-    for filepath in json_files:
-        if check_exit():
-            return {}
-        try:
-            with open(filepath, "r") as file:
-                data = json.load(file)
-            patient_data = PatientData.from_dict(data)
-            patient_data.update_object_path(filepath)
-            patient_data_dict[(patient_data.MRN, patient_data.Name)] = patient_data
-        except Exception as e:
-            logger.error(f"Failed to read file '{filepath}'." + get_traceback(e))
-        finally:
-            files_read += 1
-            if progress_callback is not None:
-                progress_callback(0, files_read, "Loading patient data from found files...")
-    
-    return patient_data_dict
-
-def save_patient_data_object(patient_data: PatientData, directory: str) -> None:
+def save_pdata_object(patient_data: PatientData, directory: str) -> None:
     """Save a PatientData object to a JSON file in the specified directory."""
     if not isinstance(patient_data, PatientData):
         logger.error(f"Invalid patient data, expected type 'PatientData': {type(patient_data)}")
@@ -306,12 +267,18 @@ def save_patient_data_object(patient_data: PatientData, directory: str) -> None:
     filepath = os.path.join(directory, filename)
     patient_data.update_object_path(filepath)
     
+    # Merge with existing data if the file already exists
+    if os.path.isfile(filepath):
+        prev_data = load_pdata_object(filepath)
+        if prev_data:
+            patient_data._internal_merge(prev_data)
+    
     atomic_save(
         filepath=filepath, 
         write_func=lambda file: json.dump(patient_data.to_dict(), file),
     )
 
-def remove_patient_data(patient_data: PatientData, directory: str) -> bool:
+def remove_pdata_object(patient_data: PatientData, directory: str) -> bool:
     """Delete a specific PatientData JSON file by MRN and Name."""
     if not isinstance(patient_data, PatientData):
         logger.error(f"Invalid patient data object provided, expected 'PatientData': {type(patient_data)}")
@@ -336,7 +303,7 @@ def remove_patient_data(patient_data: PatientData, directory: str) -> bool:
         logger.error(f"Failed to delete patient data file: {filepath}" + get_traceback(e))
         return False
 
-def remove_all_patient_data(directory: str) -> None:
+def remove_all_pdata(directory: str) -> None:
     """Delete all PatientData JSON files in the specified directory."""
     if not directory or not os.path.isdir(directory):
         logger.error(f"Invalid or missing patient data directory: {directory}")
@@ -363,7 +330,6 @@ class DicomManager():
     Manages DICOM file processing: reading metadata, linking references,
     and storing/retrieving structured PatientData objects.
     """
-    
     def __init__(self, conf_mgr: ConfigManager, ss_mgr: SharedStateManager) -> None:
         """
         Initialize the DicomManager.
@@ -376,9 +342,11 @@ class DicomManager():
         self.ss_mgr = ss_mgr
         
         # Default progress callback simply logs the description.
-        self.progress_callback: Callable[[int, int, str], None] = lambda current, total, desc, terminated: logger.info(desc)
+        self.progress_callback: Callable[[int, int, str, bool], None] = (
+            lambda current, total, desc, terminated=False: logger.info(desc)
+        )
         
-        # Use is_set() to check events.
+        # Event-check callbacks
         self.cleanup_check: Callable[[], bool] = (
             self.ss_mgr.cleanup_event.is_set
             if self.ss_mgr and hasattr(self.ss_mgr, "cleanup_event")
@@ -389,8 +357,6 @@ class DicomManager():
             if self.ss_mgr and hasattr(self.ss_mgr, "shutdown_event")
             else lambda: False
         )
-        
-        self.patient_data_dir: Optional[str] = None
     
     def set_progress_callback(self, callback: Callable[[int, int, str], None]) -> None:
         """Set a callback function for progress updates."""
@@ -399,42 +365,36 @@ class DicomManager():
             return
         self.progress_callback = callback
     
-    def update_patient_data_directory(self) -> None:
-        """Update the directory path where PatientData objects are stored."""
+    def get_patient_data_directory(self) -> Optional[str]:
+        """Get the directory path where PatientData objects are stored."""
         if not self.conf_mgr:
             logger.error("No ConfigManager provided. Cannot update PatientData directory.")
-            self.patient_data_dir = None
-            return
+            return None
         
         dir_path = self.conf_mgr.get_patient_objects_dir()
         if not dir_path or not os.path.isdir(dir_path):
             logger.error(f"Invalid PatientData directory: {dir_path}")
-            self.patient_data_dir = None
-            return
+            return None
         
-        self.patient_data_dir = dir_path
-    
-    def get_patient_data_directory(self) -> Optional[str]:
-        """Get the directory path where PatientData objects are stored."""
-        self.update_patient_data_directory()
-        return self.patient_data_dir
-    
-    def get_patient_data_objects(self, subset_size: Optional[int], subset_idx: Optional[int]) -> Optional[Dict[Tuple[str, str], PatientData]]:
-        """Load PatientData objects from JSON files in the patient data directory."""
-        dir_path = self.get_patient_data_directory()
-        return load_patient_data_objects(dir_path, self.get_exit_status, None, subset_size, subset_idx)
+        return dir_path
     
     def get_num_patient_data_objects(self) -> int:
         """Get the number of PatientData objects in the patient data directory."""
         dir_path = self.get_patient_data_directory()
-        return return_patient_data_objects_count(dir_path)
+        if not dir_path:
+            return 0
+        
+        try:
+            json_files = [os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(".json")]
+        except Exception as e:
+            logger.error(f"Failed to list directory {dir_path}." + get_traceback(e))
+            return 0
+        
+        return len(json_files)
     
-    def get_exit_status(self, update_progress: bool = True) -> bool:
+    def get_exit_status(self) -> bool:
         """Check if a cleanup or shutdown event has been triggered."""
-        should_exit = self.cleanup_check() or self.shutdown_check()
-        if should_exit and update_progress:
-            self.progress_callback(0, 0, "Aborting the current task...", terminated=True)
-        return should_exit
+        return self.cleanup_check() or self.shutdown_check()
     
     def delete_patient_data_object(self, pt_data_obj: PatientData) -> bool:
         """Delete a specific PatientData JSON file."""
@@ -442,152 +402,365 @@ class DicomManager():
             logger.error(f"Invalid patient data object provided, expected 'PatientData': {type(pt_data_obj)}")
             return False
         
-        return remove_patient_data(pt_data_obj, self.get_patient_data_directory())
+        dir_path = self.get_patient_data_directory()
+        if not dir_path:
+            return False
+        
+        return remove_pdata_object(pt_data_obj, dir_path)
     
     def delete_all_patient_data_objects(self) -> None:
         """Delete all PatientData JSON files in the patient data directory."""
-        return remove_all_patient_data(self.get_patient_data_directory())
+        return remove_all_pdata(self.get_patient_data_directory())
     
-    def process_dicom_directory(self, dicom_dir: str) -> None:
-        """Search for DICOM files in a directory, read their metadata, and save them as PatientData objects."""
-        self.progress_callback(0, 0, "Ready to find DICOM files. Please select a valid directory.")
+    def _parallelized_load_patient_data_objects(
+        self, dir_path: str, subset_size: Optional[int], subset_idx: Optional[int], use_pbar: bool = True
+    ) -> Dict[Tuple[str, str], PatientData]:
+        """Helper function to load PatientData objects in parallel. Must already have started the executor."""
+        start_info = f"Loading patient data from '{dir_path}'..."
+        self.progress_callback(0, 0, start_info) if use_pbar else logger.info(start_info)
         
-        if not dicom_dir or not os.path.isdir(dicom_dir):
-            self.progress_callback(0, 0, f"Invalid DICOM directory: {dicom_dir}")
-            return
+        try:
+            json_files = [os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(".json")]
+        except Exception as e:
+            exit_info = f"Aborted loading patient data; invalid directory: {dir_path}" + get_traceback(e)
+            self.progress_callback(100, 100, exit_info, True) if use_pbar else logger.error(exit_info)
+            return {}
         
-        patient_data_dir = self.get_patient_data_directory()
-        if not patient_data_dir:
-            self.progress_callback(0, 0, f"Task aborted. The patient data directory is invalid: {patient_data_dir}")
-            return
+        if isinstance(subset_size, int) and isinstance(subset_idx, int):
+            if subset_size <= 0 or subset_idx < 0:
+                exit_info = f"Invalid subset size or index: {subset_size}, {subset_idx}"
+                self.progress_callback(100, 100, exit_info, True) if use_pbar else logger.error(exit_info)
+                return {}
+            json_files = json_files[subset_idx * subset_size : (subset_idx + 1) * subset_size]
         
-        if self.get_exit_status():
-            return
+        if not json_files:
+            exit_info = f"No patient data found in this directory: {dir_path}"
+            self.progress_callback(100, 100, exit_info, True) if use_pbar else logger.info(exit_info)
+            return {}
         
-        self.progress_callback(0, 0, f"Searching for DICOM files in '{dicom_dir}'...")
-        dicom_files = find_dicom_files(dicom_dir, self.get_exit_status, self.progress_callback)
+        files_read = 0
+        num_files = len(json_files)
+        patient_data_dict: Dict[Tuple[str, str], PatientData] = {}
+        futures = [
+            fu for fp in json_files 
+            if (
+                not self.get_exit_status() and
+                (fu := self.ss_mgr.submit_executor_action(load_pdata_object, fp)) is not None
+                )
+        ] if not self.get_exit_status() else []
         
-        if not dicom_files:
-            self.progress_callback(0, 0, f"No DICOM files found in: {dicom_dir}")
-            return
-        
-        if self.get_exit_status():
-            return
-        
-        total_found = len(dicom_files)
-        self.progress_callback(0, total_found, f"Found {total_found} files. Validating against known files...")
-        existing_data = load_patient_data_objects(patient_data_dir, self.get_exit_status, None)
-        # Exclude already processed files.
-        dicom_files.difference_update({fp for patient in existing_data.values() for fp in patient.return_filepaths()})
-        remaining_files = len(dicom_files)
-        
-        if remaining_files == 0:
-            self.progress_callback(total_found, total_found, "No new DICOM files to process.")
-            return
-        
-        dicom_files = sorted(dicom_files, key=lambda x: os.path.dirname(x))
-        self.ss_mgr.startup_executor(use_process_pool=False)
-        chunk_size = 10000
-        processed_count = 0
-        
-        self.progress_callback(0, remaining_files, f"Processing {remaining_files} new DICOM files...")
-        
-        for chunk in chunked_iterable(iter(dicom_files), chunk_size):
-            if not chunk or self.get_exit_status(update_progress=False):
+        for future in as_completed(futures):
+            if self.get_exit_status():
                 break
             
-            submit_start = time()
+            try:
+                pdata_result: Optional[PatientData] = future.result()
+                if pdata_result:
+                    patient_data_dict[(pdata_result.MRN, pdata_result.Name)] = pdata_result
+            except Exception as e:
+                logger.error(f"Failed to load a patient's data." + get_traceback(e))
+            finally:
+                if isinstance(future, Future) and not future.done():
+                    future.cancel()
+                files_read += 1
+                self.progress_callback(0, files_read, start_info) if use_pbar else logger.info(start_info + f" {files_read}/{num_files}")
+        
+        if self.get_exit_status():
+            exit_info = "Aborted loading patient data at user request!"
+            self.progress_callback(100, 100, exit_info, True) if use_pbar else logger.info(exit_info)
+            return {}
+        
+        num_patients = len(patient_data_dict)
+        completed_info = f"Loaded data for {num_patients} patient(s) from {num_files} file(s)."
+        self.progress_callback(0, num_patients, completed_info) if use_pbar else logger.info(completed_info)
+        return patient_data_dict
+    
+    def load_patient_data_objects(self, subset_size: Optional[int], subset_idx: Optional[int]) -> Dict[Tuple[str, str], PatientData]:
+        """Load PatientData objects from the patient data directory."""
+        dir_path = self.get_patient_data_directory()
+        if not dir_path:
+            self.progress_callback(100, 100, f"Aborted loading patient data; invalid directory: {dir_path}", True)
+            return {}
+        
+        if self.get_exit_status():
+            self.progress_callback(100, 100, "Aborted loading patient data at user request!", True)
+            return {}
+        
+        patient_data_dict: Dict[Tuple[str, str], PatientData] = {}
+        
+        # Start the executor for parallel processing
+        self.ss_mgr.startup_executor(use_process_pool=False)
+        try:
+            patient_data_dict = self._parallelized_load_patient_data_objects(dir_path, subset_size, subset_idx, False)
+        except Exception as e:
+            self.progress_callback(100, 100, f"Failure in loading patient data!" + get_traceback(e), True)
+        finally:
+            self.ss_mgr.shutdown_executor()
+        
+        return patient_data_dict
+    
+    def _validate_can_process(self, dicom_dir: str, chunk_size: int, patient_data_dir: Optional[str]) -> bool:
+        """Validate the DICOM directory and chunk size."""
+        if not dicom_dir or not os.path.isdir(dicom_dir):
+            self.progress_callback(100, 100, f"Aborted DICOM processing task; invalid DICOM directory: {dicom_dir}")
+            return False
+        
+        if not chunk_size or not isinstance(chunk_size, int) or chunk_size <= 0:
+            self.progress_callback(100, 100, f"Aborted DICOM processing task; invalid chunk size: {chunk_size}")
+            return False
+        
+        if not patient_data_dir:
+            self.progress_callback(100, 100, f"Aborted DICOM processing task; invalid patient data directory: {patient_data_dir}")
+            return False
+        
+        if self.get_exit_status():
+            self.progress_callback(100, 100, "Aborted DICOM processing task at user request!", terminated=True)
+            return False
+        
+        return True
+    
+    def _parallelized_dicom_search(self, dicom_dir: str, chunk_size: int) -> List[str]:
+        """Helper function to search for DICOM files in parallel. Must already have started the executor."""
+        if self.get_exit_status():
+            return []
+        
+        start_text = "(Step 1/3) Searching for DICOM files..."
+        self.progress_callback(0, 0, start_text)
+        
+        dicom_files = []
+        futures = [
+            fu for subdir in collect_independent_subdirs(dicom_dir, min_paths=chunk_size)
+            if (
+                not self.get_exit_status() and
+                (fu := self.ss_mgr.submit_executor_action(scan_folder_for_dicom, subdir)) is not None
+            )
+        ] if not self.get_exit_status() else []
+        for future in as_completed(futures):
+            if self.get_exit_status():
+                break
             
-            futures = [fu for fp in chunk if (fu := self.ss_mgr.submit_executor_action(read_dicom_metadata_worker, fp)) is not None]
+            try:
+                result = future.result()
+                if isinstance(result, list):
+                    dicom_files.extend(result)
+            except Exception as e:
+                logger.error(f"Failed to scan a folder for DICOM files." + get_traceback(e))
+            finally:
+                if isinstance(future, Future) and not future.done():
+                    future.cancel()
+                self.progress_callback(0, len(dicom_files), start_text)
+        
+        if self.get_exit_status():
+            return []
+        
+        if not dicom_files:
+            self.progress_callback(100, 100, f"(Step 1/3) No DICOM files found in: {dicom_dir}", True)
+        else:
+            self.progress_callback(0, len(dicom_files), f"(Step 1/3) Found {len(dicom_files)} DICOM files in '{dicom_dir}'")
+        
+        return sorted(dicom_files, key=os.path.dirname)
+    
+    def _parallelized_dicom_short_read(self, dicom_files: List[str], chunk_size: int) -> Dict[Tuple[str, str], PatientData]:
+        """Helper function to read DICOM metadata in parallel. Must already have started the executor."""
+        if not dicom_files or self.get_exit_status():
+            return {}
+        
+        num_dcm_files = len(dicom_files)
+        start_text = "(Step 2/3) Reading DICOM metadata..."
+        self.progress_callback(0, num_dcm_files, start_text)
+        
+        processed_count = 0
+        patient_data_dict: Dict[Tuple[str, str], PatientData] = {}
+        
+        for chunk in chunked_iterable(iter(dicom_files), chunk_size):
+            if not chunk or self.get_exit_status():
+                break
+            
+            futures = [
+                fu for fp in chunk 
+                if (
+                    not self.get_exit_status() and
+                    (fu := self.ss_mgr.submit_executor_action(read_dicom_metadata, fp)) is not None
+                )
+            ] if not self.get_exit_status() else []
+            
+            chunk_item_count = 0
             for future in as_completed(futures):
-                if self.get_exit_status(update_progress=False):
+                if self.get_exit_status():
                     break
+                
                 try:
                     result = future.result()
                     if result:
-                        add_dicom_to_patient_data(existing_data, *result)
+                        add_dicom_to_patient_data(patient_data_dict, *result)
                 except Exception as e:
-                    logger.error(f"Falied to process DICOM metadata." + get_traceback(e))
+                    logger.error(f"Failed to process DICOM metadata." + get_traceback(e))
                 finally:
                     if isinstance(future, Future) and not future.done():
                         future.cancel()
+                    chunk_item_count += 1
                     processed_count += 1
                     if processed_count % 100 == 0:
-                        self.progress_callback(min(processed_count, remaining_files - 1), remaining_files, "Processing DICOM files...")
-            
-            submit_end = time()
-            logger.info(f"Processed {len(chunk)} files in {submit_end - submit_start:.3f} seconds")
+                        self.progress_callback(min(processed_count, num_dcm_files - 1), num_dcm_files, start_text)
         
-        self.ss_mgr.shutdown_executor()
+        if self.get_exit_status():
+            return {}
         
-        if self.get_exit_status(update_progress=False):
-            self.progress_callback(processed_count, remaining_files, f"Task aborted early! Didn't save any of the files.", True)
-            return
+        if not patient_data_dict:
+            self.progress_callback(100, 100, f"(Step 2/3) No DICOM metadata found in: {dicom_files}", True)
+        else:
+            self.progress_callback(0, len(patient_data_dict), f"(Step 2/3) Found {len(patient_data_dict)} patients in the {num_dcm_files} DICOM files.")
         
-        for ii, patient in enumerate(existing_data.values()):
-            if self.get_exit_status(update_progress=False):
-                self.progress_callback(processed_count, remaining_files, f"Task aborted early! Only saved {ii} out of {len(existing_data)} patients.", True)
-                return
-            save_patient_data_object(patient, patient_data_dir)
-        
-        self.progress_callback(remaining_files, remaining_files, f"Completed processing {processed_count} out of {remaining_files} files.")
+        return patient_data_dict
     
-    def link_all_dicoms(self) -> None:
-        """Build references for all PatientData objects and update their JSON files."""
+    def _parallelized_patient_data_save(self, patient_data_dict: Dict[Tuple[str, str], PatientData], patient_data_dir: str) -> None:
+        """Helper function to save PatientData objects in parallel."""
+        if not patient_data_dict:
+            self.progress_callback(100, 100, f"Aborted saving patient data; no patients found.", True)
+            return
+        
+        if self.get_exit_status():
+            self.progress_callback(100, 100, "Aborted saving patient data at user request!", True)
+            return
+        
+        num_patients = len(patient_data_dict)
+        start_text = "(Step 3/3) Saving patient data..."
+        self.progress_callback(0, num_patients, start_text)
+        
+        futures = [
+                fu for patient in patient_data_dict.values() 
+                if (
+                    not self.get_exit_status() and
+                    (fu := self.ss_mgr.submit_executor_action(save_pdata_object, patient, patient_data_dir)) is not None
+                )
+            ] if not self.get_exit_status() else []
+        
+        processed_count = 0
+        for future in as_completed(futures):
+            if self.get_exit_status():
+                break
+            
+            try:
+                future.result()
+                processed_count += 1
+            except Exception as e:
+                logger.error(f"Failed to save patient data." + get_traceback(e))
+            finally:
+                if isinstance(future, Future) and not future.done():
+                    future.cancel()
+                self.progress_callback(min(processed_count, num_patients - 1), num_patients, start_text)
+        
+        if self.get_exit_status():
+            self.progress_callback(100, 100, "Aborted saving patient data at user request!", True)
+            return
+        
+        if processed_count > 0 and processed_count == num_patients:
+            self.progress_callback(num_patients, num_patients, f"Completed saving data for {num_patients} patients.")
+        else:
+            self.progress_callback(processed_count, num_patients, f"Completed saving patient data, but encountered issue(s). See log.", True)
+    
+    def process_dicom_directory(self, dicom_dir: str, chunk_size: int = 10000) -> None:
+        """Search for DICOM files in a directory, read their metadata, and save them as PatientData objects."""
         patient_data_dir = self.get_patient_data_directory()
-        if not patient_data_dir:
-            self.progress_callback(0, 0, f"Task aborted. The patient data directory is invalid: {patient_data_dir}")
+        if not self._validate_can_process(dicom_dir, chunk_size, patient_data_dir):
             return
         
-        patient_objects = load_patient_data_objects(patient_data_dir, self.get_exit_status, self.progress_callback)
-        if not patient_objects:
-            self.progress_callback(0, 0, f"No patient data found for linking in this directory: {patient_data_dir}") 
-            return
-        
-        total_objects = len(patient_objects)
-        completed_objects = 0
-        self.progress_callback(0, total_objects, "Starting to read DICOM files and find their references...")
+        # Start the executor for parallel processing
         self.ss_mgr.startup_executor(use_process_pool=False)
         
-        for patient in patient_objects.values():
-            if not isinstance(patient, PatientData):
-                self.progress_callback(completed_objects, total_objects, f"Invalid patient data object, expected 'PatientData': {type(patient)}")
-                continue
+        try:
+            # Step 1: Parallelize DICOM file search
+            dicom_files = self._parallelized_dicom_search(dicom_dir, chunk_size)
             
-            if self.get_exit_status(update_progress=False):
+            # Step 2: Parallelize DICOM metadata reading
+            patient_data_dict = self._parallelized_dicom_short_read(dicom_files, chunk_size)
+            
+            # Step 3: Parallelize saving PatientData objects & provide final feedback
+            self._parallelized_patient_data_save(patient_data_dict, patient_data_dir)
+        except Exception as e:
+            self.progress_callback(100, 100, "Failure in processing DICOM files!" + get_traceback(e), True)
+        finally:
+            self.ss_mgr.shutdown_executor()
+    
+    def _parallelized_linking(self, patient_objects: Dict[Tuple[str, str], PatientData], patient_data_dir: str) -> None:
+        """Helper function to link DICOM references in parallel."""
+        if not patient_objects: 
+            self.progress_callback(100, 100, f"Aborted linking DICOMs; no patients found.", True)
+            return
+        
+        if self.get_exit_status():
+            self.progress_callback(100, 100, "Aborted linking DICOMs at user request!", True)
+            return
+        
+        num_patients = len(patient_objects)
+        start_text = "Building DICOM references for each patient..."
+        self.progress_callback(0, num_patients, start_text)
+        
+        completed_patients = 0
+        for patient in patient_objects.values():
+            if self.get_exit_status():
                 break
 
             references: Dict[str, Any] = {}
             try:
-                futures = [fu for fp in patient.return_filepaths() if (fu := self.ss_mgr.submit_executor_action(link_dicom_references_worker, fp)) is not None]
+                futures = [
+                    fu for fp in patient.return_filepaths() 
+                    if 
+                    (
+                        not self.get_exit_status() and
+                        (fu := self.ss_mgr.submit_executor_action(link_dicom_references, fp)) is not None
+                    )
+                ] if not self.get_exit_status() else []
+                
                 for future in as_completed(futures):
-                    if self.get_exit_status(update_progress=False):
+                    if self.get_exit_status():
                         break
                     try:
                         ref_result = future.result()
                         references.update(ref_result)
                     except Exception as e:
-                        logger.error(f"Falied to process DICOM references." + get_traceback(e))
+                        logger.error(f"Failed to process DICOM references." + get_traceback(e))
                     finally:
                         if isinstance(future, Future) and not future.done():
                             future.cancel()
                 
-                if self.get_exit_status(update_progress=False):
-                    break
+                if references:
+                    patient.update_dicom_file_references_dict(references)
+                    save_pdata_object(patient, patient_data_dir)
+                else:
+                    logger.warning(f"No DICOM references found for patient {patient.MRN} ({patient.Name})")
                 
-                patient.update_dicom_file_references_dict(references)
-                save_patient_data_object(patient, patient_data_dir)
+                completed_patients += 1
             except Exception as e:
-                logger.error(f"Falied to process patient DICOM references." + get_traceback(e))
+                logger.error(f"Failed to process a patient's DICOM references." + get_traceback(e))
             finally:
-                completed_objects += 1
-                self.progress_callback(min(completed_objects, total_objects - 1), total_objects, "Building DICOM references...")
+                self.progress_callback(min(completed_patients, num_patients - 1), num_patients, "Building DICOM references...")
         
-        self.ss_mgr.shutdown_executor()
+        if self.get_exit_status():
+            self.progress_callback(100, 100, "Aborted linking DICOMs at user request!", True)
+            return
         
-        if completed_objects == total_objects:
-            self.progress_callback(total_objects, total_objects, f"Completed linking references for {completed_objects} out of {total_objects} patients.")
+        if completed_patients > 0 and completed_patients == num_patients:
+            self.progress_callback(num_patients, num_patients, f"Completed linking DICOM references for {num_patients} patient(s).")
         else:
-            prepend_text = "Task aborted early! Only saved" if self.get_exit_status(update_progress=False) else "Finished processing, could only save"
-            self.progress_callback(completed_objects, total_objects, prepend_text + f"{completed_objects} out of {total_objects} patients.", True)
-
+            self.progress_callback(completed_patients, num_patients, f"Completed linking DICOM references, but encountered issue(s). See log.", True)
+    
+    def link_all_dicoms(self) -> None:
+        """Build references for all PatientData objects and update their JSON files."""
+        patient_data_dir = self.get_patient_data_directory()
+        if not patient_data_dir:
+            self.progress_callback(100, 100, f"Aborted linking DICOMs; invalid patient data directory: {patient_data_dir}", True)
+            return
+        
+        # Start the executor for parallel processing
+        self.ss_mgr.startup_executor(use_process_pool=False)
+        try:
+            # Step 1: Parallelize loading PatientData objects
+            patient_objects = self._parallelized_load_patient_data_objects(patient_data_dir, subset_size=None, subset_idx=None, use_pbar=True)
+            
+            # Step 2: Parallelize the linking of DICOM references & provide final feedback
+            self._parallelized_linking(patient_objects, patient_data_dir)
+        except Exception as e:
+            self.progress_callback(100, 100, "Failure in linking DICOM references!" + get_traceback(e), True)
+        finally:
+            self.ss_mgr.shutdown_executor()
