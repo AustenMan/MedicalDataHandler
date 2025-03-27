@@ -917,12 +917,12 @@ def _fill_program_data_controls(
                 with dpg.group(horizontal=True):
                     # Button for removing all data
                     dpg.add_button(
+                        label="Remove All Data",
                         width=size_dict["button_width"],
                         callback=_confirm_remove_all_func,
                     )
                     with dpg.tooltip(parent=dpg.last_item()):
                         dpg.add_text(
-                            label="Remove All Data",
                             default_value=removal_tooltip,
                             wrap=size_dict["tooltip_width"]
                         )
