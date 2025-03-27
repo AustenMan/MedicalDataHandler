@@ -48,7 +48,7 @@ def create_confirmation_popup(
     safe_delete(tag_conf_popup)
     
     # Get popup dimensions and position
-    popup_width, popup_height, popup_pos = get_popup_params(width_ratio=0.5, height_ratio=0.5)  # Assuming this is a helper function defined elsewhere
+    popup_width, popup_height, popup_pos = get_popup_params(width_ratio=0.75, height_ratio=0.75)
     button_height = round(popup_height // 10)
     
     def final_submit(sender, app_data, user_data):

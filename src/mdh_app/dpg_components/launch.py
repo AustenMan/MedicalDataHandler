@@ -221,10 +221,15 @@ def _create_tag_dict() -> Dict[str, Any]:
         "save_sitk_window": dpg.generate_uuid(), 
         
         "pbar": dpg.generate_uuid(), 
+        
+        # Data table tags
         "data_table": dpg.generate_uuid(), 
         "table_reload_button": dpg.generate_uuid(),
         "table_rows_input": dpg.generate_uuid(),
         "table_page_input": dpg.generate_uuid(),
+        "input_filter_processed": dpg.generate_uuid(),
+        "input_filter_name": dpg.generate_uuid(),
+        "input_filter_mrn": dpg.generate_uuid(),
         
         "latest_gui_response": dpg.generate_uuid(), 
         "latest_gui_response_tooltip_text": dpg.generate_uuid(),

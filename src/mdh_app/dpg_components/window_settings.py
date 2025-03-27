@@ -60,6 +60,7 @@ def create_settings_window(refresh: bool = False) -> None:
     _fill_data_view_controls(tag_isw, size_dict, default_display_dict)
     _fill_windowing_controls(tag_isw, size_dict, conf_mgr, default_display_dict)
     _fill_spacing_controls(tag_isw, size_dict, conf_mgr, default_display_dict)
+    _fill_program_data_controls(tag_isw, size_dict)
 
 def _fill_gui_settings(
     tag_parent: Union[str, int],
@@ -884,6 +885,48 @@ def _fill_spacing_controls(
                         callback=_reset_setting
                     )
 
+def _fill_program_data_controls(
+    tag_parent: Union[str, int],
+    size_dict: Dict[str, Any],
+) -> None:
+    """ Add Program Data Controls """
+    # Local import at runtime to avoid circular import issues
+    from mdh_app.dpg_components.cleanup import _confirm_remove_all_func
+    
+    removal_tooltip = (
+        "Removes all patient data from the program.\n"
+        "This *will not* delete any files from your PC.\n"
+        "This *will* remove all data associations from the program.\n"
+        "This action *cannot be undone* and would require re-adding the data."
+    )
+    
+    # Add to the window
+    with dpg.tree_node(label="Program Data Controls", parent=tag_parent, default_open=False):
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.3)
+            dpg.add_table_column(init_width_or_weight=0.7)
+
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text(
+                            default_value=removal_tooltip,
+                            wrap=size_dict["tooltip_width"]
+                        )
+                    dpg.add_text("Remove All Data:")
+                with dpg.group(horizontal=True):
+                    # Button for removing all data
+                    dpg.add_button(
+                        width=size_dict["button_width"],
+                        callback=_confirm_remove_all_func,
+                    )
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text(
+                            label="Remove All Data",
+                            default_value=removal_tooltip,
+                            wrap=size_dict["tooltip_width"]
+                        )
+
 def _reset_setting(
     sender: Union[str, int], 
     app_data: Any, 
@@ -1188,3 +1231,6 @@ def _get_screen_limits(mode: str) -> Tuple[Tuple[int, int], Tuple[int, int]]:
             min(max(round(actual_height_px_limits[1] / max_screen_size[1] * 100), height_p_limits[0]), height_p_limits[1])
         )
         return actual_width_p_limits, actual_height_p_limits
+
+
+

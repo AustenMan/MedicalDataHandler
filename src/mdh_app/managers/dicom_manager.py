@@ -241,7 +241,21 @@ def link_dicom_references(filepath: str) -> Dict[str, Any]:
     
     return {filepath: links}
 
-def load_pdata_object(file_path: str) -> Optional[PatientData]:
+def get_matched_pdata_file(filepath: str, never_processed: bool) -> Optional[str]:
+    """Return the path of a matching PatientData file based its JSON values."""
+    try:
+        with open(filepath, "r") as file:
+            data = json.load(file)
+        
+        if never_processed == (data.get("DateLastProcessed", None) is None):
+            return filepath
+        
+        return None
+    except Exception as e:
+        logger.error(f"Failed to read file '{filepath}'." + get_traceback(e))
+        return None
+
+def load_pdata_object(file_path: str,) -> Optional[PatientData]:
     """Load a PatientData object from a JSON file."""
     try:
         with open(file_path, "r") as file:
@@ -412,26 +426,107 @@ class DicomManager():
         """Delete all PatientData JSON files in the patient data directory."""
         return remove_all_pdata(self.get_patient_data_directory())
     
+    def _parallelized_collect_filtered_jsons(
+        self,
+        dir_path: str,
+        subset_size: Optional[int],
+        subset_idx: Optional[int],
+        never_processed: Optional[bool],
+        filter_names: Optional[str],
+        filter_mrns: Optional[str]
+    ) -> List[str]:
+        """
+        Dynamically scan directory and filter PatientData JSONs based on metadata,
+        stopping early if subset_size is reached.
+        
+        File names are expected to be formatted as one of:
+            "{MRN}_{LASTNAME}_{MIDDLENAME}_{FIRSTNAME}.json"
+            "{MRN}_{LASTNAME}_{FIRSTNAME}.json"
+        """
+        try:
+            json_files = [entry.path for entry in os.scandir(dir_path) if entry.is_file() and entry.name.endswith(".json")]
+            
+            if all(x is None for x in (subset_size, subset_idx, never_processed, filter_names, filter_mrns)):
+                return json_files
+            
+            if filter_names:
+                filter_names = filter_names.upper()
+                json_files = [fp for fp in json_files if filter_names in "_".join(os.path.splitext(os.path.basename(fp))[0].split("_")[1:])]
+            
+            if filter_mrns:
+                filter_mrns = filter_mrns.upper()
+                json_files = [fp for fp in json_files if filter_mrns in os.path.splitext(os.path.basename(fp))[0].split("_")[0]]
+            
+            get_subset = isinstance(subset_size, int) and isinstance(subset_idx, int)
+            
+            if never_processed is not None:
+                futures = [
+                    fu for fp in json_files 
+                    if (
+                        not self.get_exit_status() and
+                        (fu := self.ss_mgr.submit_executor_action(get_matched_pdata_file, fp, never_processed)) is not None
+                    )
+                ] if not self.get_exit_status() else []
+                
+                matched_files = []
+                
+                try:
+                    for future in as_completed(futures):
+                        if self.get_exit_status():
+                            matched_files = []
+                            break
+                        
+                        if get_subset and len(matched_files) >= (subset_idx + 1) * subset_size:
+                            break
+                        
+                        try:
+                            result = future.result()
+                            if result is not None:
+                                matched_files.append(result)
+                        except Exception as e:
+                            logger.error(f"Failed to match patient data file." + get_traceback(e))
+                        finally:
+                            if isinstance(future, Future) and not future.done():
+                                future.cancel()
+                except Exception as e:
+                    logger.error(f"Failed to process futures for matching patient data files." + get_traceback(e))
+                finally:
+                    for future in futures:
+                        if isinstance(future, Future) and not future.done():
+                            future.cancel()
+                
+                json_files = matched_files
+            
+            if get_subset:
+                json_files = json_files[subset_idx * subset_size : (subset_idx + 1) * subset_size]
+            
+            return json_files
+        except Exception as e:
+            logger.error(f"Failed to list directory {dir_path}." + get_traceback(e))
+            return []
+    
     def _parallelized_load_patient_data_objects(
-        self, dir_path: str, subset_size: Optional[int], subset_idx: Optional[int], use_pbar: bool = True
+        self,
+        dir_path: str,
+        subset_size: Optional[int] = None,
+        subset_idx: Optional[int] = None,
+        use_pbar: bool = True,
+        never_processed: Optional[bool] = None,
+        filter_names: Optional[str] = None,
+        filter_mrns: Optional[str] = None
     ) -> Dict[Tuple[str, str], PatientData]:
         """Helper function to load PatientData objects in parallel. Must already have started the executor."""
         start_info = f"Loading patient data from '{dir_path}'..."
         self.progress_callback(0, 0, start_info) if use_pbar else logger.info(start_info)
         
-        try:
-            json_files = [os.path.join(dir_path, f) for f in os.listdir(dir_path) if f.endswith(".json")]
-        except Exception as e:
-            exit_info = f"Aborted loading patient data; invalid directory: {dir_path}" + get_traceback(e)
-            self.progress_callback(100, 100, exit_info, True) if use_pbar else logger.error(exit_info)
-            return {}
-        
-        if isinstance(subset_size, int) and isinstance(subset_idx, int):
-            if subset_size <= 0 or subset_idx < 0:
-                exit_info = f"Invalid subset size or index: {subset_size}, {subset_idx}"
-                self.progress_callback(100, 100, exit_info, True) if use_pbar else logger.error(exit_info)
-                return {}
-            json_files = json_files[subset_idx * subset_size : (subset_idx + 1) * subset_size]
+        json_files = self._parallelized_collect_filtered_jsons(
+            dir_path=dir_path,
+            subset_size=subset_size,
+            subset_idx=subset_idx,
+            never_processed=never_processed,
+            filter_names=filter_names,
+            filter_mrns=filter_mrns
+        )
         
         if not json_files:
             exit_info = f"No patient data found in this directory: {dir_path}"
@@ -446,7 +541,7 @@ class DicomManager():
             if (
                 not self.get_exit_status() and
                 (fu := self.ss_mgr.submit_executor_action(load_pdata_object, fp)) is not None
-                )
+            )
         ] if not self.get_exit_status() else []
         
         for future in as_completed(futures):
@@ -475,15 +570,53 @@ class DicomManager():
         self.progress_callback(0, num_patients, completed_info) if use_pbar else logger.info(completed_info)
         return patient_data_dict
     
-    def load_patient_data_objects(self, subset_size: Optional[int], subset_idx: Optional[int]) -> Dict[Tuple[str, str], PatientData]:
-        """Load PatientData objects from the patient data directory."""
-        dir_path = self.get_patient_data_directory()
+    def _validate_can_load_data(
+        self,
+        dir_path: str,
+        subset_size: Optional[int] = None,
+        subset_idx: Optional[int] = None,
+        never_processed: Optional[bool] = None,
+        filter_names: Optional[str] = None,
+        filter_mrns: Optional[str] = None
+    ) -> bool:
+        """Validate the parameters for loading patient data."""
         if not dir_path:
             self.progress_callback(100, 100, f"Aborted loading patient data; invalid directory: {dir_path}", True)
-            return {}
+            return False
         
-        if self.get_exit_status():
-            self.progress_callback(100, 100, "Aborted loading patient data at user request!", True)
+        if subset_size is not None and (not isinstance(subset_size, int) or subset_size <= 0):
+            self.progress_callback(100, 100, f"Aborted loading patient data; invalid subset size: {subset_size}", True)
+            return False
+        
+        if subset_idx is not None and (not isinstance(subset_idx, int) or subset_idx < 0):
+            self.progress_callback(100, 100, f"Aborted loading patient data; invalid subset index: {subset_idx}", True)
+            return False
+        
+        if never_processed is not None and not isinstance(never_processed, bool):
+            self.progress_callback(100, 100, f"Aborted loading patient data; invalid never_processed value: {never_processed}", True)
+            return False
+        
+        if filter_names is not None and not isinstance(filter_names, str):
+            self.progress_callback(100, 100, f"Aborted loading patient data; invalid filter_names value: {filter_names}", True)
+            return False
+        
+        if filter_mrns is not None and not isinstance(filter_mrns, str):
+            self.progress_callback(100, 100, f"Aborted loading patient data; invalid filter_mrns value: {filter_mrns}", True)
+            return False
+        
+        return True
+    
+    def load_patient_data_objects(
+        self,
+        subset_size: Optional[int] = None,
+        subset_idx: Optional[int] = None,
+        never_processed: Optional[bool] = None,
+        filter_names: Optional[str] = None,
+        filter_mrns: Optional[str] = None
+    ) -> Dict[Tuple[str, str], PatientData]:
+        """Load PatientData objects from the patient data directory."""
+        dir_path = self.get_patient_data_directory()
+        if not self._validate_can_load_data(dir_path, subset_size, subset_idx, never_processed, filter_names, filter_mrns):
             return {}
         
         patient_data_dict: Dict[Tuple[str, str], PatientData] = {}
@@ -491,7 +624,15 @@ class DicomManager():
         # Start the executor for parallel processing
         self.ss_mgr.startup_executor(use_process_pool=False)
         try:
-            patient_data_dict = self._parallelized_load_patient_data_objects(dir_path, subset_size, subset_idx, False)
+            patient_data_dict = self._parallelized_load_patient_data_objects(
+                dir_path=dir_path,
+                subset_size=subset_size,
+                subset_idx=subset_idx,
+                use_pbar=False,
+                never_processed=never_processed,
+                filter_names=filter_names,
+                filter_mrns=filter_mrns
+            )
         except Exception as e:
             self.progress_callback(100, 100, f"Failure in loading patient data!" + get_traceback(e), True)
         finally:
@@ -756,7 +897,7 @@ class DicomManager():
         self.ss_mgr.startup_executor(use_process_pool=False)
         try:
             # Step 1: Parallelize loading PatientData objects
-            patient_objects = self._parallelized_load_patient_data_objects(patient_data_dir, subset_size=None, subset_idx=None, use_pbar=True)
+            patient_objects = self._parallelized_load_patient_data_objects(patient_data_dir)
             
             # Step 2: Parallelize the linking of DICOM references & provide final feedback
             self._parallelized_linking(patient_objects, patient_data_dir)

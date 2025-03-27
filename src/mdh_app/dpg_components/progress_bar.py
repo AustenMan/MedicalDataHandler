@@ -62,7 +62,7 @@ def update_progress(
         elapsed_since_first_progress = time() - first_progress_time
         time_per_unit = elapsed_since_first_progress / value
         remaining_time = (max_value - value) * time_per_unit
-    remaining_time_str = f"ETA: {format_time(remaining_time, at_least="m")}" if remaining_time else "ETA: --:--:--"
+    remaining_time_str = f"ETA: {format_time(remaining_time, at_least='m')}" if remaining_time else "ETA: --:--:--"
     
     # Reset timestamps if done
     if max_value == 0 or value >= max_value:

@@ -4,7 +4,7 @@ from functools import partial
 from typing import Any, Dict, List, Tuple, Set, Union, Optional
 
 from mdh_app.dpg_components.cleanup import cleanup_wrapper
-from mdh_app.dpg_components.custom_utils import get_tag, get_user_data, add_custom_button, add_custom_separator
+from mdh_app.dpg_components.custom_utils import get_tag, get_user_data, add_custom_separator
 from mdh_app.dpg_components.loaded_data_ui import fill_right_col_ptdata
 from mdh_app.dpg_components.texture_updates import request_texture_update
 from mdh_app.dpg_components.themes import get_table_cell_spacing_theme
@@ -13,7 +13,7 @@ from mdh_app.dpg_components.window_ptobj_insp import create_window_ptobj_inspect
 from mdh_app.managers.shared_state_manager import SharedStateManager
 from mdh_app.managers.data_manager import DataManager
 from mdh_app.managers.dicom_manager import DicomManager
-from mdh_app.utils.dpg_utils import get_popup_params, safe_delete, modify_table_rows
+from mdh_app.utils.dpg_utils import get_popup_params, safe_delete
 from mdh_app.utils.patient_data_object import PatientData
 
 logger = logging.getLogger(__name__)
@@ -30,8 +30,11 @@ def toggle_data_window(force_show: bool = False, label: str = "") -> None:
     tag_table_reload_button = get_tag("table_reload_button")
     tag_table_rows_input = get_tag("table_rows_input")
     tag_table_page_input = get_tag("table_page_input")
+    tag_filter_processed = get_tag("input_filter_processed")
+    tag_filter_name = get_tag("input_filter_name")
+    tag_filter_mrn = get_tag("input_filter_mrn")
     size_dict = get_user_data(td_key="size_dict")
-    popup_width, popup_height, popup_pos = get_popup_params(width_ratio=0.90, height_ratio=0.75)
+    popup_width, popup_height, popup_pos = get_popup_params(width_ratio=0.9, height_ratio=0.9)
     
     # Create the data window if it doesn't exist
     if not dpg.does_item_exist(tag_data_window):
@@ -55,25 +58,43 @@ def toggle_data_window(force_show: bool = False, label: str = "") -> None:
             
             row_tag = dpg.generate_uuid()
             with dpg.table_row(tag=row_tag):
-                # Add a button to load or reload the data table
-                add_custom_button(
-                    tag=tag_table_reload_button,
-                    label="Load or Reload Data Table", 
-                    callback=cleanup_wrapper(_create_ptobj_table),
-                    parent_tag=row_tag,
-                    tooltip_text="Loads/reloads the data table with patient data.",
-                )
-                # Add a button to remove all data from the program
-                add_custom_button(
-                    label="Remove All Data", 
-                    callback=_confirm_remove_all_func,
-                    parent_tag=row_tag,
-                    tooltip_text="Removes all patient data from the program.",
-                )
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Filter by a specific patient name. Reload table to apply.")
+                    dpg.add_text("Name: ")
+                    dpg.add_input_text(
+                        tag=tag_filter_name,
+                        width=size_dict["button_width"],
+                        default_value="",
+                        on_enter=True,
+                    )
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Filter by a specific patient MRN. Reload table to apply.")
+                    dpg.add_text("MRN: ")
+                    dpg.add_input_text(
+                        tag=tag_filter_mrn,
+                        width=size_dict["button_width"],
+                        default_value="",
+                        on_enter=True,
+                    )
+            
             with dpg.table_row():
                 with dpg.group(horizontal=True):
                     with dpg.tooltip(parent=dpg.last_item()):
-                        dpg.add_text("Specify the page number for the data table.")
+                        dpg.add_text("Filter by data that you have previously processed. Reload table to apply.")
+                    dpg.add_text("Processed Type: ")
+                    dpg.add_combo(
+                        tag=tag_filter_processed,
+                        items=["Any", "Processed", "Unprocessed"],
+                        default_value="Any",
+                        width=size_dict["button_width"],
+                    )
+            
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Specify the page number for the data table. Reload table to apply.")
                     dpg.add_text("Page Number: ")
                     dpg.add_input_int(
                         tag=tag_table_page_input,
@@ -86,14 +107,14 @@ def toggle_data_window(force_show: bool = False, label: str = "") -> None:
                         on_enter=True,
                         step=1,
                         step_fast=5,
-                        callback=cleanup_wrapper(_create_ptobj_table),
                     )
                 with dpg.group(horizontal=True):
                     with dpg.tooltip(parent=dpg.last_item()):
                         dpg.add_text(
                             default_value=(
                                 "Specify the number of patients to display per page.\n"
-                                "Large values may experience performance issues."
+                                "Large values may experience performance issues.\n"
+                                "Reload table to apply."
                                 )
                         )
                     dpg.add_text("Patients per Page: ")
@@ -108,9 +129,24 @@ def toggle_data_window(force_show: bool = False, label: str = "") -> None:
                         on_enter=True,
                         step=1,
                         step_fast=10,
+                    )
+            
+            row_tag = dpg.generate_uuid()
+            with dpg.table_row(tag=row_tag):
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                            dpg.add_text(
+                                default_value=(
+                                    "Loads/reloads the data table with patient data."
+                                )
+                            )
+                    dpg.add_button(
+                        tag=tag_table_reload_button,
+                        width=size_dict["button_width"],
+                        label="Load or Reload Data Table",
                         callback=cleanup_wrapper(_create_ptobj_table),
                     )
-        
+            
         # Add a separator
         add_custom_separator(parent_tag=tag_data_window)
     # Otherwise, configure the existing window
@@ -200,32 +236,6 @@ def _confirm_removal_func(sender: Union[str, int], app_data: Any, user_data: Tup
         )
     )
 
-def _confirm_remove_all_func(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
-    """Remove all patient data objects after confirmation."""
-    dcm_mgr: DicomManager = get_user_data(td_key="dicom_manager")
-    tag_data_window = get_tag("data_display_window")
-    tag_data_table = get_tag("data_table")
-    
-    def delete_all_func(sender, app_data, user_data) -> None:
-        dcm_mgr.delete_all_patient_data_objects()
-        modify_table_rows(table_tag=tag_data_table, delete=True)
-        dpg.set_item_user_data(tag_data_window, {})
-    
-    def submit_remove_all_func(sender, app_data, user_data) -> None:
-        clean_wrap = cleanup_wrapper(delete_all_func)
-        clean_wrap(sender, app_data, user_data)
-    
-    create_confirmation_popup(
-        button_callback=submit_remove_all_func,
-        confirmation_text="Removing all data from the program",
-        warning_string=(
-            f"Are you sure you want to remove ALL patient data from the program?\n"
-            "This action is irreversible. You would need to re-import the data to access it again.\n"
-            "Remove ALL patient data?"
-        ),
-        second_confirm=True
-    )
-
 def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """
     Display a popup table listing patients with their metadata.
@@ -237,12 +247,8 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
     """
     # Freeze interaction with the table while updating
     tag_table_reload_button = get_tag("table_reload_button")
-    tag_table_rows_input = get_tag("table_rows_input")
-    tag_table_page_input = get_tag("table_page_input")
-    freeze_tags = [tag_table_reload_button, tag_table_rows_input, tag_table_page_input]
-    for tag in freeze_tags:
-        if dpg.does_item_exist(tag):
-            dpg.configure_item(tag, enabled=False)
+    original_reload_label = dpg.get_item_label(tag_table_reload_button)
+    dpg.configure_item(tag_table_reload_button, enabled=False, label="Loading...")
     
     logger.info("Updating the patient data table...")
     
@@ -250,6 +256,11 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
     ss_mgr: SharedStateManager = get_user_data(td_key="shared_state_manager")
     dcm_mgr: DicomManager = get_user_data(td_key="dicom_manager")
     tag_data_window = get_tag("data_display_window")
+    tag_table_rows_input = get_tag("table_rows_input")
+    tag_table_page_input = get_tag("table_page_input")
+    tag_filter_processed = get_tag("input_filter_processed")
+    tag_filter_name = get_tag("input_filter_name")
+    tag_filter_mrn = get_tag("input_filter_mrn")
     size_dict = get_user_data(td_key="size_dict")
     
     # Find number of patients and number of rows to display
@@ -270,16 +281,35 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
     dpg.configure_item(tag_table_page_input, max_value=num_pages)
     dpg.set_value(tag_table_page_input, table_page)
     
+    # Get filter values
+    filter_processed_value = dpg.get_value(tag_filter_processed)
+    if filter_processed_value == "Processed":
+        find_never_processed = False
+    elif filter_processed_value == "Unprocessed":
+        find_never_processed = True
+    else:
+        find_never_processed = None
+    mrn_search = dpg.get_value(tag_filter_mrn) or None
+    name_search = dpg.get_value(tag_filter_name) or None
+    
     # Load relevant patient data
-    subset_pt_data = dcm_mgr.load_patient_data_objects(subset_size=num_table_rows, subset_idx=table_index)
-    dpg.set_item_user_data(tag_data_window, subset_pt_data)
+    if sender == tag_table_reload_button:
+        subset_pt_data = dcm_mgr.load_patient_data_objects(
+            subset_size=num_table_rows, 
+            subset_idx=table_index,
+            never_processed=find_never_processed,
+            filter_mrns=mrn_search,
+            filter_names=name_search)
+        dpg.set_item_user_data(tag_data_window, subset_pt_data)
+    else:
+        subset_pt_data = dpg.get_item_user_data(tag_data_window)
     
     # Show the data window and create a new data table
     toggle_data_window(force_show=True, label="Patient Data")
     _create_new_data_table()
     tag_data_table = get_tag("data_table") # retrieve after creating the new table (UUID changes)
     
-    column_labels = ["Actions", "Patient ID", "Patient Name", "Date Created", "Date Last Modified", "Date Last Accessed", "Date Last Processed"]
+    column_labels = ["Actions", "Patient Name", "Patient ID", "Date Created", "Date Last Modified", "Date Last Accessed", "Date Last Processed"]
     for label_idx, label in enumerate(column_labels):
         dpg.add_table_column(parent=tag_data_table, label=label, width_fixed=True)
     
@@ -305,8 +335,8 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
                     callback=_confirm_removal_func,
                     user_data=(pdata_row_tag, patient_class)
                 )
-            dpg.add_text(default_value=patient_id)
             dpg.add_text(default_value=patient_name)
+            dpg.add_text(default_value=patient_id)
             dates_dict = subset_pt_data[(patient_id, patient_name)].return_dates_dict()
             dpg.add_text(default_value=dates_dict["DateCreated"] if dates_dict["DateCreated"] is not None else "N/A")
             dpg.add_text(default_value=dates_dict["DateLastModified"] if dates_dict["DateLastModified"] is not None else "N/A")
@@ -314,10 +344,7 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
             dpg.add_text(default_value=dates_dict["DateLastProcessed"] if dates_dict["DateLastProcessed"] is not None else "N/A")
     
     # Unfreeze interaction with the table after updating
-    for tag in freeze_tags:
-        if dpg.does_item_exist(tag):
-            dpg.configure_item(tag, enabled=True)
-    logger.info(f"Finished loading table page {table_page} with {num_table_rows} rows.")
+    dpg.configure_item(tag_table_reload_button, enabled=True, label=original_reload_label)
 
 def _create_frameofref_table(sender: Union[str, int], app_data: Any, user_data: PatientData) -> None:
     """
