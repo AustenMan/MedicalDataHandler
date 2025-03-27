@@ -30,7 +30,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 ---
 
 <p align="center">
-  <img src="src/resources/images/10_ThreeViews.png" alt="Three Views">
+  <img src="images/10_ThreeViews.png" alt="Three Views">
   <br>
   <em>Figure 1: Three-pane visualization of axial, sagittal, and coronal views, with voxel inspection at the cursor.</em>
 </p>
@@ -82,7 +82,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✔ **Automated DICOM file identification** in a user-specified directory.  
 
   <p align="center">
-    <img src="src/resources/images/2_DicomSearch.png" alt="DICOM Search">
+    <img src="images/2_DicomSearch.png" alt="DICOM Search">
     <br>
     <em>Figure 2: Users can select "Add New Data", and then "Choose a DICOM Directory" to specify a folder for searching DICOM files.</em>
   </p>
@@ -90,7 +90,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✔ **Automated DICOM file linking** to group related data.  
 
   <p align="center">
-    <img src="src/resources/images/3_DicomLink.png" alt="DICOM Linking">
+    <img src="images/3_DicomLink.png" alt="DICOM Linking">
     <br>
     <em>Figure 3: After the search completes, users can select "Start Linking DICOM Files" to automatically read, organize, and group related files.</em>
   </p>
@@ -98,7 +98,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✔ **Patient Data Table** for structured display of accessible patient data.  
 
   <p align="center">
-    <img src="src/resources/images/4_DataTablePatients.png" alt="Data Table Patients">
+    <img src="images/4_DataTablePatients.png" alt="Data Table Patients">
     <br>
     <em>Figure 4: Selecting "Explore Data" followed by "Load or Reload Data Table" creates patient rows, with timestamps for creation, modification, access, and processing.</em>
   </p>
@@ -106,7 +106,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✔ **Patient Object Inspection** for in-depth data analysis.  
 
   <p align="center">
-    <img src="src/resources/images/5_PatientInspect.png" alt="Inspection Patient Object">
+    <img src="images/5_PatientInspect.png" alt="Inspection Patient Object">
     <br>
     <em>Figure 5: Clicking "Inspect" in the patient table allows detailed examination of the patient object, including nested data and data relationships.</em>
   </p>
@@ -114,7 +114,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✔ **DICOM metadata inspection** with collapsible trees and filters.
 
   <p align="center">
-    <img src="src/resources/images/6_DicomInspect.png" alt="Inspection DICOM Metadata">
+    <img src="images/6_DicomInspect.png" alt="Inspection DICOM Metadata">
     <br>
     <em>Figure 6: The DICOM metadata inspection panel enables structured viewing and filtering of attributes for individual files.</em>
   </p>
@@ -122,7 +122,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✔ **Frame Of Reference UID Data Table** for deeper organization of patient-specific data.  
 
   <p align="center">
-    <img src="src/resources/images/7_DataTableFrames.png" alt="Data Table FORUID">
+    <img src="images/7_DataTableFrames.png" alt="Data Table FORUID">
     <br>
     <em>Figure 7: Selecting a patient updates the table to show available Frame of Reference UIDs and associated modalities for better data organization.</em>
   </p>
@@ -131,7 +131,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✅ **Data visualization** by converting DICOM data to [SimpleITK](https://github.com/SimpleITK/SimpleITK) Images and [NumPy](https://github.com/numpy/numpy) arrays.  
 
   <p align="center">
-    <img src="src/resources/images/8_DataTableLoad.png" alt="Data Table Load">
+    <img src="images/8_DataTableLoad.png" alt="Data Table Load">
     <br>
     <em>Figure 8: After selecting a Frame of Reference UID, users pick the data to load and press "Load Selected Data" to visualize it.</em>
   </p>
@@ -139,7 +139,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✅ **Customizable display toggles** for flexible visualization of any loaded images, dose distributions, and/or structures.  
 
   <p align="center">
-    <img src="src/resources/images/9_LoadedHomePage.png" alt="DICOM Data Loaded">
+    <img src="images/9_LoadedHomePage.png" alt="DICOM Data Loaded">
     <br>
     <em>Figure 9: A fully loaded dataset displayed with interactive visualization controls and toggle options for images, dose distributions, and structures.</em>
   </p>
@@ -157,7 +157,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
   - **Rename, recolor, or remove** segmentations.  
 
   <p align="center">
-    <img src="src/resources/images/10_ThreeViews.png" alt="Three Views">
+    <img src="images/10_ThreeViews.png" alt="Three Views">
     <br>
     <em>Figure 1: Three-pane visualization of axial, sagittal, and coronal views, with voxel inspection at the cursor.</em>
   </p>
@@ -165,7 +165,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✅ **Inspection of loaded data** to add or edit certain fields, such as machine name.
 
   <p align="center">
-    <img src="src/resources/images/11_SitkInspect.png" alt="Inspection Loaded Data">
+    <img src="images/11_SitkInspect.png" alt="Inspection Loaded Data">
     <br>
     <em>Figure 10: The inspection panel for loaded data allows adding or modifying specific fields, such as machine name or structure labels.</em>
   </p>
@@ -176,7 +176,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✔ **Supports both partial (single-item) and batch data saving**.  
 
   <p align="center">
-    <img src="src/resources/images/13_Save.png" alt="Save">
+    <img src="images/13_Save.png" alt="Save">
     <br>
     <em>Figure 11: The save window enables exporting selected data to NIfTI format with customizable options.</em>
   </p>
@@ -191,7 +191,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
   - **Data rotation or flips**  
 
   <p align="center">
-    <img src="src/resources/images/12_Settings.png" alt="Settings">
+    <img src="images/12_Settings.png" alt="Settings">
     <br>
     <em>Figure 12: The settings panel provides controls for GUI customization, data rotation/flips, etc.</em>
   </p>
