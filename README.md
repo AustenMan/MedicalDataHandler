@@ -31,9 +31,9 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 ---
 
 <p align="center">
-  <img src="images/10_ThreeViews.png" alt="Three Views">
+  <img src="images/MDH_Brief_Demo.gif" alt="Three Views">
   <br>
-  <em>Figure 1: Three-pane visualization of axial, sagittal, and coronal views, with voxel inspection at the cursor.</em>
+  <em>Figure 1: A brief animation to demonstrate basic functionality in MedicalDataHandler.</em>
 </p>
 
 ---
