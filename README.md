@@ -31,7 +31,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 ---
 
 <p align="center">
-  <img src="images/MDH_Brief_Demo.gif" alt="Three Views">
+  <img src="images/MDH_Brief_Demo.gif" alt="Brief Demo">
   <br>
   <em>Figure 1: A brief animation to demonstrate basic functionality in MedicalDataHandler.</em>
 </p>
