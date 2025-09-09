@@ -1,21 +1,31 @@
+from __future__ import annotations
+
+
 import logging
 import queue
 import threading
 import concurrent.futures
 from os import cpu_count
 from time import sleep
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
 
 from mdh_app.utils.general_utils import get_traceback, get_callable_name
 
+
+if TYPE_CHECKING:
+    pass
+
+
 logger = logging.getLogger(__name__)
 
+
 class SharedStateManager:
-    """ Manages threading and multiprocessing for the application. """
+    """Manages threading and multiprocessing."""
     RESERVED_LC_COUNT = 4 # Withhold logical cores from the executor for the main process and threads
     
     def __init__(self) -> None:
-        """ Initializes the shared state manager. """
+        """Initialize shared state manager."""
         # Get total logical cores, defaulting to 1 if retrieval fails
         total_logical_cores = cpu_count() or 1  
         
@@ -59,9 +69,8 @@ class SharedStateManager:
         self._action_thread = threading.Thread(target=self._persistent_action_loop, daemon=True)
         self._action_thread.start()
     
-    ### PERSISTENT THREAD LOOPS ###
     def _persistent_action_loop(self) -> None:
-        """Persistent loop that waits for and executes actions from a queue."""
+        """Execute actions from queue in persistent loop."""
         while not self.shutdown_event.is_set():
             try:
                 func, args, kwargs = self._action_queue.get()
@@ -79,7 +88,7 @@ class SharedStateManager:
                 self._action_queue.task_done()
     
     def _persistent_texture_loop(self) -> None:
-        """Persistent loop that renders textures from a queue."""
+        """Render textures from queue in persistent loop."""
         while not self.shutdown_event.is_set():
             # Wait to render if cleanup is in progress
             if self.cleanup_event.is_set():
@@ -102,9 +111,8 @@ class SharedStateManager:
             except Exception as e:
                 logger.error(f"Failed to render the texture using '{get_callable_name(func)}'." + get_traceback(e))
     
-    ### ACTION CONTROL ###
     def submit_action(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
-        """Attempts to submit an action."""
+        """Submit action for execution."""
         if self.shutdown_event.is_set():
             logger.info(f"'{get_callable_name(func)}' was not performed because program is shutting down.")
         elif self.shutdown_event.is_set():
@@ -118,11 +126,7 @@ class SharedStateManager:
                 logger.info(f"'{get_callable_name(func)}' was not performed because an action is already in progress; try again afterwards.")
     
     def submit_texture_update(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
-        """
-        Submits a texture update, replacing any pending task at the same priority level.
-        Priorities:
-            0 - reset, 1 - initialize, 2 - update (default).
-        """
+        """Submit texture update with priority handling (reset=0, initialize=1, update=2)."""
         if self.shutdown_event.is_set():
             logger.info(f"'{get_callable_name(func)}' was not performed because program shutdown in progress.")
             return
@@ -134,7 +138,7 @@ class SharedStateManager:
             self._texture_pending[priority] = (func, args, kwargs)
     
     def submit_executor_action(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Optional[concurrent.futures.Future]:
-        """Submits an action to the executor if available. Returns a Future or None on failure."""
+        """Submit action to executor pool."""
         if self.shutdown_event.is_set():
             logger.info(f"Executor '{get_callable_name(func)}' was not performed because program is shutting down.")
         elif self.shutdown_event.is_set():
@@ -149,7 +153,7 @@ class SharedStateManager:
         return None
     
     def startup_executor(self, use_process_pool: bool = False, max_workers: Optional[int] = None) -> None:
-        """Starts an executor (thread or process pool)."""
+        """Start executor pool (thread or process)."""
         if self._executor is not None:
             logger.debug("Executor already running; shutting down previous executor.")
             self.shutdown_executor()
@@ -160,23 +164,21 @@ class SharedStateManager:
             self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
     
     def is_action_in_progress(self) -> bool:
-        """Returns True if an action is queued or running."""
+        """Check if any action is queued or running."""
         return self.action_event.is_set() or self._executor is not None or not self._action_queue.empty()
     
-    ### CLEANUP COTNROL ###
     def start_cleanup(self, cleanup_func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
-        """Starts the cleanup process."""
+        """Start cleanup process in separate thread."""
         threading.Thread(target=cleanup_func, daemon=True).start()
     
-    ### SHUTDOWN CONTROL ###
     def shutdown_executor(self) -> None:
-        """ Shuts down the executor. """
+        """Shutdown executor pool."""
         if self._executor:
             self._executor.shutdown(wait=True, cancel_futures=True)
             self._executor = None
     
     def shutdown_manager(self, timeout=5.0) -> None:
-        """ Shuts down the shared state manager. """
+        """Shutdown shared state manager."""
         self.shutdown_event.set()
         
         # Kill the threads

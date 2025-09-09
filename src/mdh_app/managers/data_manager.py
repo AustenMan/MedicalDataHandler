@@ -1,52 +1,50 @@
+from __future__ import annotations
+
+
 import gc
-import cv2
 import json
 import weakref
 import logging
+from os.path import exists
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union, Optional
+
+
+import cv2
 import numpy as np
 import SimpleITK as sitk
-from os.path import exists
-from typing import Any, Dict, List, Tuple, Union, Optional
 from scipy.ndimage import center_of_mass
+
 
 from mdh_app.data_builders.ImageBuilder import ImageBuilder
 from mdh_app.data_builders.RTStructBuilder import RTStructBuilder
 from mdh_app.data_builders.RTPlanBuilder import RTPlanBuilder
 from mdh_app.data_builders.RTDoseBuilder import RTDoseBuilder
-from mdh_app.managers.config_manager import ConfigManager
-from mdh_app.managers.shared_state_manager import SharedStateManager
 from mdh_app.utils.general_utils import get_traceback, weakref_nested_structure
 from mdh_app.utils.sitk_utils import (
     sitk_resample_to_reference, resample_sitk_data_with_params, sitk_to_array, 
     get_sitk_roi_display_color, get_orientation_labels
 )
 
+
+if TYPE_CHECKING:
+    from mdh_app.managers.config_manager import ConfigManager
+    from mdh_app.managers.shared_state_manager import SharedStateManager
+
+
 logger = logging.getLogger(__name__)
 
+
 class DataManager:
-    """
-    Manages the loading, organization, and handling of RT data (IMAGE, RTSTRUCT, RTPLAN, RTDOSE)
-    using SimpleITK.
-    
-    Attributes:
-        conf_mgr (ConfigManager): Configuration manager instance.
-        ss_mgr (SharedStateManager): Shared state manager instance.
-    """
+    """Manages RT data loading and processing using SimpleITK."""
 
     def __init__(self, conf_mgr: ConfigManager, ss_mgr: SharedStateManager) -> None:
-        """
-        Initialize the DataManager with configuration and shared state managers.
-        
-        Args:
-            conf_mgr: Instance of ConfigManager.
-            ss_mgr: Instance of SharedStateManager.
-        """
+        """Initialize data manager with configuration and state managers."""
         self.conf_mgr = conf_mgr
         self.ss_mgr = ss_mgr
         self.initialize_data()
     
     def initialize_data(self) -> None:
-        """Initialize internal data structures and clear any existing cache."""
+        """Initialize data structures and cache."""
         self._patient_objectives_dict: Dict[str, Any] = {}
         self._sitk_images_params: Dict[str, Any] = {}
         self._loaded_data_dict: Dict[str, Dict[Any, Any]] = {
@@ -58,7 +56,7 @@ class DataManager:
         self.initialize_cache()
 
     def initialize_cache(self) -> None:
-        """Initialize the cache used for temporary data storage."""
+        """Initialize temporary data cache."""
         self._cached_numpy_data: Dict[Any, np.ndarray] = {}
         self._cached_rois_sitk: Dict[Any, weakref.ReferenceType] = {}
         self._cached_numpy_dose_sum: Optional[np.ndarray] = None
@@ -66,7 +64,7 @@ class DataManager:
         self._cached_texture_param_dict: Dict[str, Any] = {}
 
     def clear_data(self) -> None:
-        """Clear all loaded data and caches, then trigger garbage collection."""
+        """Clear all loaded data and trigger garbage collection."""
         self._patient_objectives_dict.clear()
         self._sitk_images_params.clear()
         for key in self._loaded_data_dict:
@@ -83,13 +81,7 @@ class DataManager:
         self._cached_texture_param_dict.clear()
     
     def load_all_dicom_data(self, rt_links_data_dict: Dict[str, List[Any]], patient_id: str) -> None:
-        """
-        Load all DICOM data (IMAGE, RTSTRUCT, RTPLAN, RTDOSE) based on provided links.
-
-        Args:
-            rt_links_data_dict: Dictionary with modality keys mapping to lists of tasks.
-            patient_id: The patient identifier.
-        """
+        """Load all DICOM data based on provided links."""
         for modality, tasks in rt_links_data_dict.items():
             for task in tasks:
                 if self.ss_mgr.cleanup_event.is_set() or self.ss_mgr.shutdown_event.is_set():
@@ -112,14 +104,7 @@ class DataManager:
         logger.info("Finished loading selected SITK data.")
     
     def load_sitk_image(self, modality: str, series_instance_uid: str, file_paths: List[str]) -> None:
-        """
-        Load an IMAGE and update the internal data dictionary.
-
-        Args:
-            modality: Modality type (e.g., "IMAGE").
-            series_instance_uid: SeriesInstanceUID of the IMAGE.
-            file_paths: List of file paths corresponding to the IMAGE.
-        """
+        """Load IMAGE and update internal data dictionary."""
         if (
             modality in self._loaded_data_dict["image"] and
             series_instance_uid in self._loaded_data_dict["image"][modality]
@@ -150,14 +135,7 @@ class DataManager:
         )
     
     def load_sitk_rtstruct(self, modality: str, sop_instance_uid: str, file_path: str) -> None:
-        """
-        Load an RTSTRUCT and update the internal data dictionary.
-
-        Args:
-            modality: Modality type (e.g., "RTSTRUCT").
-            sop_instance_uid: SOPInstanceUID of the RTSTRUCT.
-            file_path: File path to the RTSTRUCT.
-        """
+        """Load RTSTRUCT and update internal data dictionary."""
         if sop_instance_uid in self._loaded_data_dict["rtstruct"]:
             logger.error(f"Failed to load {modality} with SOPInstanceUID '{sop_instance_uid}' as it already exists.")
             return
@@ -172,14 +150,7 @@ class DataManager:
         logger.info(f"Loaded {modality} with SOPInstanceUID '{sop_instance_uid}'.")
     
     def load_rtplan(self, modality: str, sop_instance_uid: str, file_path: str) -> None:
-        """
-        Load an RTPLAN and update the internal data dictionary.
-
-        Args:
-            modality: Modality type (e.g., "RTPLAN").
-            sop_instance_uid: SOPInstanceUID of the RTPLAN.
-            file_path: File path to the RTPLAN.
-        """
+        """Load RTPLAN and update internal data dictionary."""
         if sop_instance_uid in self._loaded_data_dict["rtplan"]:
             logger.error(f"Failed to load RTPLAN with SOPInstanceUID '{sop_instance_uid}' as it already exists.")
             return
@@ -200,14 +171,7 @@ class DataManager:
         logger.info(f"Loaded {modality} with SOPInstanceUID '{sop_instance_uid}'. RT Plan details: {temp_dict}")
     
     def load_sitk_rtdose(self, modality: str, sop_instance_uid: str, file_path: str) -> None:
-        """
-        Load an RTDOSE and update the internal data dictionary.
-
-        Args:
-            modality: Modality type (e.g., "RTDOSE").
-            sop_instance_uid: SOPInstanceUID of the RTDOSE.
-            file_path: File path to the RTDOSE.
-        """
+        """Load RTDOSE and update internal data dictionary."""
         logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
         rt_dose_info_dict = RTDoseBuilder(file_path, self.ss_mgr).build_rtdose_info_dict()
         if not rt_dose_info_dict:
@@ -269,12 +233,7 @@ class DataManager:
         )
     
     def load_rtstruct_goals(self, patient_id: str) -> None:
-        """
-        Load and apply RTSTRUCT goals from a JSON file based on patient objectives.
-
-        Args:
-            patient_id: Identifier for the patient.
-        """
+        """Load and apply RTSTRUCT goals from JSON file."""
         if not self._loaded_data_dict["rtstruct"]:
             return
 
@@ -343,15 +302,7 @@ class DataManager:
             logger.info(f"Updated goals for RTSTRUCT (SOPInstanceUID: {sopiuid}): {updated_goals}")
     
     def check_if_data_loaded(self, modality_key: str = "any") -> bool:
-        """
-        Check whether data has been loaded for the specified modality.
-
-        Args:
-            modality_key: One of 'image', 'rtstruct', 'rtplan', 'rtdose', 'any', or 'all'.
-
-        Returns:
-            True if data is available, False otherwise.
-        """
+        """Check whether data has been loaded for specified modality."""
         if modality_key == "any":
             return any(self._loaded_data_dict.values())
         if modality_key == "all":

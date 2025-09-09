@@ -1,11 +1,23 @@
+from __future__ import annotations
+
+
 import logging
+from typing import TYPE_CHECKING, Optional, Tuple, Dict, Union, Any, List
+
+
 import numpy as np
 import SimpleITK as sitk
-from typing import Optional, Tuple, Dict, Union, Any, List
+
 
 from mdh_app.utils.dicom_utils import safe_keyword_for_tag
 
+
+if TYPE_CHECKING:
+    pass
+
+
 logger = logging.getLogger(__name__)
+
 
 def sitk_transform_physical_point_to_index(
     physical_point: Union[Tuple[float, ...], List[float]],
@@ -13,28 +25,11 @@ def sitk_transform_physical_point_to_index(
     spacing: Union[Tuple[float, ...], List[float]],
     direction: Union[Tuple[float, ...], List[float]]
 ) -> Tuple[int, int, int]:
-    """
-    Converts a physical point to image index coordinates using origin, spacing, and direction.
-    
-    P = O + (D * S_diagonal) * I, where:
-        P = physical space position vector
-        O = physical space origin vector
-        D = direction cosines matrix
-        S_diagonal = physical spacing between voxels as a diagonal matrix
-        I = voxel indices vector
-    
-    Args:
-        physical_point (tuple or list): The physical coordinates to transform.
-        origin (tuple or list): The origin of the image in physical space.
-        spacing (tuple or list): The voxel spacing of the image.
-        direction (tuple or list): The direction cosines of the image.
-    
-    Returns:
-        Index coordinate tuple (z, y, x).
-    """
+    """Convert physical point to image index coordinates."""
     A = np.array(direction).reshape((3, 3)) @ np.diag(spacing)
     index = np.linalg.inv(A) @ (np.array(physical_point) - np.array(origin))
     return tuple(np.round(index).astype(int))
+
 
 def sitk_to_array(
     sitk_image: sitk.Image,
@@ -46,6 +41,7 @@ def sitk_to_array(
     if flip_z_axis:
         array = array[:, :, ::-1]
     return array.astype(np_dtype) if np_dtype else array
+
 
 def array_to_sitk(
     numpy_array: np.ndarray,
@@ -70,6 +66,7 @@ def array_to_sitk(
     
     return sitk_image
 
+
 def sitk_resample_to_reference(
     input_img: sitk.Image,
     reference_img: sitk.Image,
@@ -87,6 +84,7 @@ def sitk_resample_to_reference(
     resampler.SetOutputOrigin(reference_img.GetOrigin())
     resampler.SetOutputDirection(reference_img.GetDirection())
     return resampler.Execute(input_img)
+
 
 def resample_sitk_data_with_params(
     sitk_data: sitk.Image,
@@ -134,6 +132,7 @@ def resample_sitk_data_with_params(
     
     return sitk_to_array(resampled, np_dtype=numpy_output_dtype) if numpy_output else resampled
 
+
 def get_orientation_labels(
     dicom_direction: Union[list, tuple],
     rotation_angle: Union[int, float],
@@ -168,6 +167,7 @@ def get_orientation_labels(
 
     return (orientation_label_dict, new_orientation_str) if return_new_orientation else orientation_label_dict
 
+
 def transform_direction_cosines(
     dicom_direction: Union[list, tuple],
     rotation_angle: Optional[float],
@@ -199,6 +199,7 @@ def transform_direction_cosines(
     new_direction = trans_mat @ direction
     
     return (new_direction.flatten().tolist(), trans_mat) if return_transformation_matrix else new_direction.flatten().tolist()
+
 
 def merge_imagereader_metadata(
     reader: Union[sitk.ImageFileReader, sitk.ImageSeriesReader],
@@ -250,12 +251,14 @@ def merge_imagereader_metadata(
     
     return image
 
+
 def log_image_metadata(image: sitk.Image) -> None:
     """Logs metadata, spacing, origin, direction, and size of a SimpleITK image."""
     logger.info("Logging image metadata:")
     for key in image.GetMetaDataKeys():
         logger.info(f"{key}: {image.GetMetaData(key)}")
     logger.info(f"Spacing: {image.GetSpacing()}, Origin: {image.GetOrigin()}, Direction: {image.GetDirection()}, Size: {image.GetSize()}")
+
 
 def copy_structure_without_sitk_images(obj: Any) -> Any:
     """Recursively removes SimpleITK.Image objects from nested structures, replacing them with None."""
@@ -270,6 +273,7 @@ def copy_structure_without_sitk_images(obj: Any) -> Any:
     elif isinstance(obj, sitk.Image):
         return None
     return obj
+
 
 def get_sitk_roi_display_color(
     sitk_data: sitk.Image,
@@ -286,6 +290,7 @@ def get_sitk_roi_display_color(
     except:
         return default_return_color
 
+
 def reduce_sitk_size(sitk_image: sitk.Image) -> sitk.Image:
     """Crops an image to the smallest bounding box containing all non-zero voxels."""
     array = sitk.GetArrayFromImage(sitk_image).transpose(2, 1, 0).astype(bool)
@@ -297,3 +302,4 @@ def reduce_sitk_size(sitk_image: sitk.Image) -> sitk.Image:
         bounds_min[1]:bounds_max[1]+1,
         bounds_min[2]:bounds_max[2]+1
     ]
+

@@ -1,22 +1,26 @@
+from __future__ import annotations
+
+
 import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+
+
 import pydicom
-from typing import Any, Dict, List, Optional, Union
 from pydicom.datadict import keyword_for_tag
+
 
 from mdh_app.utils.general_utils import safe_type_conversion, get_traceback
 
+
+if TYPE_CHECKING:
+    pass
+
+
 logger = logging.getLogger(__name__)
 
+
 def convert_VR_string_to_python_type(vr: str) -> str:
-    """
-    Map a DICOM Value Representation (VR) code to a description of its corresponding Python type.
-
-    Args:
-        vr: A DICOM VR code (e.g., "DS", "IS", "PN").
-
-    Returns:
-        A string describing the Python type or intended purpose for the VR.
-    """
+    """Map DICOM Value Representation code to Python type description."""
     VR_TO_PYTHON_TYPE: Dict[str, str] = {
     "AE": "Application Entity (str)",
     "AS": "Age String (str)",
@@ -50,18 +54,9 @@ def convert_VR_string_to_python_type(vr: str) -> str:
 	}
     return VR_TO_PYTHON_TYPE.get(vr, "Unknown (str)")
 
+
 def safe_keyword_for_tag(tag: Union[str, int]) -> Optional[str]:
-    """
-    Retrieve the DICOM keyword corresponding to a tag.
-
-    The tag may be provided as a string (formatted like "0008|0060" or "(0008|0060)") or an integer.
-
-    Args:
-        tag: The DICOM tag as a string or integer.
-
-    Returns:
-        The associated DICOM keyword if found, otherwise None.
-    """
+    """Retrieve DICOM keyword for tag (string or integer format)."""
     try:
         if isinstance(tag, str):
             # Remove any non-hexadecimal characters (parentheses, commas, spaces)
@@ -86,22 +81,13 @@ def safe_keyword_for_tag(tag: Union[str, int]) -> Optional[str]:
     except Exception:
         return None
 
+
 def read_dcm_file(
     file_path: str, 
     stop_before_pixels: bool = True, 
     to_json_dict: bool = False
 ) -> Optional[Union[pydicom.Dataset, Dict[str, Any]]]:
-    """
-    Read a DICOM file and optionally return its content as a JSON dictionary.
-
-    Args:
-        file_path: Path to the DICOM file.
-        stop_before_pixels: If True, avoid loading pixel data.
-        to_json_dict: If True, convert the dataset to a JSON dictionary.
-
-    Returns:
-        The DICOM dataset (or its JSON dictionary) if read successfully, otherwise None.
-    """
+    """Read DICOM file with optional JSON conversion and pixel data handling."""
     try:
         ds = pydicom.dcmread(str(file_path).strip(), force=True, stop_before_pixels=stop_before_pixels)
         return ds.to_json_dict() if to_json_dict else ds
@@ -109,20 +95,12 @@ def read_dcm_file(
         logger.error(f"Failed to read file '{file_path}'." + get_traceback(e))
         return None
 
+
 def dcm_value_conversion(
     value_list: Any, 
     value_type: Optional[type] = str
 ) -> Optional[Union[Any, List[Any]]]:
-    """
-    Convert DICOM values safely to a specified type.
-
-    Args:
-        value_list: A single value or a list of values from a DICOM element.
-        value_type: The target type for conversion (e.g., int, float). If None, no conversion is applied.
-
-    Returns:
-        The converted value(s) or None if conversion is not possible.
-    """
+    """Convert DICOM values safely to specified type."""
     if not value_list:
         return None
 
@@ -134,20 +112,12 @@ def dcm_value_conversion(
 
     return [safe_type_conversion(x, value_type) for x in value_list] if value_type is not None else value_list
 
+
 def get_dict_tag_values(
     last_dict: Dict[str, Any], 
     tag: Optional[str] = None
 ) -> Any:
-    """
-    Retrieve and convert values for a specific DICOM tag from a dictionary.
-
-    Args:
-        last_dict: The dictionary containing DICOM tag data.
-        tag: Specific tag key to extract. If None, the entire dictionary is used.
-
-    Returns:
-        The converted value(s) for the tag or the raw value if conversion rules do not apply.
-    """
+    """Retrieve and convert DICOM tag values from dictionary."""
     tag_dict: Any = last_dict if tag is None else last_dict.get(tag, {})
     if not isinstance(tag_dict, dict):
         return tag_dict
@@ -166,22 +136,13 @@ def get_dict_tag_values(
     else: # Can also check these tag_vr : ["AT", "OB", "OD", "OF", "OL", "OV", "OW", "UN"]
         return tag_dict.get("Value")
 
+
 def get_ds_tag_value(
     dicom_data: pydicom.Dataset, 
     tag: Union[int, str], 
     reformat_str: bool = False
 ) -> Optional[str]:
-    """
-    Safely retrieve the value of a specified DICOM tag from a dataset.
-
-    Args:
-        dicom_data: The pydicom dataset.
-        tag: The tag to retrieve, either as an integer or in string format.
-        reformat_str: If True, replace '^' and spaces with underscores.
-
-    Returns:
-        The tag's value as a string (after optional reformatting), or None if unavailable.
-    """
+    """Safely retrieve DICOM tag value with optional string formatting."""
     element = dicom_data.get(tag)
     if element and element.value:
         value: str = str(element.value).strip()
@@ -189,3 +150,12 @@ def get_ds_tag_value(
             value = value.replace("^", "_").replace(" ", "_")
         return value
     return None
+
+
+def get_first_available_tag(ds, tags, reformat_str: bool = False) -> Optional[str]:
+    for tag in tags:
+        val = get_ds_tag_value(ds, tag, reformat_str=reformat_str)
+        if val not in (None, ""):
+            return val
+    return None
+

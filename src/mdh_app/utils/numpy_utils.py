@@ -1,10 +1,21 @@
+from __future__ import annotations
+
+
 import logging
+from typing import TYPE_CHECKING, Callable, List, Tuple, Union
+
+
 import numpy as np
 import cv2
 from scipy.interpolate import interp1d
-from typing import Callable, List, Tuple, Union
+
+
+if TYPE_CHECKING:
+    pass
+
 
 logger = logging.getLogger(__name__)
+
 
 def numpy_roi_mask_generation(
     cols: int,
@@ -13,23 +24,7 @@ def numpy_roi_mask_generation(
     matrix_points: np.ndarray,
     geometric_type: str
 ) -> np.ndarray:
-    """
-    CREDIT FOR ORIGINAL FUNCTION: http://www.github.com/brianmanderson
-    
-    Updated for vectorized interpolation.
-    
-    Generates a 3D ROI mask based on provided geometric type and matrix points.
-    
-    Args:
-        cols (int): Number of columns in the mask.
-        rows (int): Number of rows in the mask.
-        mask (np.array): The 3D mask boolean array to modify.
-        matrix_points (np.array): Array containing points defining the ROI.
-        geometric_type (str): The type of geometry ("OPEN_NONPLANAR" or other types).
-    
-    Returns:
-        np.array: The updated 3D mask with the ROI applied.
-    """
+    """Generate 3D ROI mask from matrix points (credit: github.com/brianmanderson)."""
     if geometric_type != "OPEN_NONPLANAR":
         col_val = matrix_points[:, 0]
         row_val = matrix_points[:, 1]
@@ -62,44 +57,25 @@ def numpy_roi_mask_generation(
     
     return mask
 
+
 def poly2mask(
     vertex_row_coords: np.ndarray,
     vertex_col_coords: np.ndarray,
     shape: Tuple[int, int]
 ) -> np.ndarray:
-    """
-    CREDIT: http://www.github.com/brianmanderson
-    
-    Converts polygon coordinates to a filled boolean mask.
-    
-    Args:
-        vertex_row_coords (np.array): Row coordinates of the polygon vertices.
-        vertex_col_coords (np.array): Column coordinates of the polygon vertices.
-        shape (tuple): Dimensions of the output mask.
-    
-    Returns:
-        np.array: A boolean mask with the polygon filled in.
-    """
+    """Convert polygon coordinates to filled boolean mask (credit: github.com/brianmanderson)."""
     xy_coords = np.array([vertex_col_coords, vertex_row_coords])
     coords = np.expand_dims(xy_coords.T, 0)
     mask = np.zeros(shape, dtype=np.uint8)
     cv2.fillPoly(mask, coords, 1)
     return mask.astype(bool)
 
+
 def create_HU_to_RED_map(
     hu_values: Union[List[float], Tuple[float, ...]],
     red_values: Union[List[float], Tuple[float, ...]]
 ) -> Callable[[np.ndarray], np.ndarray]:
-    """
-    Creates a linear mapping function from Hounsfield Units (HU) to Relative Electron Density (RED).
-
-    Args:
-        hu_values: HU values for calibration.
-        red_values: Corresponding RED values.
-
-    Returns:
-        Interpolation function that maps HU to RED.
-    """
+    """Create linear mapping function from Hounsfield Units to Relative Electron Density."""
     if not hu_values or not red_values:
         logger.warning("HU/RED values not provided. Using default calibration.")
         hu_values = _get_backup_hu_values()
@@ -121,8 +97,9 @@ def create_HU_to_RED_map(
         fill_value="extrapolate"
     )
 
+
 def _get_backup_hu_values() -> List[int]:
-    """Returns default HU values for RED mapping."""
+    """Get default HU values for RED mapping."""
     return [
         -1050, -1000, -950, -900, -850, -800, -750, -700, -650, -600, -550, -500, -450, -400, -350, -300,
         -250, -200, -150, -100, -50, 0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650,
@@ -154,8 +131,9 @@ def _get_backup_hu_values() -> List[int]:
         19400, 19450, 19500, 19550, 19600, 19650, 19700, 19750, 19800, 19850, 19900, 19950, 20000
     ]
 
+
 def _get_backup_red_values() -> List[float]:
-    """Returns default RED values corresponding to backup HU values."""
+    """Get default RED values for HU mapping."""
     return [
         0.0, 0.001, 0.05, 0.096, 0.145, 0.193, 0.237, 0.28, 0.321, 0.352, 0.398, 0.448, 0.498, 0.557,
         0.613, 0.67, 0.726, 0.784, 0.839, 0.906, 0.965, 1.0, 1.064, 1.067, 1.075, 1.088, 1.131, 1.164,
@@ -190,3 +168,4 @@ def _get_backup_red_values() -> List[float]:
         14.25, 14.3, 14.348, 14.397, 14.447, 14.497, 14.546, 14.595, 14.645, 14.694, 14.743, 14.793,
         14.841, 14.89, 14.947, 15.0
     ]
+

@@ -1,28 +1,27 @@
+from __future__ import annotations
+
+
 import os
 import json
 import logging
-from typing import Any, Dict, List, Tuple, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Optional, Union, Set
+
 
 from mdh_app.utils.general_utils import (
-    atomic_save,
-    get_traceback,
-    get_source_dir,
-    get_main_screen_size, 
-    validate_directory, 
-    format_name
+    atomic_save, get_traceback, get_source_dir,
+    get_main_screen_size, validate_directory, format_name
 )
+
+
+if TYPE_CHECKING:
+    pass
+
 
 logger = logging.getLogger(__name__)
 
-class ConfigManager:
-    """
-    Manages configuration settings and RT data lists.
 
-    Attributes:
-        config_dirs (Dict[str, str]): Mapping of key directories.
-        config_files (Dict[str, Tuple[str, type]]): Mapping of config keys to their file paths and expected types.
-        configs (Dict[str, Any]): Loaded configuration data.
-    """
+class ConfigManager:
+    """Manages application configuration settings and data."""
 
     def __init__(self) -> None:
         self._set_directories()
@@ -46,16 +45,16 @@ class ConfigManager:
             "screenshots": os.path.join(project_dir, "screenshots"),
             "assets": os.path.join(resources_dir, "assets"),
             "fonts": os.path.join(resources_dir, "fonts"),
-            "patient_objs": os.path.join(app_data_dir, "patient_objects"), 
+            "database": os.path.join(app_data_dir, "db"), 
         }
 
     def _ensure_directories_exist(self) -> None:
-        """Ensure all required directories exist."""
+        """Create all required directories."""
         for path in self.dirs.values():
             os.makedirs(path, exist_ok=True)
 
     def _set_config_files(self) -> None:
-        """Define configuration file paths and their expected types."""
+        """Map configuration keys to file paths and data types."""
         initial_files: Dict[str, Tuple[str, type]] = {
             "fonts": ("fonts.json", dict),
             "user_config": ("user_config.json", dict),
@@ -74,7 +73,7 @@ class ConfigManager:
         self.ico_file: str = os.path.join(self.dirs["assets"], "MDH_Logo_Credit_DALL-E.ico")
 
     def _load_configs(self) -> None:
-        """Load and validate configuration files from disk."""
+        """Load and validate configuration files."""
         self.configs: Dict[str, Any] = {}
         for key, (file_path, expected_type) in self.config_files.items():
             loaded_data = self._load_config(file_path) or expected_type()
@@ -87,12 +86,7 @@ class ConfigManager:
             self.configs[key] = loaded_data
     
     def _load_config(self, file_path: str) -> Optional[Any]:
-        """
-        Load a JSON configuration file.
-
-        Returns:
-            The loaded JSON data, or None if loading fails.
-        """
+        """Load JSON configuration file."""
         try:
             with open(file_path, "r", encoding="utf-8") as file:
                 return json.load(file)
@@ -101,16 +95,7 @@ class ConfigManager:
             return None
     
     def _save_config(self, key: str, new_config: Union[dict, list]) -> bool:
-        """
-        Validate and save an updated configuration.
-
-        Args:
-            key: The configuration key (e.g., "fonts", "user_config").
-            new_config: The new configuration data.
-
-        Returns:
-            True if the configuration was successfully saved, False otherwise.
-        """
+        """Validate and save configuration data."""
         if key not in self.config_files:
             logger.error(f"Configuration key '{key}' is invalid; cannot update configuration.")
             return False
@@ -133,15 +118,9 @@ class ConfigManager:
             return True
         return False
     
-    ### Update methods for saving without specifying the key ###
     
     def update_user_config(self, updates: dict) -> None:
-        """
-        Update the user_config settings with new key-value pairs.
-
-        Args:
-            updates: Dictionary of updates to merge into user_config.
-        """
+        """Update user configuration settings."""
         if not isinstance(updates, dict):
             logger.error(f"Configuration update for 'user_config' must be a dict, got {type(updates).__name__}.")
             return
@@ -157,13 +136,7 @@ class ConfigManager:
         logger.info(f"Updated user configuration settings: {updates}")
 
     def add_item_organ_matching(self, organ: str, new_item: str) -> None:
-        """
-        Add an item to the organ_matching configuration.
-
-        Args:
-            organ: The organ name.
-            new_item: The new item to add.
-        """
+        """Add item to organ matching configuration."""
         key = "organ_matching"
         if key not in self.configs:
             logger.error(f"Configuration key '{key}' is missing; cannot update configuration.")
@@ -185,13 +158,7 @@ class ConfigManager:
         logger.info(f"Added item '{new_item}' to organ matching for '{organ}'.")
     
     def remove_item_organ_matching(self, organ: str, item_to_remove: str) -> None:
-        """
-        Remove an item from the organ_matching configuration.
-
-        Args:
-            organ: The organ name.
-            item_to_remove: The item to remove.
-        """
+        """Remove item from organ matching configuration."""
         key = "organ_matching"
         if key not in self.configs:
             logger.error(f"Configuration key '{key}' is missing; cannot update configuration.")
@@ -215,12 +182,7 @@ class ConfigManager:
             logger.info(f"Removed item '{item_to_remove}' from organ matching for '{organ}'.")
     
     def add_machine_name(self, machine_name: str) -> None:
-        """
-        Add a machine name to the machine_names list.
-
-        Args:
-            machine_name: The machine name to add.
-        """
+        """Add machine name to configuration."""
         if not isinstance(machine_name, str):
             logger.error(f"Machine name must be a str, got {type(machine_name).__name__}.")
             return
@@ -237,12 +199,7 @@ class ConfigManager:
             logger.info(f"Added machine name '{machine_name}' to configuration.")
     
     def remove_machine_name(self, machine_name: str) -> None:
-        """
-        Remove a machine name from the machine_names list.
-
-        Args:
-            machine_name: The machine name to remove.
-        """
+        """Remove machine name from configuration."""
         key = "machine_names"
         if key not in self.configs:
             logger.error(f"Configuration key '{key}' is missing; cannot update configuration.")
@@ -255,12 +212,7 @@ class ConfigManager:
             logger.info(f"Removed machine name '{machine_name}' from configuration.")
     
     def add_disease_site(self, disease_site: str) -> None:
-        """
-        Add a disease site to the disease_sites list.
-
-        Args:
-            disease_site: The disease site to add.
-        """
+        """Add disease site to configuration."""
         if not isinstance(disease_site, str):
             logger.error(f"Disease site must be a str, got {type(disease_site).__name__}.")
             return
@@ -277,12 +229,7 @@ class ConfigManager:
             logger.info(f"Added disease site '{disease_site}' to configuration.")
 
     def remove_disease_site(self, disease_site: str) -> None:
-        """
-        Remove a disease site from the disease_sites list.
-
-        Args:
-            disease_site: The disease site to remove.
-        """
+        """Remove disease site from configuration."""
         key = "disease_sites"
         if key not in self.configs:
             logger.error(f"Configuration key '{key}' is missing; cannot update configuration.")
@@ -294,37 +241,37 @@ class ConfigManager:
             self._save_config(key, disease_sites)
             logger.info(f"Removed disease site '{disease_site}' from configuration.")
     
-    ### Getters for general configuration settings ###
     def get_project_dir(self) -> str:
-        """Return the project directory."""
+        """Get project directory path."""
         project_dir = self.dirs.get("project")
         if project_dir is not None:
             os.makedirs(project_dir, exist_ok=True)
         return project_dir or ""
     
     def get_configs_dir(self) -> Optional[str]:
-        """Return the configuration directory path."""
+        """Get configuration directory path."""
         configs_dir = self.dirs.get("config_files")
         if configs_dir is not None:
             os.makedirs(configs_dir, exist_ok=True)
         return configs_dir
 
-    def get_patient_objects_dir(self) -> Optional[str]:
-        """Return the patient objects directory path."""
-        pt_obj_dir = self.dirs.get("patient_objs")
-        if pt_obj_dir is not None:
-            os.makedirs(pt_obj_dir, exist_ok=True)
-        return pt_obj_dir
+    def get_database_path(self) -> str:
+        """Get SQLite database file path."""
+        db_dir = self.dirs.get("database")
+        if db_dir is None:
+            raise RuntimeError("Database directory is not set in configuration.")
+        os.makedirs(db_dir, exist_ok=True)
+        return os.path.join(db_dir, "mdh_app_db.sqlite")
 
     def get_font_dir(self) -> Optional[str]:
-        """Return the fonts directory path."""
+        """Get fonts directory path."""
         font_dir = self.dirs.get("fonts")
         if font_dir is not None:
             os.makedirs(font_dir, exist_ok=True)
         return font_dir
     
     def get_font_file_path(self, filename: str) -> Optional[str]:
-        """Return the full path for a font file."""
+        """Get full font file path."""
         font_dir = self.get_font_dir()
         if not font_dir:
             return None
@@ -335,14 +282,14 @@ class ConfigManager:
         return file_path
 
     def get_nifti_data_dir(self) -> Optional[str]:
-        """Return the SITK data directory path."""
+        """Get NIfTI data directory path."""
         nifti_data_dir = self.dirs.get("processed_nifti_data")
         if nifti_data_dir is not None:
             os.makedirs(nifti_data_dir, exist_ok=True)
         return nifti_data_dir
 
     def get_nifti_data_save_dir(self, folder_names: List[str]) -> Optional[str]:
-        """Return the full path for a SITK data file."""
+        """Get NIfTI save directory path."""
         if not folder_names or not isinstance(folder_names, list):
             logger.error(f"Folder names must be provided as a list of strings. Received: {folder_names}.")
             return None
@@ -355,14 +302,14 @@ class ConfigManager:
         return save_dir
     
     def get_screenshots_dir(self) -> Optional[str]:
-        """Return the screenshots directory path."""
+        """Get screenshots directory path."""
         screenshot_dir = self.dirs.get("screenshots")
         if screenshot_dir is not None:
             os.makedirs(screenshot_dir, exist_ok=True)
         return screenshot_dir
 
     def get_screenshots_file_path(self, filename: str) -> Optional[str]:
-        """Return the full path for a screenshot file."""
+        """Get screenshot file path."""
         screenshots_dir = self.get_screenshots_dir()
         os.makedirs(screenshots_dir, exist_ok=True)
         if not screenshots_dir:
@@ -370,47 +317,30 @@ class ConfigManager:
         return os.path.join(screenshots_dir, filename)
     
     def get_fonts(self) -> Dict[str, Any]:
-        """Return the fonts configuration dictionary."""
+        """Get fonts configuration."""
         return self.configs.get("fonts", {})
     
     def get_font_size(self, font_name: str) -> Optional[int]:
-        """
-        Return the size for a given font.
-
-        Args:
-            font_name: Name of the font.
-
-        Returns:
-            The font size, or None if not found.
-        """
+        """Get font size for specified font."""
         return self.get_fonts().get(font_name)
 
     def get_icon_file(self) -> Optional[str]:
-        """Return the icon file path."""
+        """Get application icon file path."""
         if not self.ico_file or not self.ico_file.endswith(".ico") or not os.path.exists(self.ico_file):
             logger.error(f"Invalid icon file path: '{self.ico_file}', must be a valid .ico file.")
             return None
         return self.ico_file
 
     def get_user_config(self) -> Dict[str, Any]:
-        """Return the user configuration dictionary."""
+        """Get user configuration."""
         return self.configs.get("user_config", {})
 
     def get_user_setting(self, key: str, default: Any = None) -> Any:
-        """
-        Return a specific setting from user_config.
-
-        Args:
-            key: The key of the setting.
-            default: The default value if the setting is not found.
-
-        Returns:
-            The value of the setting or None if not found.
-        """
+        """Get user setting with optional default."""
         return self.get_user_config().get(key, default)
 
     def get_unmatched_organ_name(self) -> str:
-        """Return the unmatched organ name setting."""
+        """Get unmatched organ name setting."""
         return self.get_user_setting("unmatched_organ_name", "")
     
     def get_organ_matching_dict(self) -> Dict[str, Any]:
@@ -430,15 +360,7 @@ class ConfigManager:
         return self.configs.get("ct_RED_map_vals", [])
     
     def get_disease_sites(self, ready_for_dpg: bool = False) -> List[str]:
-        """
-        Return the disease sites list.
-
-        Args:
-            ready_for_dpg: If True, prepend standard options.
-
-        Returns:
-            The list of disease sites.
-        """
+        """Get disease sites list with optional DPG formatting."""
         sites: List[str] = self.configs.get("disease_sites", [])
         if ready_for_dpg:
             prepend_list = ["SELECT_MAIN_SITE", "UNKNOWN_SITE", "MULTIPLE_SITES"]
@@ -446,15 +368,7 @@ class ConfigManager:
         return sites
 
     def get_machine_names(self, ready_for_dpg: bool = False) -> List[str]:
-        """
-        Return the machine names list.
-
-        Args:
-            ready_for_dpg: If True, prepend standard options.
-
-        Returns:
-            The list of machine names.
-        """
+        """Get machine names list with optional DPG formatting."""
         names: List[str] = self.configs.get("machine_names", [])
         if ready_for_dpg:
             prepend_list = ["SELECT_MACHINE", "Unspecified-Machine"]
@@ -462,29 +376,27 @@ class ConfigManager:
         return names
 
     def get_tg_263_names(self, ready_for_dpg: bool = False) -> List[str]:
-        """
-        Return the TG-263 OAR names list.
-
-        Args:
-            ready_for_dpg: If True, prepend standard options.
-
-        Returns:
-            The list of TG-263 names.
-        """
+        """Get TG-263 organ-at-risk names with optional DPG formatting."""
         names: List[str] = self.configs.get("tg_263_names", [])
         if ready_for_dpg:
             prepend_list = ["SELECT_MASK_NAME", "PTV", "CTV", "GTV", "ITV"]
             return prepend_list + sorted(names)
         return names
     
-    ### Specific getters ###
+    def get_dicom_modalities(self) -> Dict[str, Set[str]]:
+        return {
+            "image": {"CT", "MR", "MRI", "PT", "PET"},
+            "structure": {"RS", "RTS", "RTSTR", "RTSTRUCT", "STRUCT"},
+            "plan": {"RP", "RTP", "RTPLAN", "PLAN"},
+            "dose": {
+                "RD", "RTD", "RTDOSE", "DOSE",
+                "RD BEAM", "RTD BEAM", "RTDOSE BEAM", "DOSE BEAM",
+                "RD PLAN", "RTD PLAN", "RTDOSE PLAN", "DOSE PLAN"
+            },
+        }
+    
     def get_user_config_font(self) -> Optional[str]:
-        """
-        Return the user-configured font if valid.
-
-        Returns:
-            The font name or None if invalid.
-        """
+        """Get user-configured font if valid."""
         font_dict = self.get_fonts()
         fallback_font: Optional[str] = next(iter(font_dict.keys())) if font_dict else None
         
@@ -498,15 +410,11 @@ class ConfigManager:
         return font
 
     def get_max_screen_size(self) -> Tuple[int, int]:
-        """Return the maximum screen size."""
+        """Get maximum screen dimensions."""
         return get_main_screen_size()
 
     def get_screen_size(self) -> Tuple[int, int]:
-        """
-        Return the configured screen size.
-
-        Ensures the size is a tuple of 2 positive integers not exceeding the maximum screen dimensions.
-        """
+        """Get configured screen size with validation."""
         max_screen_size = get_main_screen_size()
         fallback_screen_size = (round(max_screen_size[0] * 0.7), round(max_screen_size[1] * 0.7))
         
@@ -523,11 +431,7 @@ class ConfigManager:
         return tuple(screen_size)
 
     def get_screen_size_input_mode(self) -> str:
-        """
-        Return the screen input mode ('Percentage' or 'Pixels').
-
-        Returns a fallback of 'Percentage' if invalid.
-        """
+        """Get screen input mode with fallback validation."""
         fallback_input_mode = "Percentage"
         
         screen_input_mode = self.get_user_setting("screen_input_mode", fallback_input_mode)
@@ -541,11 +445,7 @@ class ConfigManager:
         return screen_input_mode
     
     def get_font_scale(self) -> Union[int, float]:
-        """
-        Return the configured font scale.
-
-        Returns a fallback value of 1.0 if the setting is invalid.
-        """
+        """Get font scale with fallback validation."""
         fallback_font_scale: Union[int, float] = 1.0
         
         font_scale = self.get_user_setting("font_scale", fallback_font_scale)
@@ -559,11 +459,7 @@ class ConfigManager:
         return font_scale
 
     def get_objectives_filename(self) -> Optional[str]:
-        """
-        Return the JSON objectives filename.
-
-        If not set, returns None.
-        """
+        """Get objectives JSON filename."""
         filename = self.get_user_setting("json_objective_filename")
         if not filename:
             logger.info("The objectives JSON filename is not set; it will not be used.")
@@ -571,11 +467,7 @@ class ConfigManager:
         return filename
 
     def get_objectives_filepath(self) -> Optional[str]:
-        """
-        Return the full path for the objectives JSON file.
-
-        Returns None if the filename is not set or the location is invalid.
-        """
+        """Get objectives JSON file path with validation."""
         filename = self.get_objectives_filename()
         config_dir = self.get_configs_dir()
         filepath = os.path.join(config_dir, filename) if filename and config_dir else None
@@ -587,12 +479,7 @@ class ConfigManager:
         return filepath
 
     def _check_provided_location(self, location: str) -> bool:
-        """
-        Validate a provided directory location.
-
-        Returns:
-            True if valid, False otherwise.
-        """
+        """Validate directory location."""
         is_valid, _, message = validate_directory(location)
         if not is_valid:
             logger.error(f"Location validation failed: {message}")
@@ -600,11 +487,7 @@ class ConfigManager:
         return True
     
     def get_pan_speed(self) -> Union[int, float]:
-        """
-        Return the configured pan speed.
-
-        Returns a fallback value of 0.02 if invalid.
-        """
+        """Get configured pan speed."""
         fallback_pan_speed: Union[int, float] = 0.02
         
         pan_speed = self.get_user_setting("pan_speed", fallback_pan_speed)
@@ -618,11 +501,7 @@ class ConfigManager:
         return pan_speed
 
     def get_zoom_factor(self) -> Union[int, float]:
-        """
-        Return the configured zoom factor.
-
-        Returns a fallback value of 0.1 if invalid.
-        """
+        """Get configured zoom factor."""
         fallback_zoom_factor: Union[int, float] = 0.1
         
         zoom_factor = self.get_user_setting("zoom_factor", fallback_zoom_factor)
@@ -636,11 +515,7 @@ class ConfigManager:
         return zoom_factor
 
     def get_orientation_label_color(self) -> Tuple[int, int, int, int]:
-        """
-        Return the orientation label color as an RGBA tuple.
-
-        Returns a fallback color of (255, 255, 255, 255) if invalid.
-        """
+        """Get orientation label color as RGBA tuple."""
         fallback_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
         
         orientation_label_color = self.get_user_setting("orientation_label_color", fallback_color)
@@ -659,11 +534,7 @@ class ConfigManager:
         return tuple(orientation_label_color)
     
     def get_dpg_padding(self) -> int:
-        """
-        Return the DPG padding setting.
-
-        Defaults to 8 if the setting is invalid.
-        """
+        """Get DPG padding setting."""
         fallback_padding = 8
         
         dpg_padding = self.get_user_setting("dpg_padding", fallback_padding)
@@ -677,11 +548,7 @@ class ConfigManager:
         return dpg_padding
     
     def get_voxel_spacing(self) -> List[Union[int, float]]:
-        """
-        Return the default voxel spacing (X, Y, Z).
-
-        Defaults to [2.0, 2.0, 2.0] if the configuration is invalid.
-        """
+        """Get voxel spacing with fallback validation."""
         fallback_spacing: List[Union[int, float]] = [2.0, 2.0, 2.0]
         
         voxel_spacing = self.get_user_setting("voxel_spacing", fallback_spacing)
@@ -699,11 +566,7 @@ class ConfigManager:
         return list(voxel_spacing)
     
     def get_bool_use_config_voxel_spacing(self) -> bool:
-        """
-        Return whether to use the default voxel spacing.
-
-        Defaults to False if the configuration is invalid.
-        """
+        """Get whether to use configured voxel spacing."""
         fallback_value = False
         
         use_config_voxel_spacing = self.get_user_setting("use_config_voxel_spacing", fallback_value)
@@ -717,11 +580,7 @@ class ConfigManager:
         return use_config_voxel_spacing
 
     def get_save_settings_dict(self) -> Dict[str, bool]:
-        """
-        Return the save settings dictionary.
-
-        Defaults to a preset dictionary if the configuration is invalid.
-        """
+        """Get save settings with fallback validation."""
         fallback_dict: Dict[str, bool] = {
             "keep_custom_params": False,
             "convert_ct_hu_to_red": True,

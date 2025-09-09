@@ -1,163 +1,215 @@
+from __future__ import annotations
+
+
 import logging
+from os.path import exists
+from typing import List, Optional, Tuple, TYPE_CHECKING
+
+
 import numpy as np
 import SimpleITK as sitk
-from os.path import exists
-from typing import List, Optional, Tuple
 
-from mdh_app.managers.shared_state_manager import SharedStateManager
-from mdh_app.utils.dicom_utils import read_dcm_file, get_dict_tag_values
+
+from mdh_app.utils.dicom_utils import get_dict_tag_values, read_dcm_file
 from mdh_app.utils.general_utils import get_traceback
 from mdh_app.utils.sitk_utils import merge_imagereader_metadata
 
+
+if TYPE_CHECKING:
+    import numpy.typing as npt
+    from mdh_app.managers.shared_state_manager import SharedStateManager
+
+
 logger = logging.getLogger(__name__)
 
+
 class ImageBuilder:
-    """
-    Constructs an Image from a series of DICOM Image files.
+    """Builds 3D SimpleITK images from DICOM series with spatial ordering."""
     
-    Attributes:
-        file_paths (List[str]): List of file paths to the DICOM Image files.
-        ss_mgr (SharedStateManager): Manager for shared resources.
-        expected_SIUID (Optional[str]): Expected SeriesInstanceUID for validation.
-        image_orientation_patient (Optional[List[float]]): Image orientation (patient) information.
-        normal_vector (Optional[np.ndarray]): Normal vector to the plane defined by the image orientation.
-        distances (List[Tuple[float, str]]): List of distances and corresponding file paths.
-        sorted_files (List[str]): File paths sorted by their distances along the normal vector.
-    """
-    
-    def __init__(self, file_paths: List[str], ss_mgr: SharedStateManager, expected_SIUID: Optional[str] = None) -> None:
-        """
-        Initialize the ImageBuilder with file paths and optional expected SeriesInstanceUID.
-        
-        Args:
-            file_paths (List[str]): File paths to the DICOM Image files.
-            ss_mgr (SharedStateManager): Manager for shared resources.
-            expected_SIUID (Optional[str]): Expected SeriesInstanceUID for validation.
-        """
+    def __init__(
+        self, 
+        file_paths: List[str], 
+        ss_mgr: SharedStateManager, 
+        expected_SIUID: Optional[str] = None
+    ) -> None:
+        if not file_paths:
+            raise ValueError("At least one file path must be provided")
+            
         self.file_paths = file_paths
         self.ss_mgr = ss_mgr
         self.expected_SIUID = expected_SIUID
-        self.image_orientation_patient: Optional[List[float]] = None
-        self.normal_vector: Optional[np.ndarray] = None
-        self.distances: List[Tuple[float, str]] = []
-        self.sorted_files: List[str] = []
+        
+        # Internal state for image construction
+        self._image_orientation_patient: Optional[List[float]] = None
+        self._normal_vector: Optional[npt.NDArray[np.float32]] = None
+        self._distances: List[Tuple[float, str]] = []
+        self._sorted_files: List[str] = []
     
     def _should_exit(self) -> bool:
-        """
-        Checks if the task should be aborted due to cleanup or shutdown events.
-        
-        Returns:
-            bool: True if an exit condition is met, False otherwise.
-        """
-        if (self.ss_mgr is not None and 
-            (self.ss_mgr.cleanup_event.is_set() or 
-             self.ss_mgr.shutdown_event.is_set())):
-            logger.info("Aborting Image Builder task.")
+        """Check if build process should terminate."""
+        if self.ss_mgr and (
+            self.ss_mgr.cleanup_event.is_set() or 
+            self.ss_mgr.shutdown_event.is_set()
+        ):
+            logger.info("Aborting ImageBuilder task due to shutdown request")
             return True
         return False
     
     def _read_and_validate_files(self) -> bool:
-        """
-        Reads and validates the input DICOM files for Image construction.
-        
-        Returns:
-            bool: True if the files are valid and consistent, False otherwise.
-        """
-        if not self.file_paths or not isinstance(self.file_paths, list) or not all(isinstance(f, str) for f in self.file_paths):
-            logger.error(f"File paths must be provided as a list of strings. Received: {self.file_paths}.")
+        """Read and validate DICOM files for geometric consistency."""
+        if not isinstance(self.file_paths, list) or not all(
+            isinstance(f, str) for f in self.file_paths
+        ):
+            logger.error(
+                f"File paths must be a list of strings. Received: {type(self.file_paths)}"
+            )
             return False
         
-        if self.expected_SIUID is not None and (not self.expected_SIUID or not isinstance(self.expected_SIUID, str)):
-            logger.error(f"Expected SeriesInstanceUID must be a string or None. Received: {self.expected_SIUID}.")
+        if self.expected_SIUID is not None and not isinstance(self.expected_SIUID, str):
+            logger.error(
+                f"Expected SeriesInstanceUID must be a string or None. "
+                f"Received: {type(self.expected_SIUID)}"
+            )
             return False
+
+        valid_files_count = 0
         
         for filepath in self.file_paths:
             if not exists(filepath):
-                logger.warning(f"File {filepath} does not exist. Skipping.")
+                logger.warning(f"File does not exist, skipping: {filepath}")
                 continue
             
-            ds = read_dcm_file(filepath, to_json_dict=True)
-            
-            # Validate SeriesInstanceUID
-            read_SIUID = get_dict_tag_values(ds, "0020000E")
-            if self.expected_SIUID and read_SIUID != self.expected_SIUID:
-                logger.warning(f"SIUID mismatch in {filepath}. Expected: {self.expected_SIUID}, Found: {read_SIUID}. Skipping.")
+            try:
+                ds = read_dcm_file(filepath, to_json_dict=True)
+            except Exception as e:
+                logger.warning(f"Failed to read DICOM file {filepath}: {e}")
                 continue
             
-            # Validate ImageOrientationPatient
-            read_IOP = get_dict_tag_values(ds, "00200037")
-            if read_IOP is None:
-                logger.warning(f"Missing Image Orientation (Patient) in {filepath}. Skipping.")
+            # Validate SeriesInstanceUID if expected
+            if self.expected_SIUID:
+                series_uid = get_dict_tag_values(ds, "0020000E")  # SeriesInstanceUID
+                if series_uid != self.expected_SIUID:
+                    logger.warning(
+                        f"SeriesInstanceUID mismatch in {filepath}. "
+                        f"Expected: {self.expected_SIUID}, Found: {series_uid}"
+                    )
+                    continue
+            
+            # Extract and validate Image Orientation Patient (0020,0037)
+            image_orientation = get_dict_tag_values(ds, "00200037")
+            if image_orientation is None:
+                logger.warning(f"Missing ImageOrientationPatient in {filepath}")
                 continue
             
-            if self.image_orientation_patient is None:
-                # First valid IOP found
-                self.image_orientation_patient = read_IOP
-                IOP = np.array(read_IOP, dtype=np.float32)
-                self.normal_vector = np.cross(IOP[0:3], IOP[3:6])
-            elif self.image_orientation_patient != read_IOP:
-                logger.error(f"Inconsistent Image Orientation (Patient) in {filepath}.")
+            # Establish reference orientation from first valid file
+            if self._image_orientation_patient is None:
+                self._image_orientation_patient = image_orientation
+                orientation_array = np.array(image_orientation, dtype=np.float32)
+                # Calculate normal vector for slice ordering
+                self._normal_vector = np.cross(
+                    orientation_array[0:3], 
+                    orientation_array[3:6]
+                )
+            elif self._image_orientation_patient != image_orientation:
+                logger.error(
+                    f"Inconsistent ImageOrientationPatient in {filepath}. "
+                    "All images must have the same orientation."
+                )
                 return False
             
-            # Validate ImagePositionPatient
-            read_IPP = get_dict_tag_values(ds, "00200032")
-            if read_IPP is None:
-                logger.warning(f"Missing Image Position (Patient) in {filepath}. Skipping.")
+            # Extract and validate Image Position Patient (0020,0032)
+            image_position = get_dict_tag_values(ds, "00200032")
+            if image_position is None:
+                logger.warning(f"Missing ImagePositionPatient in {filepath}")
                 continue
             
-            # Compute the distance along the normal vector for sorting in slice order
-            IPP = np.array(read_IPP, dtype=np.float32)
-            distance = np.dot(self.normal_vector, IPP)
-            self.distances.append((distance, filepath))
+            # Calculate distance along normal vector for spatial ordering
+            position_array = np.array(image_position, dtype=np.float32)
+            distance = np.dot(self._normal_vector, position_array)
+            self._distances.append((distance, filepath))
+            valid_files_count += 1
         
-        if self.image_orientation_patient is None:
-            logger.error("No valid Image Orientation (Patient) found in the provided files.")
+        if self._image_orientation_patient is None:
+            logger.error("No valid ImageOrientationPatient found in any file")
             return False
         
-        if not self.distances:
-            logger.error("No valid files found after validation.")
+        if valid_files_count == 0:
+            logger.error("No valid DICOM image files found after validation")
             return False
         
+        logger.info(f"Validated {valid_files_count} DICOM image files for series construction")
         return True
     
     def _sort_files(self) -> None:
-        """
-        Sorts the files based on their distances along the normal vector.
-        """
-        self.distances.sort(key=lambda x: x[0])
-        self.sorted_files = [filepath for _, filepath in self.distances]
+        """Sort files by spatial position for 3D reconstruction."""
+        self._distances.sort(key=lambda distance_file_pair: distance_file_pair[0])
+        self._sorted_files = [filepath for _, filepath in self._distances]
+        
+        logger.debug(
+            f"Sorted {len(self._sorted_files)} files by spatial position. "
+            f"Distance range: {self._distances[0][0]:.2f} to {self._distances[-1][0]:.2f}"
+        )
     
     def build_sitk_image(self) -> Optional[sitk.Image]:
-        """
-        Constructs a SimpleITK image from the sorted Image files.
-        
-        Returns:
-            Optional[sitk.Image]: The constructed image if successful, otherwise None.
-        """
-        if self._should_exit() or not self._read_and_validate_files():
+        """Construct 3D SimpleITK image from validated DICOM files."""
+        # Check for early termination
+        if self._should_exit():
+            return None
+            
+        # Validate and process input files
+        if not self._read_and_validate_files():
+            logger.error("File validation failed, cannot construct image")
             return None
         
+        # Sort files spatially
         self._sort_files()
         
+        # Check for termination after processing
         if self._should_exit():
             return None
         
+        # Configure SimpleITK image series reader
         reader = sitk.ImageSeriesReader()
-        reader.MetaDataDictionaryArrayUpdateOn()
-        reader.LoadPrivateTagsOn()
-        reader.SetOutputPixelType(sitk.sitkFloat32)
-        reader.SetFileNames(self.sorted_files)
+        reader.MetaDataDictionaryArrayUpdateOn()  # Preserve DICOM metadata
+        reader.LoadPrivateTagsOn()  # Include private DICOM tags
+        reader.SetOutputPixelType(sitk.sitkFloat32)  # Standardize to float32
+        reader.SetFileNames(self._sorted_files)
         
-        # Read the image series. 
+        # Execute image construction
         try:
+            logger.info(f"Constructing 3D image from {len(self._sorted_files)} DICOM files")
             image = reader.Execute()
         except Exception as e:
-            logger.error(f"Failed to execute the ImageSeriesReader." + get_traceback(e))
+            logger.error(
+                f"ImageSeriesReader failed to construct image: {e}\n"
+                f"Traceback: {get_traceback(e)}"
+            )
             return None
         
+        # Ensure consistent data type
         image = sitk.Cast(image, sitk.sitkFloat32)
         
-        # Merge metadata across all slices.
-        image = merge_imagereader_metadata(reader, image)
+        # Merge metadata from all slices into the final image
+        try:
+            image = merge_imagereader_metadata(reader, image)
+        except Exception as e:
+            logger.warning(f"Failed to merge metadata: {e}")
+            # Continue without merged metadata as image is still valid
+        
+        logger.info(
+            f"Successfully constructed image with dimensions: {image.GetSize()}, "
+            f"spacing: {image.GetSpacing()}"
+        )
         return image
 
+    def get_file_count(self) -> int:
+        """Get number of input DICOM files."""
+        return len(self.file_paths)
+    
+    def get_sorted_files(self) -> List[str]:
+        """Get spatially sorted file paths."""
+        return self._sorted_files.copy()
+    
+    def get_image_orientation(self) -> Optional[List[float]]:
+        """Get ImageOrientationPatient DICOM tag values."""
+        return self._image_orientation_patient.copy() if self._image_orientation_patient else None

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 import json
@@ -7,16 +9,34 @@ import weakref
 import traceback
 import tempfile
 import functools
+from json import loads
 from tkinter import Tk
 from pathlib import Path
 from itertools import islice
-from typing import Any, Iterable, Iterator, List, Tuple, Union, Optional, Dict, Callable, Literal
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, List, Tuple, Union, Optional, Dict, Callable, Literal
+
+
+if TYPE_CHECKING:
+    pass
+
 
 logger = logging.getLogger(__name__)
+
 
 def get_traceback(exception: Exception) -> str:
     """Return a formatted traceback string for the given exception."""
     return "\n" + "".join(traceback.TracebackException.from_exception(exception).format())
+
+
+def get_json_list(s: Optional[str]) -> List[str]:
+    if not s:
+        return []
+    try:
+        v = loads(s)
+        return v if isinstance(v, list) else []
+    except Exception:
+        return []
+
 
 def get_callable_name(func: Callable) -> str:
     """Return the name of the underlying callable."""
@@ -38,6 +58,7 @@ def get_callable_name(func: Callable) -> str:
 
     return repr(func)
 
+
 def chunked_iterable(iterable: Iterable[Any], size: int) -> Iterator[List[Any]]:
     """Yield successive chunks of the given size from an iterable."""
     it = iter(iterable)
@@ -46,6 +67,7 @@ def chunked_iterable(iterable: Iterable[Any], size: int) -> Iterator[List[Any]]:
         if not chunk:
             break
         yield chunk
+
 
 def weakref_nested_structure(structure: Any) -> Any:
     """Recursively replace items in a nested structure with weak references when applicable.
@@ -75,6 +97,7 @@ def weakref_nested_structure(structure: Any) -> Any:
     
     # For other types (such as int, float, str), return the object itself
     return structure
+
 
 def atomic_save(
     filepath: str,
@@ -126,6 +149,7 @@ def atomic_save(
             logger.error(f"Failed to save file '{filepath}'." + get_traceback(e))
         return False
 
+
 def get_source_dir() -> str:
     """Return the source directory of the project."""
     this_fpath = os.path.abspath(__file__)
@@ -133,6 +157,7 @@ def get_source_dir() -> str:
     mdh_app_dir = os.path.dirname(utils_dir)
     source_dir = os.path.dirname(mdh_app_dir)
     return source_dir
+
 
 def format_time(
     seconds: Optional[float],
@@ -180,6 +205,7 @@ def format_time(
 
     return " ".join(parts)
 
+
 def get_main_screen_size() -> Tuple[int, int]:
     """Return the width and height of the main screen."""
     root = Tk()
@@ -189,6 +215,7 @@ def get_main_screen_size() -> Tuple[int, int]:
     height = root.winfo_screenheight()
     root.destroy()
     return width, height
+
 
 def format_name(
     mask_name: str, 
@@ -205,6 +232,7 @@ def format_name(
     if uppercase and not lowercase:
         return formatted.upper()
     return formatted
+
 
 def get_flat_list(
     nested_structure: Any,
@@ -240,6 +268,7 @@ def get_flat_list(
         return flat_list[0]
     return flat_list
 
+
 def any_exist_in_nested_dict(d: Any) -> bool:
     """Return True if any non-None value exists in a nested structure (dict or list)."""
     if isinstance(d, dict):
@@ -251,6 +280,7 @@ def any_exist_in_nested_dict(d: Any) -> bool:
     else:
         # If the value is not a dict or list, just check if it's not None
         return d is not None
+
 
 def safe_type_conversion(value: Any, req_type: type, uppercase: bool = False, lowercase: bool = False) -> Any:
     """
@@ -280,6 +310,7 @@ def safe_type_conversion(value: Any, req_type: type, uppercase: bool = False, lo
     except ValueError:
         logger.warning(f"Conversion unsuccessful for value {value} to {req_type}. Returning original value.")
         return value
+
 
 def validate_directory(path_str: str) -> Tuple[bool, Optional[str], str]:
     """
@@ -314,6 +345,7 @@ def validate_directory(path_str: str) -> Tuple[bool, Optional[str], str]:
     abs_path = os.path.abspath(path)
     return True, abs_path, f"Valid directory: {abs_path}"
 
+
 def validate_filename(filename_str: str) -> str:
     """
     Clean a filename by removing any directory parts, invalid characters,
@@ -340,6 +372,7 @@ def validate_filename(filename_str: str) -> str:
     invalid_chars = r'[<>:"/\\|?*\x00-\x1F]' if os.name == 'nt' else r'[<>:"|?*\x00-\x1F]'
     filename = re.sub(invalid_chars, "", filename)
     return filename[:255]
+
 
 def regex_find_dose_and_fractions(roi_name: str) -> Dict[str, Optional[Union[float, int]]]:
     """
@@ -383,6 +416,7 @@ def regex_find_dose_and_fractions(roi_name: str) -> Dict[str, Optional[Union[flo
         
     return {'dose': dose, 'fractions': fractions}
 
+
 def check_for_valid_dicom_string(input_string: str) -> bool:
     """Return True if the input string meets DICOM character standards."""
     valid_chars = set(string.ascii_letters + string.digits + string.punctuation + string.whitespace)
@@ -390,6 +424,7 @@ def check_for_valid_dicom_string(input_string: str) -> bool:
     control_chars = {chr(i) for i in range(32)}  # ASCII control characters
     valid_chars -= control_chars  # Exclude control characters
     return all(char in valid_chars for char in input_string)
+
 
 def struct_name_priority_key(mask_name: str) -> Tuple[int, str]:
     """Return a sorting key (priority, original name) for a structure name."""
@@ -405,6 +440,7 @@ def struct_name_priority_key(mask_name: str) -> Tuple[int, str]:
     elif 'prv' in lower:
         return 4, mask_name
     return 5, mask_name
+
 
 def find_reformatted_mask_name(
     mask_name: str,
@@ -474,6 +510,7 @@ def find_reformatted_mask_name(
                 return key
     
     return unmatched_name
+
 
 def find_disease_site(
     plan_label: Optional[str],
@@ -553,6 +590,7 @@ def find_disease_site(
             return "TBI"
     
     return "SELECT_MAIN_SITE"
+
 
 def verify_roi_goals_format(roi_goals_string: str) -> Tuple[bool, List[str]]:
     """
@@ -672,6 +710,7 @@ def verify_roi_goals_format(roi_goals_string: str) -> Tuple[bool, List[str]]:
     
     # If there are no errors, the format is valid
     return len(errors) == 0, errors
+
 
 def parse_struct_goal(
     struct_name: str,
@@ -861,3 +900,4 @@ def parse_struct_goal(
         return None
     
     return goal_type, spare_volume, spare_dose
+

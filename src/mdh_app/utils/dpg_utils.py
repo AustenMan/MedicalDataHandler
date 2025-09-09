@@ -1,30 +1,35 @@
+from __future__ import annotations
+
+
 import logging
-import dearpygui.dearpygui as dpg
 from os.path import join
-from typing import Any, Optional, Callable, Tuple, Union, List, Set
+from typing import TYPE_CHECKING, Any, Optional, Callable, Tuple, Union, List, Set
+
+
+import dearpygui.dearpygui as dpg
 from pydicom.dataset import Dataset
 from pydicom.dataelem import DataElement
 from pydicom.sequence import Sequence
+from sqlalchemy.inspection import inspect as sa_inspect
+from sqlalchemy.orm.exc import DetachedInstanceError, UnmappedInstanceError
+
 
 from mdh_app.utils.general_utils import validate_directory
 from mdh_app.utils.dicom_utils import convert_VR_string_to_python_type
 
+
+if TYPE_CHECKING:
+    pass
+
+
 logger = logging.getLogger(__name__)
+
 
 def safe_delete(
     item: Union[str, int, List[Any], Tuple[Any, ...], Set[Any]],
     children_only: bool = False
 ) -> None:
-    """
-    Safely delete a Dear PyGUI item or items if they exist.
-
-    Args:
-        item: The DPG item(s) to delete.
-        children_only: If True, only delete the children of the item without deleting the item itself.
-
-    Raises:
-        ValueError: If `children_only` is not a boolean or if `item` is not a valid type.
-    """
+    """Safely delete Dear PyGUI item(s) if they exist."""
     if not isinstance(children_only, bool):
         raise ValueError(f"'children_only' must be a boolean. Received: {children_only}")
     if isinstance(item, (list, tuple, set)):
@@ -36,27 +41,14 @@ def safe_delete(
     else:
         raise ValueError("Item must be a string, integer, or a list/tuple/set of strings and integers.")
 
+
 def get_popup_params(
     width_ratio: float = 0.75,
     height_ratio: float = 0.75,
     client_width: Optional[int] = None,
     client_height: Optional[int] = None
 ) -> Tuple[int, int, Tuple[int, int]]:
-    """
-    Calculate the size and position of a popup window based on viewport dimensions and given ratios.
-
-    Args:
-        width_ratio: Width ratio relative to the viewport width (0.1 to 1).
-        height_ratio: Height ratio relative to the viewport height (0.1 to 1).
-        client_width: Width of the viewport client area. Defaults to the current viewport width.
-        client_height: Height of the viewport client area. Defaults to the current viewport height.
-
-    Returns:
-        A tuple containing the popup width, popup height, and (x, y) position.
-
-    Raises:
-        ValueError: If arguments are of invalid types or if viewport dimensions cannot be determined.
-    """
+    """Calculate popup window size and position based on viewport dimensions."""
     if not isinstance(width_ratio, (int, float)) or not isinstance(height_ratio, (int, float)):
         raise ValueError(f"Width and height ratios must be numeric. Received: width_ratio={width_ratio}, height_ratio={height_ratio}")
     if not isinstance(client_width, (int, type(None))) or not isinstance(client_height, (int, type(None))):
@@ -78,25 +70,13 @@ def get_popup_params(
     popup_y_pos = (client_height - popup_height) // 2
     return popup_width, popup_height, (popup_x_pos, popup_y_pos)
 
+
 def verify_input_directory(
     directory: str,
     input_tag: Union[str, int],
     error_tag: Optional[Union[str, int]]
 ) -> bool:
-    """
-    Verify if the directory specified in an input field is valid.
-
-    Args:
-        directory: The directory to validate.
-        input_tag: The tag for the Dear PyGUI input text item.
-        error_tag: The tag for the error message text item (or None).
-
-    Returns:
-        True if the directory is valid, False otherwise.
-
-    Raises:
-        ValueError: If tags are invalid.
-    """
+    """Verify if directory specified in input field is valid."""
     if not isinstance(input_tag, (str, int)) or not dpg.does_item_exist(input_tag) or dpg.get_item_type(input_tag) != "mvAppItemType::mvInputText":
         logger.info(f"DPG Item Type: {dpg.get_item_type(input_tag)}")
         raise ValueError(f"Input tag must be a valid tag for an existing DearPyGUI input text item. Received: {input_tag}")
@@ -116,15 +96,16 @@ def verify_input_directory(
             dpg.configure_item(error_tag, default_value=message, color=(39, 174, 96)) # Green color
         return True
 
+
 def add_data_to_tree(
     data: Any,
     label: str = "",
+    user_data: Any = None,
     parent: Optional[int] = None,
     text_wrap_width: int = -1,
     text_color_one: Tuple[int, int, int] = (30, 200, 120),
     text_color_two: Tuple[int, int, int] = (140, 220, 250),
     dcm_viewing_callback: Optional[Callable] = None,
-    return_callback: Optional[Callable] = None,
     max_depth: int = 10,
     current_depth: int = 0
 ) -> None:
@@ -132,14 +113,13 @@ def add_data_to_tree(
     Recursively add data to a Dear PyGUI tree structure.
 
     Args:
-        data: The data to display (can be dict, list, object, or base data type).
+        data: The data to display (can be SQLAlchemy mapped instance, dict, list, or basic type).
         label: Label for the current data node.
         parent: Parent node tag in the GUI.
         text_wrap_width: Width for text wrapping.
         text_color_one: RGB color for labels.
         text_color_two: RGB color for values.
         dcm_viewing_callback: Callback function when a ".dcm" file is clicked.
-        return_callback: Callback for processing ".dcm" file data.
         max_depth: Maximum recursion depth.
         current_depth: Current recursion depth.
     """
@@ -147,87 +127,178 @@ def add_data_to_tree(
         dpg.add_text(default_value=f"{label}: (Max recursion depth reached)", parent=parent)
         return
     
-    def add_empty_value(parent, key_or_label):
-        with dpg.group(parent=parent):
+    def add_kv(parent_id: int, key: str, value: Any) -> None:
+        """Render a simple key/value line, with .dcm button support."""
+        
+        val_text = str(value) if value is not None and value != "" else "N/A"
+        
+        with dpg.group(parent=parent_id, horizontal=True):
+            dpg.add_text(default_value=f"{key}:", wrap=text_wrap_width, bullet=True, color=text_color_one)
+            if val_text.endswith(".dcm") and callable(dcm_viewing_callback):
+                # Clickable .dcm line
+                dpg.add_button(
+                    label=val_text, # Maybe change this to a descriptor later
+                    user_data=val_text,
+                    callback=dcm_viewing_callback,
+                )
+            else:
+                dpg.add_text(default_value=f"\t{val_text}", wrap=text_wrap_width, color=text_color_two)
+    
+    def add_empty_value(parent_id: int, key_or_label: str) -> None:
+        with dpg.group(parent=parent_id):
             dpg.add_text(default_value=f"{key_or_label}:", wrap=text_wrap_width, bullet=True, color=text_color_one)
             dpg.add_text(default_value="\tN/A", wrap=text_wrap_width, color=text_color_two)
     
+    # Determining if data is a SQLAlchemy mapped instance
+    is_sqla = False
+    mapper = None
+    try:
+        mapper = sa_inspect(data)  # works for mapped instances; raises otherwise
+        is_sqla = True  # If this didn't raise, we’ve got a SQLAlchemy-mapped instance
+    except (UnmappedInstanceError, TypeError):
+        is_sqla = False
+    
+    # SQLAlchemy mapped instance handling
+    if is_sqla and mapper is not None and hasattr(mapper, "mapper"):
+        # Render an expandable node titled with either provided label or ClassName
+        node_label = label or mapper.mapper.class_.__name__
+        new_parent = dpg.add_tree_node(label=node_label, parent=parent, default_open=(current_depth==0))
+
+        # First, columns
+        for col in mapper.mapper.columns:
+            key = col.key
+            try:
+                val = getattr(data, key, None)
+            except DetachedInstanceError:
+                val = "<unloaded attribute>"
+            add_kv(new_parent, key, val)
+
+        # Next, attributes
+        for rel in mapper.mapper.relationships:
+            rel_label = rel.key
+            if current_depth + 1 > max_depth:
+                add_empty_value(new_parent, rel_label)
+                continue
+
+            # Try accessing relationship; do not show if not loaded & session closed
+            try:
+                rel_val = getattr(data, rel.key)
+            except DetachedInstanceError:
+                continue
+            
+            # Render relationship node
+            if rel.uselist:  # one-to-many / many-to-many
+                rel_parent = dpg.add_tree_node(label=f"{rel_label} [{len(rel_val) if rel_val is not None else 0}]", parent=new_parent)
+                if not rel_val:
+                    add_empty_value(rel_parent, rel_label)
+                else:
+                    # Each item under its own subtree
+                    for idx, item in enumerate(rel_val):
+                        file_path = (" - " + str(getattr(item, 'path', ''))) if hasattr(item, 'path') else ''
+                        add_data_to_tree(
+                            data=item,
+                            label=f"{item.__class__.__name__} #{idx+1}{file_path}",
+                            user_data=user_data,
+                            parent=rel_parent,
+                            text_wrap_width=text_wrap_width,
+                            text_color_one=text_color_one,
+                            text_color_two=text_color_two,
+                            dcm_viewing_callback=dcm_viewing_callback,
+                            max_depth=max_depth,
+                            current_depth=current_depth + 1,
+                        )
+            else:  # many-to-one / one-to-one
+                rel_parent = dpg.add_tree_node(label=rel_label, parent=new_parent)
+                if rel_val is None:
+                    add_empty_value(rel_parent, rel_label)
+                else:
+                    add_data_to_tree(
+                        data=rel_val,
+                        label="",
+                        user_data=user_data,
+                        parent=rel_parent,
+                        text_wrap_width=text_wrap_width,
+                        text_color_one=text_color_one,
+                        text_color_two=text_color_two,
+                        dcm_viewing_callback=dcm_viewing_callback,
+                        max_depth=max_depth,
+                        current_depth=current_depth + 1,
+                    )
+        return
+    
+    # Dictionary handling
     if isinstance(data, dict):
-        dpg.add_tree_node(label=label if label else "dict", parent=parent)
-        new_parent = dpg.last_item()
+        new_parent = dpg.add_tree_node(label=label if label else "dict", parent=parent)
         for key, value in data.items():
-            if value:
+            if value is not None and value != "":
                 add_data_to_tree(
                     data=value, 
                     label=str(key), 
+                    user_data=user_data,
                     parent=new_parent, 
                     text_wrap_width=text_wrap_width, 
                     text_color_one=text_color_one, 
                     text_color_two=text_color_two, 
                     dcm_viewing_callback=dcm_viewing_callback, 
-                    return_callback=return_callback,
                     max_depth=max_depth, 
-                    current_depth=current_depth+1
+                    current_depth=current_depth + 1,
                 )
             else:
-                add_empty_value(new_parent, key)
-    elif isinstance(data, list):
-        dpg.add_tree_node(label=label if label else "list", parent=parent)
-        new_parent = dpg.last_item()
-        if all([isinstance(item, (str, int, float, bool, type(None))) for item in data]):
-            dpg.add_text(default_value=str(data), parent=new_parent, wrap=text_wrap_width, color=text_color_two)
+                add_empty_value(new_parent, str(key))
+        return
+    
+    # List handling
+    if isinstance(data, (list, tuple)):
+        new_parent = dpg.add_tree_node(label=label if label else "list", parent=parent)
+        simple = all(isinstance(item, (str, int, float, bool, type(None))) for item in data)
+        if simple:
+            dpg.add_text(default_value=str(list(data)), parent=new_parent, wrap=text_wrap_width, color=text_color_two)
         else:
             for idx, item in enumerate(data):
                 item_label = f"Item #{str(idx)}"
-                if item:
+                if item is not None and item != "":
                     add_data_to_tree(
                         data=item, 
                         label=item_label, 
+                        user_data=user_data,
                         parent=new_parent, 
                         text_wrap_width=text_wrap_width, 
                         text_color_one=text_color_one, 
                         text_color_two=text_color_two, 
                         dcm_viewing_callback=dcm_viewing_callback, 
-                        return_callback=return_callback,
                         max_depth=max_depth, 
-                        current_depth=current_depth+1
+                        current_depth=current_depth + 1,
                     )
                 else:
                     add_empty_value(new_parent, item_label)
-    elif hasattr(data, "__dict__"):
-        # Object with attributes
+        return
+    
+    # Generic Python object handling
+    if hasattr(data, "__dict__"):
+        new_parent = dpg.add_tree_node(label=label if label else data.__class__.__name__, parent=parent)
         for key, value in vars(data).items():
-            if value:
+            if key.startswith("_"):
+                continue # Skip private attributes
+            if value is not None and value != "":
                 add_data_to_tree(
-                    data=value, 
-                    label=str(key), 
-                    parent=parent, 
-                    text_wrap_width=text_wrap_width, 
-                    text_color_one=text_color_one, 
-                    text_color_two=text_color_two, 
-                    dcm_viewing_callback=dcm_viewing_callback, 
-                    return_callback=return_callback,
-                    max_depth=max_depth, 
-                    current_depth=current_depth+1
+                    data=value,
+                    label=str(key),
+                    user_data=user_data,
+                    parent=new_parent,
+                    text_wrap_width=text_wrap_width,
+                    text_color_one=text_color_one,
+                    text_color_two=text_color_two,
+                    dcm_viewing_callback=dcm_viewing_callback,
+                    max_depth=max_depth,
+                    current_depth=current_depth + 1,
                 )
             else:
-                add_empty_value(parent, key)
-    else:
-        with dpg.group(parent=parent):
-            dpg.add_text(default_value=f"{label}:", wrap=text_wrap_width, bullet=True, color=text_color_one)
-            if data:
-                data_str = str(data)
-                if data_str.endswith(".dcm") and callable(dcm_viewing_callback):
-                    dpg.add_button(
-                        label=data_str, 
-                        indent=8, 
-                        callback=dcm_viewing_callback, 
-                        user_data=return_callback if callable(return_callback) else None
-                    )
-                else:
-                    dpg.add_text(default_value=f"\t{data_str}", wrap=text_wrap_width, color=text_color_two)
-            else:
-                dpg.add_text(default_value="\tN/A", wrap=text_wrap_width, color=text_color_two)
+                add_empty_value(new_parent, key)
+        return
+    
+    # Unhandled data types (e.g., scalars)
+    add_kv(parent, label or "value", data)
+
 
 def normalize_dcm_string(s: Any) -> str:
     """
@@ -240,6 +311,7 @@ def normalize_dcm_string(s: Any) -> str:
         A lowercase, trimmed string.
     """
     return str(s).strip().lower() if s is not None else ""
+
 
 def build_userdata(tag: Any = "", VR: Any = None, value: Any = None) -> dict:
     """
@@ -259,6 +331,7 @@ def build_userdata(tag: Any = "", VR: Any = None, value: Any = None) -> dict:
         "VR": normalize_dcm_string(VR),
         "value": normalize_dcm_string(value)
     }
+
 
 def add_dicom_dataset_to_tree(
     data: Any,
@@ -488,6 +561,7 @@ def add_dicom_dataset_to_tree(
                 user_data=build_userdata(tag=label, VR=None, value=str(data))
             )
 
+
 def modify_table_rows(
     table_tag: Union[str, int],
     delete: bool = False,
@@ -520,6 +594,7 @@ def modify_table_rows(
             elif show is not None:
                 dpg.configure_item(row_tag, show=show)
 
+
 def modify_table_cols(
     table_tag: Union[str, int],
     delete: bool = False,
@@ -551,6 +626,7 @@ def modify_table_cols(
                 dpg.delete_item(col_tag)
             elif show is not None:
                 dpg.configure_item(col_tag, show=show)
+
 
 def match_child_tags(
     parent_tag: Union[str, int],
@@ -599,3 +675,4 @@ def match_child_tags(
                     result.append(child)
     
     return result
+
