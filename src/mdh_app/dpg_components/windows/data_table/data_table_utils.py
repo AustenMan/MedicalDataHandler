@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Union, Any, Dict, Tuple, Optional, Set, List
+from enum import Enum
+from dataclasses import dataclass, field
+from os.path import basename
+from functools import partial
 
 
 import dearpygui.dearpygui as dpg
@@ -13,21 +17,49 @@ from mdh_app.dpg_components.core.utils import get_tag, get_user_data
 from mdh_app.dpg_components.rendering.texture_manager import request_texture_update
 from mdh_app.dpg_components.widgets.patient_ui.fill_menu import fill_right_col_ptdata
 from mdh_app.dpg_components.windows.confirmation.confirm_window import create_confirmation_popup
+from mdh_app.dpg_components.windows.dicom_inspection.dcm_inspect_win import create_popup_dicom_inspection
 from mdh_app.utils.dpg_utils import safe_delete
-from mdh_app.dpg_components.core.dpg_patient_graph import k_file
+from mdh_app.utils.general_utils import get_json_list
 
 
 if TYPE_CHECKING:
-    from mdh_app.database.models import Patient
+    from mdh_app.database.models import Patient, File, FileMetadata
+    from mdh_app.managers.config_manager import ConfigManager
     from mdh_app.managers.data_manager import DataManager
     from mdh_app.managers.dicom_manager import DicomManager
-    from mdh_app.dpg_components.core.dpg_patient_graph import PatientGraph, CheckboxRegistry
+    from mdh_app.managers.shared_state_manager import SharedStateManager
 
 
 logger = logging.getLogger(__name__)
 
 
-def _get_patient_dates(patient: Patient) -> Dict[str, Optional[str]]:
+class ContainerKind(Enum):
+    DOSES = "Doses"
+    PLANS = "Plans"
+    STRUCTURE_SETS = "Structure Sets"
+    IMAGE_SERIES_GROUPS = "Image Series Groups"
+
+
+class NodeType(Enum):
+    DOSE = "Dose"
+    PLAN = "Plan"
+    STRUCTURE_SET = "Structure Set"
+    IMAGE_SERIES = "Image Series"
+    IMAGE = "Image"
+
+
+@dataclass
+class Node:
+    kind: NodeType
+    label: str
+    description: str
+    datetime: str
+    file_objs: List[Any] = field(default_factory=list)   # actual File objects from Patient
+    metadata: Optional[Any] = None  # original FileMetadata or related info
+    children: List["Node"] = field(default_factory=list)
+
+
+def get_patient_dates(patient: Patient) -> Dict[str, Optional[str]]:
     # Helper to return date fields as iso or "N/A"
     def dt_fmt(dt):
         return dt.isoformat() if dt else "N/A"
@@ -37,9 +69,9 @@ def _get_patient_dates(patient: Patient) -> Dict[str, Optional[str]]:
         "DateLastAccessed": dt_fmt(patient.accessed_at) if hasattr(patient, 'accessed_at') else "N/A",
         "DateLastProcessed": dt_fmt(patient.processed_at) if hasattr(patient, 'processed_at') else "N/A",
     }
-    
 
-def _confirm_removal_func(sender: Union[str, int], app_data: Any, user_data: Tuple[Union[str, int], Patient]) -> None:
+
+def confirm_removal_callback(sender: Union[str, int], app_data: Any, user_data: Tuple[Union[str, int], Patient]) -> None:
     """Remove a patient data object after confirmation."""
     dcm_mgr: DicomManager = get_user_data(td_key="dicom_manager")
     tag_data_window = get_tag("data_display_window")
@@ -73,107 +105,511 @@ def _confirm_removal_func(sender: Union[str, int], app_data: Any, user_data: Tup
     )
 
 
-def build_dicom_label(d: dict, prefix: str = "RT MODALITY", override_core_search: str = "") -> str:
-    """
-    Build a compact label for display.
-    Precedence: label > name > description > date > time > sopi.
-    """
-    core = override_core_search or (
-        d.get("label")
-        or d.get("name")
-        or d.get("description")
-        or d.get("date")
-        or d.get("time")
-        or d.get("sopi")
-    )
-    return f"{prefix} {core}"
-
-
-def build_dicom_tooltip(d: dict) -> str:
-    """Build a tooltip string from a DICOM metadata dict."""
-    fields = [
-        ("SOP Instance UID", d.get("sopi", "")),
-        ("Label", d.get("label", "")),
-        ("Name", d.get("name", "")),
-        ("Description", d.get("description", "")),
-        ("Date", d.get("date", "")),
-        ("Time", d.get("time", "")),
-        ("Modality", d.get("modality", "")),
-    ]
-    return "\n".join(f"{k}={v}" for k, v in fields if v)
-
-
-
-def _load_selected_data(
-    sender: Union[str, int],
-    app_data: Any,
-    user_data: Tuple[Patient, PatientGraph, CheckboxRegistry]
-) -> None:
-    """Load selected patient data into the application based on user input."""
-    patient, g, reg = user_data
-    data_mgr: DataManager = get_user_data(td_key="data_manager")
+def build_dicom_structure(patient: Patient, selected_files: Set[str]) -> None:
+    # DICOM Viewing Callback
+    ss_mgr: SharedStateManager = get_user_data(td_key="shared_state_manager")
+    dcm_view_cb = lambda s, a, u: ss_mgr.submit_action(partial(create_popup_dicom_inspection, s, a, u))
     
-    logger.info("Starting to load selected data. Please wait...")
+    # Build Node structure (returns container nodes: Doses, Plans, Structure Sets, Image Series)
+    dicom_nodes: List[Node] = _build_dicom_nodes(patient)
     
-    # Gather selected file paths
-    selected_files: Set[str] = set()
-    for path in reg.file_to_masters.keys():
-        # Find any checkbox that represents this file.
-        item_key = k_file(path)
-        cbs = reg.item_to_cbs.get(item_key)
-        if cbs and any(bool(dpg.get_value(cb)) for cb in cbs):
-            selected_files.add(path)
+    # Create the checkbox callback
+    checkbox_callback = _create_checkbox_callback(selected_files)
+
+    # Render top-level containers: one checkbox + one tree_node containing their children
+    tag_data_table = get_tag("data_table")
+    for row_num, node in enumerate(dicom_nodes, start=1):
+        num_files = _count_subtree_files(node)
+        
+        with dpg.table_row(parent=tag_data_table):
+            with dpg.group(horizontal=True):
+                # container-level checkbox (only one)
+                container_ud = _node_user_data(node, None)
+                cbox = dpg.add_checkbox(callback=checkbox_callback, user_data=container_ud)
+                container_ud["checkbox"] = cbox
+
+                # single tree node which will contain all linked files and child nodes
+                with dpg.tree_node(label=f"{row_num}. Grouped Files ({num_files} files)", default_open=False):
+                    # render each child (child may create its own tree node if it meets 'must_tree')
+                    for child in node.children:
+                        child_ud = _render_node_inline(child, container_ud, checkbox_callback, dcm_view_cb)
+                        container_ud["children"].append(child_ud)
+
+            # Metadata columns
+            kind_text = node.kind.value if hasattr(node.kind, "value") else str(node.kind)
+            dpg.add_text(kind_text)
+            dpg.add_text(node.label)
+            desc = node.description
+            dpg.add_text(desc[:50] + "..." if len(desc) > 50 else desc)
+            dpg.add_text(node.datetime)
+            dpg.add_text(f"{num_files} files")
+
+
+def load_patient_data(sender: Union[int, str], app_data: Any, user_data: Tuple[Patient, Set[str]]) -> None:
+    """Load selected patient data into the application."""
+    patient: Patient = user_data[0]
+    selected_files: Set[str] = user_data[1]
     
     if not selected_files:
         logger.info("No files selected for loading.")
         return
     
-    # Build rt_links_data_dict from graph + selected files
-    rt_links_data_dict: Dict[str, List[Any]] = {
-        "IMAGE":   [],  # (modality, series_instance_uid, [file_paths])
-        "RTSTRUCT": [], # (modality, sop_instance_uid, struct_path, [ref_series_uids])
-        "RTPLAN":  [],  # (modality, sop_instance_uid, plan_path, [ref_struct_sopi])
-        "RTDOSE":  [],  # (modality, sopi, dose_path, dose_type, [ref_plans], [ref_structs], [ref_doses])
-    }
+    logger.info("Starting to load selected data. Please wait...")
+    data_mgr: DataManager = get_user_data(td_key="data_manager")
+    conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
     
-    # IMAGES: include any series that has ≥1 selected file; include only selected files in the list
-    for series_uid, entry in g.images_by_series.items():
-        series_paths = [p for _s, p in entry["files"]]
-        chosen = [p for p in series_paths if p in selected_files]
-        if chosen:
-            rt_links_data_dict["IMAGE"].append((entry["modality"], series_uid, chosen))
+    # Build a data structure for DataManager
+    rt_data = {"IMAGE": [], "RTSTRUCT": [], "RTPLAN": [], "RTDOSE": []}
+    image_series: Dict[Tuple[str, str], List[str]] = {}
     
-    # RTSTRUCT
-    for struct_sopi, s in g.structs_by_sopi.items():
-        if s["path"] in selected_files:
-            rt_links_data_dict["RTSTRUCT"].append((s["modality"], struct_sopi, s["path"]))#, list(s["ref_series"])))
+    # Get modalities for classification
+    modalities = conf_mgr.get_dicom_modalities()
     
-    # RTPLAN
-    for plan_sopi, p in g.plans_by_sopi.items():
-        if p["path"] in selected_files:
-            rt_links_data_dict["RTPLAN"].append((p["modality"], plan_sopi, p["path"]))#, list(p["ref_structs"])))
-
-    # RTDOSE beam groups - add individual doses if their file is selected
-    for plan_sopi, doses in g.doses_beam_groups.items():
-        for d in doses:
-            if d["path"] in selected_files:
-                rt_links_data_dict["RTDOSE"].append((
-                    d["modality"], d["sopi"], d["path"], #d["dose_type"],
-                    #list(d["ref_plans"]), list(d["ref_structs"]), list(d["ref_doses"])
-                ))
-
-    # RTDOSE plan items
-    for d in g.doses_plan:
-        if d["path"] in selected_files:
-            rt_links_data_dict["RTDOSE"].append((
-                d["modality"], d["sopi"], d["path"], #d["dose_type"],
-                #list(d["ref_plans"]), list(d["ref_structs"]), list(d["ref_doses"])
-            ))
-
-    # Send to DataManager
-    data_mgr.load_all_dicom_data(rt_links_data_dict, patient.mrn)
+    # Group selected files by modality
+    for file_obj in getattr(patient, "files", []):
+        if file_obj.path not in selected_files:
+            continue
+        
+        md = getattr(file_obj, "file_metadata", None)
+        if not md:
+            continue
+            
+        modality = (md.modality or "").upper()
+        path = file_obj.path
+        sopi = md.sop_instance_uid or ""
+        
+        if modality in modalities.get("image", set()):
+            series_uid = md.series_instance_uid or ""
+            key = (modality, series_uid)
+            image_series.setdefault(key, []).append(path)
+        elif modality in modalities.get("structure", set()):
+            rt_data["RTSTRUCT"].append((modality, sopi, path))
+        elif modality in modalities.get("plan", set()):
+            rt_data["RTPLAN"].append((modality, sopi, path))
+        elif modality in modalities.get("dose", set()):
+            rt_data["RTDOSE"].append((modality, sopi, path))
     
+    # Collect image series entries
+    for (modality, series_uid), paths in image_series.items():
+        rt_data["IMAGE"].append((modality, series_uid, paths))
+    
+    # Load data and update UI
+    data_mgr.load_all_dicom_data(rt_data, patient.mrn)
     fill_right_col_ptdata(patient)
     request_texture_update(texture_action_type="initialize")
+    logger.info(f"Loaded {len(selected_files)} files for patient {patient.name}")
 
+
+def _format_dicom_datetime(date_str: str, time_str: str) -> str:
+    """Format DICOM date and time strings into readable format."""
+    if date_str and time_str:
+        try:
+            return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}"
+        except:
+            return f"{date_str} {time_str}"
+    elif date_str:
+        try:
+            return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        except:
+            return date_str
+    return "N/A"
+
+
+def _node_user_data(node: Node, parent_ud: Optional[Dict] = None) -> Dict[str, Any]:
+    """Helper to create user_data from Node"""
+    paths = [f.path for f in getattr(node, "file_objs", []) or []]
+    ud = {
+        "node": node,
+        "files": paths,
+        "children": [],
+        "parent": parent_ud,
+        "checkbox": None,
+        "is_group": bool(node.children) or len(paths) != 1,
+    }
+    return ud
+
+
+def _is_fully_checked(node_ud: Dict[str, Any]) -> bool:
+    """Recursively check if a node and all its descendants are checked"""
+    cb = node_ud.get("checkbox")
+    if cb and not dpg.get_value(cb):
+        return False
+    return all(_is_fully_checked(c) for c in node_ud.get("children", []))
+
+
+def _propagate_down(ud: Dict[str, Any], state: bool, checkbox_callback, selected_files: Set[str]) -> None:
+    """Toggle every descendant checkbox and keep selection in sync"""
+    for child in ud.get("children", []):
+        cb = child.get("checkbox")
+        if cb is not None and dpg.get_value(cb) != state:
+            dpg.set_value(cb, state)
+            fpaths = child.get("files", [])
+            if state:
+                selected_files.update(fpaths)
+            else:
+                selected_files.difference_update(fpaths)
+            # recurse so selected_files and deeper nodes are updated
+            checkbox_callback(cb, state, child)
+        _propagate_down(child, state, checkbox_callback, selected_files)
+
+
+def _update_ancestors(ud: Dict[str, Any], selected_files: Set[str]) -> None:
+    """Recompute ancestor checkbox states based on descendants"""
+    parent = ud.get("parent")
+    while parent:
+        p_cb = parent.get("checkbox")
+        if p_cb:
+            new_state = all(_is_fully_checked(c) for c in parent.get("children", []))
+            if dpg.get_value(p_cb) != new_state:
+                dpg.set_value(p_cb, new_state)
+                parent_files = parent.get("files", [])
+                if new_state:
+                    selected_files.update(parent_files)
+                else:
+                    selected_files.difference_update(parent_files)
+        parent = parent.get("parent")
+
+
+def _create_checkbox_callback(selected_files: Set[str]):
+    """Factory to create the checkbox callback"""
+    callback_active = {"running": False}   # lock flag
+    
+    def checkbox_callback(sender: int, app_data: bool, user_data: Dict[str, Any]) -> None:
+        # prevent re-entry
+        if callback_active["running"]:
+            return
+        callback_active["running"] = True
+        
+        try:
+            # update selected files set
+            fpaths = user_data.get("files", [])
+            if app_data: # Checked
+                selected_files.update(fpaths)
+            else: # Unchecked
+                selected_files.difference_update(fpaths)
+            
+            # propagate down
+            _propagate_down(user_data, app_data, checkbox_callback, selected_files)
+            
+            # update ancestors
+            _update_ancestors(user_data, selected_files)
+        finally:
+            callback_active["running"] = False
+    
+    return checkbox_callback
+
+
+def _count_subtree_files(n: Node) -> int:
+    """Count all files in a node and its descendants"""
+    total = len(getattr(n, "file_objs", []) or [])
+    for c in n.children:
+        total += _count_subtree_files(c)
+    return total
+
+
+def _render_node_inline(node: Node, parent_ud: Optional[Dict], checkbox_callback, dcm_view_cb) -> Dict[str, Any]:
+    """Render a non-container node inline"""
+    ud = _node_user_data(node, parent_ud)
+    file_objs = getattr(node, "file_objs", []) or []
+    num_files = len(file_objs)
+    num_children = len(node.children or [])
+    must_tree = (num_children > 1) or (num_files > 1)
+
+    # bypass parent when it only wraps a single child and has no files
+    if num_children == 1 and num_files == 0:
+        return _render_node_inline(node.children[0], parent_ud, checkbox_callback, dcm_view_cb)
+    
+    if must_tree:
+        with dpg.group(horizontal=True):
+            cb = dpg.add_checkbox(callback=checkbox_callback, user_data=ud)
+            ud["checkbox"] = cb
+
+            files_count = num_files + sum(len(getattr(c, "file_objs", []) or []) for c in node.children)
+            with dpg.tree_node(label=f"{node.label} ({files_count} files)", default_open=False):
+                # direct files (each gets checkbox + button)
+                for fobj in file_objs:
+                    fobj: File
+                    fmd: Optional[FileMetadata] = getattr(fobj, "file_metadata", None)
+                    fpath = getattr(fobj, "path", None)
+                    if not fpath:
+                        continue
+                    child_ud = {"node": None, "files": [fpath], "children": [], "parent": ud, "checkbox": None, "is_group": False}
+                    with dpg.group(horizontal=True):
+                        child_cb = dpg.add_checkbox(callback=checkbox_callback, user_data=child_ud)
+                        child_ud["checkbox"] = child_cb
+                        dpg.add_button(label=f"{node.label} - {basename(fpath)}", user_data=fpath, callback=dcm_view_cb)
+                        with dpg.tooltip(dpg.last_item()):
+                            dpg.add_text(
+                                (
+                                    f"Label: {fmd.label or 'N/A'}\n"
+                                    f"Name: {fmd.name or 'N/A'}\n"
+                                    f"Description: {fmd.description or 'N/A'}\n"
+                                    f"Date/Time: {_format_dicom_datetime(fmd.date, fmd.time) or 'N/A'}\n"
+                                    f"Frame of Reference UID: {fmd.frame_of_reference_uid or 'N/A'}\n"
+                                    f"Modality: {fmd.modality or 'N/A'}\n"
+                                    f"SOP Instance UID: {fmd.sop_instance_uid or 'N/A'}\n"
+                                    f"Series Instance UID: {fmd.series_instance_uid or 'N/A'}\n"
+                                    f"File Path: {fpath}\n"
+                                ) if fmd is not None else "No metadata available"
+                            )
+                    ud["children"].append(child_ud)
+
+                # child nodes
+                for child in node.children:
+                    child_ud = _render_node_inline(child, ud, checkbox_callback, dcm_view_cb)
+                    ud["children"].append(child_ud)
+
+    else:
+        # single file -> inline file row
+        if num_files == 1:
+            fobj: File = file_objs[0]
+            fmd: Optional[FileMetadata] = getattr(fobj, "file_metadata", None)
+            fpath = getattr(fobj, "path", None)
+            if fpath:
+                file_ud = {"node": None, "files": [fpath], "children": [], "parent": ud, "checkbox": None, "is_group": False}
+                with dpg.group(horizontal=True):
+                    fcb = dpg.add_checkbox(callback=checkbox_callback, user_data=file_ud)
+                    file_ud["checkbox"] = fcb
+                    dpg.add_button(label=f"{node.label} - {basename(fpath)}", user_data=fpath, callback=dcm_view_cb)
+                    with dpg.tooltip(dpg.last_item()):
+                        dpg.add_text(
+                            (
+                                f"Label: {fmd.label or 'N/A'}\n"
+                                f"Name: {fmd.name or 'N/A'}\n"
+                                f"Description: {fmd.description or 'N/A'}\n"
+                                f"Date/Time: {_format_dicom_datetime(fmd.date, fmd.time) or 'N/A'}\n"
+                                f"Frame of Reference UID: {fmd.frame_of_reference_uid or 'N/A'}\n"
+                                f"Modality: {fmd.modality or 'N/A'}\n"
+                                f"SOP Instance UID: {fmd.sop_instance_uid or 'N/A'}\n"
+                                f"Series Instance UID: {fmd.series_instance_uid or 'N/A'}\n"
+                                f"File Path: {fpath}\n"
+                            ) if fmd is not None else "No metadata available"
+                        )
+                ud["children"].append(file_ud)
+        
+        # add child inline if present
+        if num_children == 1:
+            child = node.children[0]
+            child_ud = _render_node_inline(child, ud, checkbox_callback, dcm_view_cb)
+            ud["children"].append(child_ud)
+
+        # leaf: no files and no children
+        else:
+            cb = dpg.add_checkbox(callback=checkbox_callback, user_data=ud)
+            ud["checkbox"] = cb
+
+    return ud
+
+
+def _aggregate_file_objs(nodes: List[Node]) -> List[Any]:
+    """Aggregate all file objects from a list of nodes and their children"""
+    out: List[Any] = []
+    for n in nodes:
+        out.extend(getattr(n, "file_objs", []) or [])
+        for c in n.children:
+            out.extend(getattr(c, "file_objs", []) or [])
+    return out
+
+
+def _build_dicom_nodes(patient: Patient) -> List[Node]:
+    """Return four container Nodes:
+       - Doses (children = dose nodes)
+       - Plans (children = plan nodes)
+       - Structure Sets (children = struct nodes)
+       - Image Series (children = series nodes)
+
+    Each leaf node references actual File objects in node.file_objs.
+    """
+    conf_mgr: ConfigManager = get_user_data("config_manager")
+    modalities = conf_mgr.get_dicom_modalities()
+
+    series_map: Dict[str, Node] = {}
+    struct_map: Dict[str, Node] = {}
+    plan_map: Dict[str, Node] = {}
+    doses_grouped_by_plan: Dict[str, List[Any]] = {}   # plan_sopi -> [File,...]
+    orphan_dose_files: List[Any] = []                  # dose files with no ref_plan
+
+    # 1) classify files
+    for file_obj in getattr(patient, "files", []):
+        file_obj: File
+        if not hasattr(file_obj, "file_metadata"):
+            continue
+        
+        md: FileMetadata = file_obj.file_metadata
+        if not md:
+            continue
+        
+        # Basic metadata
+        modality = (md.modality or "").upper()
+        dt = _format_dicom_datetime(md.date, md.time)
+        label = md.label or md.name or md.modality or md.sop_instance_uid or "Unknown"
+        desc = md.description or ""
+        
+        if modality in modalities.get("image", set()) and md.series_instance_uid:
+            s_uid = md.series_instance_uid
+            series = series_map.setdefault(
+                s_uid,
+                Node(
+                    kind=NodeType.IMAGE_SERIES,
+                    label=md.description or label,
+                    description=desc,
+                    datetime=dt,
+                    file_objs=[],
+                    metadata={"modality": modality, "series_uid": s_uid, "sopi_to_file": {}},
+                ),
+            )
+            series.file_objs.append(file_obj)
+            series.metadata["sopi_to_file"][md.sop_instance_uid] = file_obj
+
+        elif modality in modalities.get("structure", set()):
+            struct_map[md.sop_instance_uid] = Node(
+                kind=NodeType.STRUCTURE_SET,
+                label=label,
+                description=desc,
+                datetime=dt,
+                file_objs=[file_obj],
+                metadata={"ref_series": get_json_list(md.referenced_series_instance_uid_seq)},
+            )
+
+        elif modality in modalities.get("plan", set()):
+            plan_map[md.sop_instance_uid] = Node(
+                kind=NodeType.PLAN,
+                label=label,
+                description=desc,
+                datetime=dt,
+                file_objs=[file_obj],
+                metadata={"ref_structs": get_json_list(md.referenced_structure_set_sopi_seq)},
+            )
+
+        elif modality in modalities.get("dose", set()):
+            ref_plans = get_json_list(md.referenced_rt_plan_sopi_seq)
+            if ref_plans:
+                for ref in ref_plans:
+                    doses_grouped_by_plan.setdefault(ref, []).append(file_obj)
+            else:
+                orphan_dose_files.append(file_obj)
+    
+    # 2) wire relationships: series -> struct, struct -> plan, plan -> dose (dose via grouping later)
+    for struct_node in list(struct_map.values()):
+        for series_uid in struct_node.metadata.get("ref_series", []):
+            series_node = series_map.get(series_uid)
+            if series_node and series_node not in struct_node.children:
+                struct_node.children.append(series_node)
+
+    for plan_node in list(plan_map.values()):
+        for struct_sopi in plan_node.metadata.get("ref_structs", []):
+            s_node = struct_map.get(struct_sopi)
+            if s_node and s_node not in plan_node.children:
+                plan_node.children.append(s_node)
+    
+    # 3) build dose nodes grouped by plan; attach plan node as child when available
+    dose_children: List[Node] = []
+    for plan_sopi, files in doses_grouped_by_plan.items():
+        plan_node = plan_map.get(plan_sopi)
+        label = f"Dose for Plan: '{plan_node.label}'" if plan_node else f"Dose for Plan {plan_sopi}"
+        children: List[Node] = []
+        if plan_node:
+            # append the plan node as a child of the dose node so the dose tree drills into the plan
+            children.append(plan_node)
+        dose_node = Node(
+            kind=NodeType.DOSE,
+            label=label,
+            description="Dose files grouped by referenced plan",
+            datetime="",
+            file_objs=list(files),
+            metadata={"ref_plan": plan_sopi},
+            children=children,
+        )
+        dose_children.append(dose_node)
+
+    # orphan dose files become individual dose nodes
+    for fobj in orphan_dose_files:
+        fobj: File
+        md = fobj.file_metadata
+        dt = _format_dicom_datetime(md.date, md.time)
+        label = md.label or md.name or "Dose"
+        dn = Node(
+            kind=NodeType.DOSE,
+            label=label,
+            description=md.description or "",
+            datetime=dt,
+            file_objs=[fobj],
+            metadata={},
+            children=[],
+        )
+        dose_children.append(dn)
+
+    # 4) collect maps -> lists
+    all_plan_nodes = list(plan_map.items())       # list of (sopi, node)
+    all_struct_nodes = list(struct_map.items())   # (sopi, node)
+    all_series_nodes = list(series_map.items())   # (series_uid, node)
+
+    # 5) exclude plans that are referenced by any dose group (so they only appear under dose tree)
+    referenced_plan_sopis = set(doses_grouped_by_plan.keys())
+    plan_children = [node for sopi, node in all_plan_nodes if sopi not in referenced_plan_sopis]
+
+    # exclude structs referenced by any plan (so they will appear under plans if referenced, otherwise here)
+    referenced_struct_sopis = {s for p in plan_map.values() for s in p.metadata.get("ref_structs", [])}
+    struct_children = [node for sopi, node in all_struct_nodes if sopi not in referenced_struct_sopis]
+
+    # exclude series referenced by any struct
+    referenced_series = {uid for s in struct_map.values() for uid in s.metadata.get("ref_series", [])}
+    series_children = [node for uid, node in all_series_nodes if uid not in referenced_series]
+    
+    # 6) create category containers (aggregate file_objs for counts)
+    containers: List[Node] = []
+
+    if dose_children:
+        containers.append(
+            Node(
+                kind=ContainerKind.DOSES,
+                label="Doses",
+                description="All dose objects grouped by referenced plan",
+                datetime="",
+                file_objs=_aggregate_file_objs(dose_children),
+                metadata=None,
+                children=dose_children,
+            )
+        )
+
+    if plan_children:
+        containers.append(
+            Node(
+                kind=ContainerKind.PLANS,
+                label="Plans",
+                description="All plan objects",
+                datetime="",
+                file_objs=_aggregate_file_objs(plan_children),
+                metadata=None,
+                children=plan_children,
+            )
+        )
+
+    if struct_children:
+        containers.append(
+            Node(
+                kind=ContainerKind.STRUCTURE_SETS,
+                label="Structure Sets",
+                description="All structure sets",
+                datetime="",
+                file_objs=_aggregate_file_objs(struct_children),
+                metadata=None,
+                children=struct_children,
+            )
+        )
+
+    if series_children:
+        containers.append(
+            Node(
+                kind=ContainerKind.IMAGE_SERIES_GROUPS,
+                label="Image Series Groups",
+                description="All image series groups",
+                datetime="",
+                file_objs=_aggregate_file_objs(series_children),
+                metadata=None,
+                children=series_children,
+            )
+        )
+
+    return containers
 

@@ -108,16 +108,19 @@ def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_d
     # Add the DICOM dataset to the tree
     with dpg.group(tag=tag_tree_group, parent=tag_inspect_dcm, user_data=False):
         add_dicom_dataset_to_tree(
+            window_tag=tag_inspect_dcm,
             data=dicom_dataset, 
             label=None, 
             parent=tag_tree_group, 
             text_wrap_width=round(0.95 * popup_width), 
-            max_depth=5
+            max_depth=5,
         )
     
-    # Update the status text
-    dpg.configure_item(tag_status_text, label="Full DICOM info is loaded")
-    dpg.configure_item(tag_start_search, enabled=True)
+    # Check in case user closed the popup before finished loading
+    if dpg.does_item_exist(tag_inspect_dcm):
+        # Update the status text
+        dpg.configure_item(tag_status_text, label="Full DICOM info is loaded")
+        dpg.configure_item(tag_start_search, enabled=True)
 
 
 

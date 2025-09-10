@@ -334,6 +334,7 @@ def build_userdata(tag: Any = "", VR: Any = None, value: Any = None) -> dict:
 
 
 def add_dicom_dataset_to_tree(
+    window_tag: Union[str, int],
     data: Any,
     label: str = "",
     parent: Optional[int] = None,
@@ -347,6 +348,7 @@ def add_dicom_dataset_to_tree(
     Recursively adds DICOM data to a Dear PyGUI tree structure.
     
     Args:
+        window_tag: The tag of the parent window.
         data (Any): The DICOM data to display. Can be a Dataset, DataElement, or base data type.
         label (str): Label for the current data node.
         parent (Optional[int]): Parent node in the GUI.
@@ -364,6 +366,9 @@ def add_dicom_dataset_to_tree(
             The code you posted creates the entire tree at the start, with tree nodes in the closed state. I'd suggest that you only create children when a tree node is expanded - see add_item_toggled_open_handler. You can attach the list or dict of supposed child values to the tree node via user_data, and when it gets expanded, just pick up user_data and build children from there.
             Note: the user_data argument in add_item_toggled_open_handler receives user data for the handler itself, not for the tree node. Use get_item_user_data to retrieve it from the tree node.
     """
+    # Early exit if window no longer exists
+    if not dpg.does_item_exist(window_tag):
+        return
     
     if current_depth > max_depth:
         dpg.add_text(
@@ -400,10 +405,15 @@ def add_dicom_dataset_to_tree(
         else:
             new_parent = parent
         for elem in data:
+            # Check if window still exists before each element
+            if not dpg.does_item_exist(window_tag):
+                return
+            
             tag = elem.tag
             tag_name = elem.name if elem.name != "Unknown" else f"Private Tag {tag}"
             tag_label = f"{tag_name} {tag}" if str(tag).startswith("(") and str(tag).endswith(")") else f"{tag_name} ({tag})"
             add_dicom_dataset_to_tree(
+                window_tag=window_tag,
                 data=elem,
                 label=tag_label,
                 parent=new_parent,
@@ -428,6 +438,7 @@ def add_dicom_dataset_to_tree(
             tag_VR_type = convert_VR_string_to_python_type(str(data.VR))
             if isinstance(value, Dataset):
                 add_dicom_dataset_to_tree(
+                    window_tag=window_tag,
                     data=value,
                     label="Value",
                     parent=new_parent,
@@ -438,11 +449,21 @@ def add_dicom_dataset_to_tree(
                     current_depth=current_depth + 1
                 )
             elif isinstance(value, Sequence):
-                for idx, item in enumerate(value):
-                    item_label = f"Item #{idx}"
+                # Special handling for Contour Sequence
+                is_contour_sequence = (data.name == "Contour Sequence" or 
+                                    ("Contour Sequence" in label and not "ROI" in label) or
+                                    "(3006,0040)" in label or 
+                                    str(data.tag) == "(3006,0040)")
+                
+                if is_contour_sequence and len(value) > 1:
+                    # Only show first item
+                    if not dpg.does_item_exist(window_tag):
+                        return
+                    
                     add_dicom_dataset_to_tree(
-                        data=item,
-                        label=item_label,
+                        window_tag=window_tag,
+                        data=value[0],
+                        label="Item #0 (Example)",
                         parent=new_parent,
                         text_wrap_width=text_wrap_width,
                         text_color_one=text_color_one,
@@ -450,6 +471,33 @@ def add_dicom_dataset_to_tree(
                         max_depth=max_depth,
                         current_depth=current_depth + 1
                     )
+                    
+                    # Add truncation notice
+                    dpg.add_text(
+                        default_value=f"... and {len(value) - 1} more items (truncated for performance)",
+                        parent=new_parent,
+                        wrap=text_wrap_width,
+                        color=(255, 165, 0),  # Orange color for the notice
+                        user_data=build_userdata(tag="Truncation Notice", VR=None, value=f"{len(value) - 1} items hidden")
+                    )
+                else:
+                    for idx, item in enumerate(value):
+                        # Check if window still exists before each item
+                        if not dpg.does_item_exist(window_tag):
+                            return
+
+                        item_label = f"Item #{idx}"
+                        add_dicom_dataset_to_tree(
+                            window_tag=window_tag,
+                            data=item,
+                            label=item_label,
+                            parent=new_parent,
+                            text_wrap_width=text_wrap_width,
+                            text_color_one=text_color_one,
+                            text_color_two=text_color_two,
+                            max_depth=max_depth,
+                            current_depth=current_depth + 1
+                        )
             elif isinstance(value, (list, tuple)):
                 dpg.add_text(
                     default_value=f"Value: {value}",
@@ -484,16 +532,24 @@ def add_dicom_dataset_to_tree(
             add_empty_value(new_parent, "Value")
     # Handle pydicom Sequence
     elif isinstance(data, Sequence):
+        # Check if this is a Contour Sequence based on the label
+        is_contour_sequence = (("Contour Sequence" in label and not "ROI" in label) or "(3006,0040)" in label if label else False)
+
         new_parent = dpg.add_tree_node(
             label=label if label else "Sequence",
             parent=parent,
             user_data=build_userdata(tag=label if label else "Sequence", VR=None, value=None)
         )
-        for idx, item in enumerate(data):
-            item_label = f"Item #{idx}"
+        
+        if is_contour_sequence and len(data) > 1:
+            # Only show first item for Contour Sequence
+            if not dpg.does_item_exist(window_tag):
+                return
+            
             add_dicom_dataset_to_tree(
-                data=item,
-                label=item_label,
+                window_tag=window_tag,
+                data=data[0],
+                label="Item #0 (Example)",
                 parent=new_parent,
                 text_wrap_width=text_wrap_width,
                 text_color_one=text_color_one,
@@ -501,6 +557,33 @@ def add_dicom_dataset_to_tree(
                 max_depth=max_depth,
                 current_depth=current_depth + 1
             )
+            
+            # Add truncation notice
+            dpg.add_text(
+                default_value=f"... and {len(data) - 1} more items (truncated for performance)",
+                parent=new_parent,
+                wrap=text_wrap_width,
+                color=(255, 165, 0),  # Orange color
+                user_data=build_userdata(tag="Truncation Notice", VR=None, value=f"{len(data) - 1} items hidden")
+            )
+        else:
+            for idx, item in enumerate(data):
+                # Check if window still exists before each item
+                if not dpg.does_item_exist(window_tag):
+                    return
+                
+                item_label = f"Item #{idx}"
+                add_dicom_dataset_to_tree(
+                    window_tag=window_tag,
+                    data=item,
+                    label=item_label,
+                    parent=new_parent,
+                    text_wrap_width=text_wrap_width,
+                    text_color_one=text_color_one,
+                    text_color_two=text_color_two,
+                    max_depth=max_depth,
+                    current_depth=current_depth + 1
+                )
     # Handle dictionary
     elif isinstance(data, dict):
         new_parent = dpg.add_tree_node(
@@ -509,8 +592,13 @@ def add_dicom_dataset_to_tree(
             user_data=build_userdata(tag=label if label else "dict", VR=None, value=None)
         )
         for key, value in data.items():
+            # Check if window still exists before each item
+            if not dpg.does_item_exist(window_tag):
+                return
+            
             if value:
                 add_dicom_dataset_to_tree(
+                    window_tag=window_tag,
                     data=value,
                     label=str(key),
                     parent=new_parent,
@@ -530,9 +618,14 @@ def add_dicom_dataset_to_tree(
             user_data=build_userdata(tag=label if label else "list", VR=None, value=None)
         )
         for idx, item in enumerate(data):
+            # Check if window still exists before each item
+            if not dpg.does_item_exist(window_tag):
+                return
+            
             item_label = f"Item #{idx}"
             if item:
                 add_dicom_dataset_to_tree(
+                    window_tag=window_tag,
                     data=item,
                     label=item_label,
                     parent=new_parent,
