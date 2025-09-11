@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 
-import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union, Optional, Set
 import gc
 import json
 import weakref
+import logging
 from os.path import exists
-from collections import OrderedDict
-from copy import deepcopy
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union, Optional
 
 
 import cv2
@@ -21,7 +19,7 @@ from mdh_app.data_builders.ImageBuilder import ImageBuilder
 from mdh_app.data_builders.RTStructBuilder import RTStructBuilder
 from mdh_app.data_builders.RTPlanBuilder import RTPlanBuilder
 from mdh_app.data_builders.RTDoseBuilder import RTDoseBuilder
-from mdh_app.utils.general_utils import get_json_list, get_traceback, weakref_nested_structure
+from mdh_app.utils.general_utils import get_traceback, weakref_nested_structure
 from mdh_app.utils.sitk_utils import (
     sitk_resample_to_reference, resample_sitk_data_with_params, sitk_to_array, 
     get_sitk_roi_display_color, get_orientation_labels
@@ -29,63 +27,11 @@ from mdh_app.utils.sitk_utils import (
 
 
 if TYPE_CHECKING:
-    from mdh_app.database.models import Patient, File, FileMetadata
     from mdh_app.managers.config_manager import ConfigManager
     from mdh_app.managers.shared_state_manager import SharedStateManager
 
 
 logger = logging.getLogger(__name__)
-
-
-class LRUBytesCache:
-    """LRU cache with a hard byte budget."""
-    __slots__ = ("_store", "_bytes", "max_bytes")
-
-    def __init__(self, max_bytes: int) -> None:
-        self._store: OrderedDict[Any, np.ndarray] = OrderedDict()
-        self._bytes: int = 0
-        self.max_bytes = max_bytes
-
-    @staticmethod
-    def _nbytes(arr: Optional[np.ndarray]) -> int:
-        return 0 if arr is None else int(arr.nbytes)
-
-    def _evict(self) -> None:
-        while self._bytes > self.max_bytes and self._store:
-            k, arr = self._store.popitem(last=False)
-            self._bytes -= self._nbytes(arr)
-
-    def get(self, key: Any) -> Optional[np.ndarray]:
-        if key not in self._store:
-            return None
-        arr = self._store.pop(key)
-        self._store[key] = arr  # move to MRU
-        return arr
-
-    def put(self, key: Any, arr: Optional[np.ndarray]) -> None:
-        if arr is None:
-            return
-        if key in self._store:
-            prev = self._store.pop(key)
-            self._bytes -= self._nbytes(prev)
-        self._store[key] = arr
-        self._bytes += self._nbytes(arr)
-        self._evict()
-
-    def pop(self, key: Any) -> None:
-        if key in self._store:
-            arr = self._store.pop(key)
-            self._bytes -= self._nbytes(arr)
-
-    def clear(self) -> None:
-        self._store.clear()
-        self._bytes = 0
-
-    def keys(self) -> List[Any]:
-        return list(self._store.keys())
-
-    def __len__(self) -> int:
-        return len(self._store)
 
 
 class DataManager:
@@ -108,59 +54,25 @@ class DataManager:
             "rtplan": {}
         }
         self.initialize_cache()
-    
+
     def initialize_cache(self) -> None:
         """Initialize temporary data cache."""
-        # Byte budget: pull from config if available, default to 6 GiB
-        max_bytes = int(getattr(self.conf_mgr, "get_cache_max_bytes", 6 * 1024 * 1024 * 1024))
-        # self._npy_cache = LRUBytesCache(max_bytes=max_bytes)   # <-- replaces _cached_numpy_data
-        
         self._cached_numpy_data: Dict[Any, np.ndarray] = {}
         self._cached_rois_sitk: Dict[Any, weakref.ReferenceType] = {}
         self._cached_numpy_dose_sum: Optional[np.ndarray] = None
         self._cached_sitk_reference: Optional[sitk.Image] = None
         self._cached_texture_param_dict: Dict[str, Any] = {}
 
-    @property
-    def is_any_data_loaded(self) -> bool:
-        """True if any modality data is loaded."""
-        return bool(self.images or self.rtstructs or self.rtplans or self.rtdoses)
-
-    @property
-    def is_all_data_loaded(self) -> bool:
-        """True if all modalities are loaded."""
-        return bool(self.images and self.rtstructs and self.rtplans and self.rtdoses)
-
-    @property
-    def is_image_data_loaded(self) -> bool:
-        """True if image data is loaded."""
-        return bool(self.images)
-
-    @property
-    def is_rtstruct_data_loaded(self) -> bool:
-        """True if RTSTRUCT data is loaded."""
-        return bool(self.rtstructs)
-
-    @property
-    def is_rtplan_data_loaded(self) -> bool:
-        """True if RTPLAN data is loaded."""
-        return bool(self.rtplans)
-
-    @property
-    def is_rtdose_data_loaded(self) -> bool:
-        """True if RTDOSE data is loaded."""
-        return bool(self.rtdoses)
-    
     def clear_data(self) -> None:
         """Clear all loaded data and trigger garbage collection."""
         self._patient_objectives_dict.clear()
         self._sitk_images_params.clear()
         for key in self._loaded_data_dict:
             self._loaded_data_dict[key].clear()
-        self._clear_cache()
+        self.clear_cache()
         gc.collect()
 
-    def _clear_cache(self) -> None:
+    def clear_cache(self) -> None:
         """Clear all cached temporary data."""
         self._cached_numpy_data.clear()
         self._cached_rois_sitk.clear()
@@ -168,254 +80,165 @@ class DataManager:
         self._cached_sitk_reference = None
         self._cached_texture_param_dict.clear()
     
-    def load_all_dicom_data(self, patient: Patient, selected_files: Set[str]) -> None:
-        """Loads selected DICOM data."""
-        self._clear_cache()
-        modalities: Dict[str, Set[str]] = self.conf_mgr.get_dicom_modalities()
-        
-        img_data: Dict[str, List[File]] = {}
-        rtstruct_files: List[File] = []
-        rtplan_files: List[File] = []
-        rtdose_data: Dict[str, List[File]] = {"plan_dose": [], "beam_dose": []}
-        seen_sopi = set()
-        
-        for file_obj in patient.files:
-            file_obj: File
-            
-            file_path = file_obj.path
-            if not file_path:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to missing path.")
-                continue
-            if not exists(file_path):
-                logger.error(f"Skipping file '{file_obj.filepath}' because the file does not exist at path '{file_path}'.")
-                continue
-            if file_path not in selected_files:
-                continue # No message needed; user intentionally deselected
-            
-            file_md: FileMetadata = file_obj.file_metadata
-            if not file_md:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to missing metadata.")
-                continue
-            
-            file_modality = (file_md.modality or "").strip().upper()
-            if not file_modality:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to missing Modality in metadata.")
-                continue
-
-            file_sopi = (file_md.sop_instance_uid or "").strip()
-            if not file_sopi:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to missing SOPInstanceUID in metadata.")
-                continue
-            if file_sopi in seen_sopi:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to duplicate SOPInstanceUID '{file_sopi}', which was already identified.")
-                continue
-            seen_sopi.add(file_sopi)
-
-            # Image Series Handling
-            if file_modality in modalities["image"]:
-                file_series_uid = (file_md.series_instance_uid or "").strip()
-                if not file_series_uid:
-                    logger.error(f"Skipping IMAGE file '{file_obj.filepath}' due to missing SeriesInstanceUID.")
-                    continue
-                img_data.setdefault(file_series_uid, []).append(file_obj)
-            
-            # RT Structure Set Handling
-            elif file_modality in modalities["rtstruct"]:
-                rtstruct_files.append(file_obj)
-            
-            # RT Plan Handling
-            elif file_modality in modalities["rtplan"]:
-                rtplan_files.append(file_obj)
-            
-            # RT Dose Handling
-            elif file_modality in modalities["rtdose"]:
-                dose_summation_type = (file_md.dose_summation_type or "").strip().upper()
-                if dose_summation_type == "PLAN":
-                    rtdose_data["plan_dose"].append(file_obj)
-                elif dose_summation_type == "BEAM":
-                    rtdose_data["beam_dose"].append(file_obj)
-                else:
-                    logger.error(f"Skipping RTDOSE file '{file_obj.filepath}' due to unsupported or missing DoseSummationType '{dose_summation_type}'.")
-                    continue
-            
-            # Unsupported Modality Handling
-            else:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to unsupported Modality '{file_modality}'.")
-                continue
-        
-        # set class patient to use in other functions ###
-        images_params = self._load_images(img_data)
-        self._load_rtstructs(rtstruct_files, images_params)
-        self._load_rtplans(rtplan_files)
-        self._load_rtdoses(rtdose_data)
-
-        # Review from here
-        self._clear_cache()
-        if not self.is_any_data_loaded:
-            logger.error("No data was loaded. Please try again.")
-            return
-        self._load_rtstruct_goals(patient.mrn)
-        logger.info("Finished loading selected SITK data.")
-    
-    def _load_images(self, img_data: Dict[str, List[File]]) -> Dict[str, Any]:
-        """Load IMAGEs and update internal data dictionary."""
-        self.images: Dict[str, sitk.Image] = {}
-        images_params: Dict[str, Any] = {}
-        
-        for series_instance_uid, files in img_data.items():
-            if self.ss_mgr.cleanup_event.is_set() or self.ss_mgr.shutdown_event.is_set():
-                return
-            
-            file_paths = [f.path for f in files]
-            
-            modality = (files[0].file_metadata.modality or "").strip().upper()
-            logger.info(f"Reading {modality} with SeriesInstanceUID '{series_instance_uid}' from files: [{file_paths[0]}, ...]")
-            
-            sitk_image = ImageBuilder(file_paths, self.ss_mgr, series_instance_uid).build_sitk_image()
-            
-            if sitk_image is not None:
-                self.images[series_instance_uid] = sitk_image
-                images_params[series_instance_uid] = {
-                    "origin": sitk_image.GetOrigin(),
-                    "spacing": sitk_image.GetSpacing(),
-                    "direction": sitk_image.GetDirection(),
-                    "cols": sitk_image.GetSize()[0],
-                    "rows": sitk_image.GetSize()[1],
-                    "slices": sitk_image.GetSize()[2],
-                }
-                logger.info(
-                    f"Loaded {modality} with SeriesInstanceUID '{series_instance_uid}' "
-                    f"with origin {sitk_image.GetOrigin()}, direction {sitk_image.GetDirection()}, "
-                    f"spacing {sitk_image.GetSpacing()}, size {sitk_image.GetSize()}."
-                )
-            else:
-                logger.error(f"Failed to load {modality} with SeriesInstanceUID '{series_instance_uid}'.")
-        
-        return images_params
-    
-    def _load_rtstructs(self, rtstruct_files: List[File], images_params: Dict[str, Any]) -> None:
-        """Load RTSTRUCTs and update internal data dictionary."""
-        self.rtstructs: Dict[str, Dict[str, Any]] = {}
-        
-        for rtstruct_file in rtstruct_files:
-            if self.ss_mgr.cleanup_event.is_set() or self.ss_mgr.shutdown_event.is_set():
-                return
-            
-            file_path = rtstruct_file.path
-            modality = (rtstruct_file.file_metadata.modality or "").strip().upper()
-            sop_instance_uid = (rtstruct_file.file_metadata.sop_instance_uid or "").strip()
-            
-            # Get a referenced SeriesInstanceUID that matches a loaded IMAGE
-            ref_series_uid_seq = get_json_list(rtstruct_file.file_metadata.referenced_series_instance_uid_seq)
-            if not ref_series_uid_seq:
-                logger.error(f"Skipping RTSTRUCT file '{file_path}' due to missing ReferencedSeriesInstanceUIDs.")
-                continue
-            matched_ref_series_uids = [uid for uid in ref_series_uid_seq if uid in images_params]
-            if not matched_ref_series_uids:
-                logger.error(f"Skipping RTSTRUCT file '{file_path}' as none of its ReferencedSeriesInstanceUIDs {ref_series_uid_seq} match loaded IMAGE SeriesInstanceUIDs.")
-                continue
-            if len(set(matched_ref_series_uids)) > 1:
-                logger.warning(f"RTSTRUCT file '{file_path}' has multiple matched ReferencedSeriesInstanceUIDs: {matched_ref_series_uids}, only the first will be used.")
-            matched_ref_series_uid = matched_ref_series_uids[0]
-            image_params = images_params[matched_ref_series_uid]
-
-            logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
-            rtstruct_info_dict = RTStructBuilder(file_path, image_params, self.ss_mgr, self.conf_mgr).build_rtstruct_info_dict()
-            if rtstruct_info_dict:
-                self.rtstructs[sop_instance_uid] = rtstruct_info_dict
-                logger.info(f"Loaded {modality} with SOPInstanceUID '{sop_instance_uid}'.")
-            else:
-                logger.error(f"Failed to load {modality} with SOPInstanceUID '{sop_instance_uid}'.")
-    
-    def _load_rtplans(self, rtplan_files: List[File]) -> None:
-        """Load RTPLANs and update internal data dictionary."""
-        self.rtplans: Dict[str, Dict[str, Any]] = {}
-
-        for rtplan_file in rtplan_files:
-            if self.ss_mgr.cleanup_event.is_set() or self.ss_mgr.shutdown_event.is_set():
-                return
-
-            file_path = rtplan_file.path
-            modality = (rtplan_file.file_metadata.modality or "").strip().upper()
-            sop_instance_uid = (rtplan_file.file_metadata.sop_instance_uid or "").strip()
-            logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
-            
-            rtplan_info_dict = RTPlanBuilder(file_path, self.ss_mgr, read_beam_cp_data=True).build_rtplan_info_dict()
-            # rtplan_info_dict keys: rt_plan_label, rt_plan_name, rt_plan_description, rt_plan_date, rt_plan_time, approval_status, 
-            #       review_date, review_time, reviewer_name, target_prescription_dose_cgy, number_of_fractions_planned, 
-            #       number_of_beams, patient_position, setup_technique, beam_dict
-            
-            if rtplan_info_dict:
-                self.rtplans[sop_instance_uid] = rtplan_info_dict
-                temp_dict = {
-                    k: v if k != "beam_dict" else f"Beam data for {len(v)} beams (data truncated for printing)"
-                    for k, v in rtplan_info_dict.items()
-                }
-                logger.info(f"Loaded {modality} with SOPInstanceUID '{sop_instance_uid}'. RT Plan details: {temp_dict}")
-            else:
-                logger.error(f"Failed to load {modality} with SOPInstanceUID '{sop_instance_uid}'.")
-    
-    def _load_rtdoses(self, rtdose_data: Dict[str, List[File]]) -> None:
-        """Load RTDOSEs and update internal data dictionary."""
-        self.rtdoses: Dict[str, Dict[str, sitk.Image]] = {}
-
-        for dose_type, dose_files in rtdose_data.items():
-            for dose_file in dose_files:
+    def load_all_dicom_data(self, rt_links_data_dict: Dict[str, List[Any]], patient_id: str) -> None:
+        """Load all DICOM data based on provided links."""
+        for modality, tasks in rt_links_data_dict.items():
+            for task in tasks:
                 if self.ss_mgr.cleanup_event.is_set() or self.ss_mgr.shutdown_event.is_set():
                     return
-                
-                file_path = dose_file.path
-                modality = (dose_file.file_metadata.modality or "").strip().upper()
-                sop_instance_uid = (dose_file.file_metadata.sop_instance_uid or "").strip()
-                dose_summation_type = (dose_file.file_metadata.dose_summation_type or "").strip().upper()
-                logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
-                
-                rt_dose_info_dict = RTDoseBuilder(file_path, self.ss_mgr).build_rtdose_info_dict()
-                if rt_dose_info_dict:
-                    referenced_sop_instance_uid: str = rt_dose_info_dict["referenced_sop_instance_uid"]
-                    if referenced_sop_instance_uid not in self.rtdoses:
-                        self.rtdoses[referenced_sop_instance_uid] = {
-                            "plan_dose": {},
-                            "beam_dose": {},
-                            "beams_composite": None,
-                        }
-                    self.rtdoses[referenced_sop_instance_uid][dose_type][sop_instance_uid] = rt_dose_info_dict["sitk_dose"]
-                    logger.info(
-                        f"Loaded {modality} with SOPInstanceUID '{sop_instance_uid}' "
-                        f"and referenced RTPLAN SOPInstanceUID '{referenced_sop_instance_uid}'."
-                    )
-                    
-                    if dose_summation_type == "BEAM":
-                        # Update beams_composite
-                        curr_dict_ref = self.rtdoses[referenced_sop_instance_uid]
-                        sitk_rtdose = rt_dose_info_dict["sitk_dose"]
-                        if curr_dict_ref["beams_composite"] is None:
-                            curr_dict_ref["beams_composite"] = deepcopy(sitk_rtdose)
-                        else:
-                            if (
-                                curr_dict_ref["beams_composite"].GetSize() != sitk_rtdose.GetSize() or
-                                curr_dict_ref["beams_composite"].GetOrigin() != sitk_rtdose.GetOrigin() or
-                                curr_dict_ref["beams_composite"].GetDirection() != sitk_rtdose.GetDirection() or
-                                curr_dict_ref["beams_composite"].GetSpacing() != sitk_rtdose.GetSpacing()
-                            ):
-                                sitk_rtdose = sitk_resample_to_reference(
-                                    sitk_rtdose,
-                                    curr_dict_ref["beams_composite"],
-                                    interpolator=sitk.sitkLinear,
-                                    default_pixel_val_outside_image=0.0
-                                )
-                            curr_dict_ref["beams_composite"] = sitk.Add(curr_dict_ref["beams_composite"], sitk_rtdose)
-                        for key in sitk_rtdose.GetMetaDataKeys():
-                            curr_dict_ref["beams_composite"].SetMetaData(key, sitk_rtdose.GetMetaData(key))
-                        curr_dict_ref["beams_composite"].SetMetaData("referenced_beam_number", "composite")
+                if modality == "IMAGE":
+                    self.load_sitk_image(*task)
+                elif modality == "RTSTRUCT":
+                    self.load_sitk_rtstruct(*task)
+                elif modality == "RTPLAN":
+                    self.load_rtplan(*task)
+                elif modality == "RTDOSE":
+                    self.load_sitk_rtdose(*task)
+                else:
+                    logger.error(f"Unsupported modality '{modality}' encountered. Skipping load.")
+        self.clear_cache()
+        if not self.check_if_data_loaded("any"):
+            logger.error("No data was loaded. Please try again.")
+            return
+        self.load_rtstruct_goals(patient_id)
+        logger.info("Finished loading selected SITK data.")
     
-    def _load_rtstruct_goals(self, patient_mrn: str) -> None:
-        """Load and apply RTSTRUCT goals from JSON file."""
-        if not self.rtstructs:
+    def load_sitk_image(self, modality: str, series_instance_uid: str, file_paths: List[str]) -> None:
+        """Load IMAGE and update internal data dictionary."""
+        if (
+            modality in self._loaded_data_dict["image"] and
+            series_instance_uid in self._loaded_data_dict["image"][modality]
+        ):
+            logger.error(f"Failed to load {modality} with SeriesInstanceUID '{series_instance_uid}' as it already exists.")
             return
 
-        if not patient_mrn:
-            logger.error("No patient MRN provided; cannot update RTSTRUCT with goals.")
+        logger.info(f"Reading {modality} with SeriesInstanceUID '{series_instance_uid}' from files: [{file_paths[0]}, ...]")
+        sitk_image = ImageBuilder(file_paths, self.ss_mgr, series_instance_uid).build_sitk_image()
+        if sitk_image is None:
+            return
+
+        if modality not in self._loaded_data_dict["image"]:
+            self._loaded_data_dict["image"][modality] = {}
+        self._loaded_data_dict["image"][modality][series_instance_uid] = sitk_image
+        self._sitk_images_params[series_instance_uid] = {
+            "origin": sitk_image.GetOrigin(),
+            "spacing": sitk_image.GetSpacing(),
+            "direction": sitk_image.GetDirection(),
+            "cols": sitk_image.GetSize()[0],
+            "rows": sitk_image.GetSize()[1],
+            "slices": sitk_image.GetSize()[2],
+        }
+        logger.info(
+            f"Loaded {modality} with SeriesInstanceUID '{series_instance_uid}' "
+            f"with origin {sitk_image.GetOrigin()}, direction {sitk_image.GetDirection()}, "
+            f"spacing {sitk_image.GetSpacing()}, size {sitk_image.GetSize()}."
+        )
+    
+    def load_sitk_rtstruct(self, modality: str, sop_instance_uid: str, file_path: str) -> None:
+        """Load RTSTRUCT and update internal data dictionary."""
+        if sop_instance_uid in self._loaded_data_dict["rtstruct"]:
+            logger.error(f"Failed to load {modality} with SOPInstanceUID '{sop_instance_uid}' as it already exists.")
+            return
+
+        logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
+        rtstruct_info_dict = RTStructBuilder(file_path, self._sitk_images_params, self.ss_mgr, self.conf_mgr).build_rtstruct_info_dict()
+        if not rtstruct_info_dict:
+            logger.error(f"Unable to build info for RTSTRUCT with SOPInstanceUID '{sop_instance_uid}'.")
+            return
+
+        self._loaded_data_dict["rtstruct"][sop_instance_uid] = rtstruct_info_dict
+        logger.info(f"Loaded {modality} with SOPInstanceUID '{sop_instance_uid}'.")
+    
+    def load_rtplan(self, modality: str, sop_instance_uid: str, file_path: str) -> None:
+        """Load RTPLAN and update internal data dictionary."""
+        if sop_instance_uid in self._loaded_data_dict["rtplan"]:
+            logger.error(f"Failed to load RTPLAN with SOPInstanceUID '{sop_instance_uid}' as it already exists.")
+            return
+
+        logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
+        rt_plan_info_dict = RTPlanBuilder(file_path, self.ss_mgr, read_beam_cp_data=True).build_rtplan_info_dict()
+        if not rt_plan_info_dict:
+            return
+
+        # rt_plan_info_dict keys: rt_plan_label, rt_plan_name, rt_plan_description, rt_plan_date, rt_plan_time, approval_status, 
+        #       review_date, review_time, reviewer_name, target_prescription_dose_cgy, number_of_fractions_planned, 
+        #       number_of_beams, patient_position, setup_technique, beam_dict
+        self._loaded_data_dict["rtplan"][sop_instance_uid] = rt_plan_info_dict
+        temp_dict = {
+            k: v if k != "beam_dict" else f"Beam data for {len(v)} beams (data truncated for printing)"
+            for k, v in rt_plan_info_dict.items()
+        }
+        logger.info(f"Loaded {modality} with SOPInstanceUID '{sop_instance_uid}'. RT Plan details: {temp_dict}")
+    
+    def load_sitk_rtdose(self, modality: str, sop_instance_uid: str, file_path: str) -> None:
+        """Load RTDOSE and update internal data dictionary."""
+        logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
+        rt_dose_info_dict = RTDoseBuilder(file_path, self.ss_mgr).build_rtdose_info_dict()
+        if not rt_dose_info_dict:
+            return
+
+        dose_summation_type: str = rt_dose_info_dict["dose_summation_type"]
+        if dose_summation_type.upper() not in ["PLAN", "BEAM"]:
+            logger.error(
+                f"Unsupported dose summation type '{dose_summation_type}' for {modality} with SOPInstanceUID '{sop_instance_uid}'."
+            )
+            return
+
+        referenced_sop_instance_uid: str = rt_dose_info_dict["referenced_sop_instance_uid"]
+        if referenced_sop_instance_uid not in self._loaded_data_dict["rtdose"]:
+            self._loaded_data_dict["rtdose"][referenced_sop_instance_uid] = {
+                "plan_dose": {},
+                "beam_dose": {},
+                "beams_composite": None,
+            }
+        curr_dict_ref = self._loaded_data_dict["rtdose"][referenced_sop_instance_uid]
+
+        if dose_summation_type.upper() == "PLAN":
+            if sop_instance_uid in curr_dict_ref["plan_dose"]:
+                logger.error(
+                    f"RTDOSE for PLAN with SOPInstanceUID '{sop_instance_uid}' under RTPLAN '{referenced_sop_instance_uid}' already exists."
+                )
+                return
+            curr_dict_ref["plan_dose"][sop_instance_uid] = rt_dose_info_dict["sitk_dose"]
+
+        elif dose_summation_type.upper() == "BEAM":
+            if sop_instance_uid in curr_dict_ref["beam_dose"]:
+                logger.error(
+                    f"RTDOSE for BEAM with SOPInstanceUID '{sop_instance_uid}' under RTPLAN '{referenced_sop_instance_uid}' already exists."
+                )
+                return
+            curr_dict_ref["beam_dose"][sop_instance_uid] = rt_dose_info_dict["sitk_dose"]
+            if curr_dict_ref["beams_composite"] is None:
+                curr_dict_ref["beams_composite"] = sitk_resample_to_reference(
+                    rt_dose_info_dict["sitk_dose"],
+                    rt_dose_info_dict["sitk_dose"],
+                    interpolator=sitk.sitkLinear,
+                    default_pixel_val_outside_image=0.0
+                )
+            else:
+                sitk_rtdose = sitk_resample_to_reference(
+                    rt_dose_info_dict["sitk_dose"],
+                    curr_dict_ref["beams_composite"],
+                    interpolator=sitk.sitkLinear,
+                    default_pixel_val_outside_image=0.0
+                )
+                curr_dict_ref["beams_composite"] = sitk.Add(curr_dict_ref["beams_composite"], sitk_rtdose)
+            for key in rt_dose_info_dict["sitk_dose"].GetMetaDataKeys():
+                curr_dict_ref["beams_composite"].SetMetaData(key, rt_dose_info_dict["sitk_dose"].GetMetaData(key))
+            curr_dict_ref["beams_composite"].SetMetaData("referenced_beam_number", "composite")
+
+        logger.info(
+            f"Loaded {dose_summation_type} {modality} with SOPInstanceUID '{sop_instance_uid}' "
+            f"and referenced RTPLAN SOPInstanceUID '{referenced_sop_instance_uid}'."
+        )
+    
+    def load_rtstruct_goals(self, patient_id: str) -> None:
+        """Load and apply RTSTRUCT goals from JSON file."""
+        if not self._loaded_data_dict["rtstruct"]:
+            return
+
+        if not patient_id:
+            logger.error("No patient ID provided; cannot update RTSTRUCT with goals.")
             return
 
         objectives_fpath = self.conf_mgr.get_objectives_filepath()
@@ -424,28 +247,28 @@ class DataManager:
             return
 
         with open(objectives_fpath, 'rt') as file:
-            patient_objectives = json.load(file).get(patient_mrn, {})
+            patient_objectives = json.load(file).get(patient_id, {})
         if not patient_objectives:
-            logger.error(f"No objectives found for patient MRN '{patient_mrn}' in the JSON file.")
+            logger.error(f"No objectives found for patient ID '{patient_id}' in the JSON file.")
             return
         
         self._patient_objectives_dict.update(patient_objectives)
         
         # Find relevant objectives for the patient's RTSTRUCT & RTPLAN
         matched_objectives: Dict[str, Any] = {}
-        for rtstruct_info_dict in self.rtstructs.values():
-            if rtstruct_info_dict.get("StructureSetLabel"):
-                logger.info(f"Checking objectives for RTSTRUCT with label: {rtstruct_info_dict['StructureSetLabel']} ...")
+        for rt_struct_info_dict in self._loaded_data_dict["rtstruct"].values():
+            if rt_struct_info_dict.get("StructureSetLabel"):
+                logger.info(f"Checking objectives for RTSTRUCT with label: {rt_struct_info_dict['StructureSetLabel']} ...")
                 structure_set_objectives = self._patient_objectives_dict.get("StructureSetId", {}).get(
-                    rtstruct_info_dict["StructureSetLabel"], {}
+                    rt_struct_info_dict["StructureSetLabel"], {}
                 )
                 if structure_set_objectives:
                     matched_objectives.update(structure_set_objectives)
-        for rtplan_info_dict in self.rtplans.values():
-            if rtplan_info_dict.get("rt_plan_label"):
-                logger.info(f"Checking objectives for RTPLAN with label: {rtplan_info_dict['rt_plan_label']} ...")
+        for rt_plan_info_dict in self._loaded_data_dict["rtplan"].values():
+            if rt_plan_info_dict.get("rt_plan_label"):
+                logger.info(f"Checking objectives for RTPLAN with label: {rt_plan_info_dict['rt_plan_label']} ...")
                 plan_objectives = self._patient_objectives_dict.get("PlanId", {}).get(
-                    rtplan_info_dict["rt_plan_label"], {}
+                    rt_plan_info_dict["rt_plan_label"], {}
                 )
                 if plan_objectives:
                     matched_objectives.update(plan_objectives)
@@ -454,8 +277,8 @@ class DataManager:
             return
         
         # Add ROI goals as SITK metadata
-        for sopiuid, rtstruct_info_dict in self.rtstructs.items():
-            for roi_sitk in rtstruct_info_dict["list_roi_sitk"]:
+        for sopiuid, rt_struct_info_dict in self._loaded_data_dict["rtstruct"].items():
+            for roi_sitk in rt_struct_info_dict["list_roi_sitk"]:
                 if roi_sitk is None:
                     continue
                 original_roi_name = roi_sitk.GetMetaData("original_roi_name")
@@ -474,11 +297,23 @@ class DataManager:
             # Log updated goals for the RTSTRUCT
             updated_goals = [
                 (roi_sitk.GetMetaData("current_roi_name"), json.loads(roi_sitk.GetMetaData("roi_goals")))
-                for roi_sitk in rtstruct_info_dict["list_roi_sitk"] if roi_sitk.GetMetaData("roi_goals")
+                for roi_sitk in rt_struct_info_dict["list_roi_sitk"] if roi_sitk.GetMetaData("roi_goals")
             ]
             logger.info(f"Updated goals for RTSTRUCT (SOPInstanceUID: {sopiuid}): {updated_goals}")
     
-    def get_orig_roi_names(self, match_criteria: Optional[str] = None) -> List[str]:
+    def check_if_data_loaded(self, modality_key: str = "any") -> bool:
+        """Check whether data has been loaded for specified modality."""
+        if modality_key == "any":
+            return any(self._loaded_data_dict.values())
+        if modality_key == "all":
+            return all(self._loaded_data_dict.values())
+        valid_keys = {"image", "rtstruct", "rtplan", "rtdose"}
+        if modality_key not in valid_keys:
+            logger.error(f"Unsupported modality key '{modality_key}'. Expected one of {valid_keys}.")
+            return False
+        return bool(self._loaded_data_dict.get(modality_key))
+    
+    def return_list_of_all_original_roi_names(self, match_criteria: Optional[str] = None) -> List[str]:
         """
         Retrieve a list of all original (unmodified) ROI names, optionally filtered by criteria.
 
@@ -493,8 +328,8 @@ class DataManager:
             return []
         # Find all original ROI names
         roi_names: List[str] = []
-        for rtstruct_info_dict in self.rtstructs.values():
-            for roi_sitk in rtstruct_info_dict["list_roi_sitk"]:
+        for rt_struct_info_dict in self._loaded_data_dict["rtstruct"].values():
+            for roi_sitk in rt_struct_info_dict["list_roi_sitk"]:
                 if roi_sitk is None:
                     continue
                 original_roi_name = roi_sitk.GetMetaData("original_roi_name")
@@ -505,29 +340,23 @@ class DataManager:
                     roi_names.append(original_roi_name)
         return roi_names
     
-    def get_modality_data(self, modality: str) -> Optional[Any]:
+    def return_data_from_modality(self, modality_key: str) -> Optional[Any]:
         """
         Retrieve loaded data for a specified modality as a nested structure of weak references.
 
         Args:
-            modality: One of 'image', 'rtstruct', 'rtplan', or 'rtdose'.
+            modality_key: One of 'image', 'rtstruct', 'rtplan', or 'rtdose'.
 
         Returns:
             A dictionary of weak references to the data, or None if the key is invalid.
         """
-        mapping = {
-            "image": self.images,
-            "rtstruct": self.rtstructs,
-            "rtplan": self.rtplans,
-            "rtdose": self.rtdoses,
-        }
-        try:
-            return weakref_nested_structure(mapping[modality])
-        except KeyError:
-            logger.error(f"Unsupported modality was specified: '{modality}'. Expected one of: {list(mapping.keys())}.")
+        valid_keys = {"image", "rtstruct", "rtplan", "rtdose"}
+        if modality_key not in valid_keys:
+            logger.error(f"Unsupported modality key '{modality_key}'. Expected one of: {valid_keys}.")
             return None
+        return weakref_nested_structure(self._loaded_data_dict[modality_key])
     
-    def get_image_reference_param(self, param: str) -> Optional[Any]:
+    def return_sitk_reference_param(self, param: str) -> Optional[Any]:
         """
         Retrieve a specified parameter from the cached SimpleITK reference image.
 
@@ -571,17 +400,20 @@ class DataManager:
         if not (isinstance(keys, (tuple, list, set)) and all(isinstance(key, (str, int)) for key in keys)):
             logger.error(f"Keys must be a sequence of strings or integers. Received: {keys}.")
             return
-        if len(keys) < 3:
-            logger.error(f"Keys must contain at least three elements. Received: {keys}.")
+        if len(keys) < 4:
+            logger.error(f"Keys must contain at least four elements. Received: {keys}.")
             return
-        if keys[0] not in self.rtstructs:
-            logger.error(f"SOPInstanceUID '{keys[0]}' not found in RTSTRUCT data.")
+        if keys[0] != "rtstruct":
+            logger.error(f"First key must be 'rtstruct'; received: {keys[0]}.")
             return
-        if keys[1] != "list_roi_sitk" or keys[1] not in self.rtstructs[keys[0]]:
-            logger.error(f"ROI list not found in RTSTRUCT for key: {keys[1]}.")
+        if keys[1] not in self._loaded_data_dict["rtstruct"]:
+            logger.error(f"SOPInstanceUID '{keys[1]}' not found in RTSTRUCT data.")
             return
-        self.rtstructs[keys[0]][keys[1]][keys[2]] = None
-        logger.info(f"ROI at index {keys[2]} removed from RTSTRUCT with SOPInstanceUID '{keys[0]}'.")
+        if keys[2] != "list_roi_sitk" or keys[2] not in self._loaded_data_dict["rtstruct"][keys[1]]:
+            logger.error(f"ROI list not found in RTSTRUCT for key: {keys[2]}.")
+            return
+        self._loaded_data_dict["rtstruct"][keys[1]][keys[2]][keys[3]] = None
+        logger.info(f"ROI at index {keys[3]} removed from RTSTRUCT with SOPInstanceUID '{keys[1]}'.")
     
     def update_active_data(self, load_data: bool, display_data_keys: Union[List[Union[str, int]], Tuple[Union[str, int], ...], set]) -> None:
         """
@@ -706,7 +538,7 @@ class DataManager:
             display_data_keys: Keys identifying the data to update.
         """
         if not self._cached_numpy_data:
-            self._clear_cache()
+            self.clear_cache()
             return
 
         if display_data_keys[0] == "rtdose":
@@ -752,7 +584,7 @@ class DataManager:
             # Rebuild cache if texture parameters have changed
             if self._check_for_texture_param_changes(texture_params, ignore_keys=["view_type", "slicer", "slices", "xyz_ranges"]):
                 cached_keys = list(self._cached_numpy_data.keys())
-                self._clear_cache()
+                self.clear_cache()
                 self._cached_texture_param_dict = texture_params
                 for display_data_keys in cached_keys:
                     self.update_active_data(True, display_data_keys)
@@ -1121,7 +953,7 @@ class DataManager:
         if h < 50 or w < 50:
             return
         
-        dicom_direction = self.get_image_reference_param("original_direction") or tuple(np.eye(3).flatten().tolist())
+        dicom_direction = self.return_sitk_reference_param("original_direction") or tuple(np.eye(3).flatten().tolist())
         rotation_angle = int(rotation) or 0
         flips = flips or [False, False, False]
         

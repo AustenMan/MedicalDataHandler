@@ -49,6 +49,7 @@ def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_d
     tag_hidden_theme = get_hidden_button_theme()
     
     # Create the popup
+    window_states = {"aborted": False}
     with dpg.window(
         tag=tag_inspect_dcm, 
         label=f"Inspecting a DICOM File", 
@@ -58,8 +59,9 @@ def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_d
         popup=True,
         modal=True, 
         no_open_over_existing_popup=False, 
-        horizontal_scrollbar=True
-        ):
+        horizontal_scrollbar=True,
+        on_close=lambda s, a, u: window_states.update({"aborted": True})
+    ):
         # Add input fields for search terms
         tag_tree_group = dpg.generate_uuid()
         with dpg.group(horizontal=False):
@@ -109,6 +111,7 @@ def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_d
     with dpg.group(tag=tag_tree_group, parent=tag_inspect_dcm, user_data=False):
         add_dicom_dataset_to_tree(
             window_tag=tag_inspect_dcm,
+            window_states=window_states,
             data=dicom_dataset, 
             label=None, 
             parent=tag_tree_group, 

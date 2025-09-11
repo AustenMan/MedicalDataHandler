@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Union, Any, Dict, Tuple, Optional, Set, List
 from enum import Enum
 from dataclasses import dataclass, field
 from os.path import basename
+from datetime import datetime
 from functools import partial
 
 
@@ -34,10 +35,10 @@ logger = logging.getLogger(__name__)
 
 
 class ContainerKind(Enum):
-    DOSES = "Doses"
-    PLANS = "Plans"
-    STRUCTURE_SETS = "Structure Sets"
-    IMAGE_SERIES_GROUPS = "Image Series Groups"
+    DOSES = "Dose(s)"
+    PLANS = "Plan(s)"
+    STRUCTURE_SETS = "StructureSet(s)"
+    IMAGE_SERIES_GROUPS = "ImageSeriesGroup(s)"
 
 
 class NodeType(Enum):
@@ -45,7 +46,6 @@ class NodeType(Enum):
     PLAN = "Plan"
     STRUCTURE_SET = "Structure Set"
     IMAGE_SERIES = "Image Series"
-    IMAGE = "Image"
 
 
 @dataclass
@@ -53,21 +53,48 @@ class Node:
     kind: NodeType
     label: str
     description: str
-    datetime: str
+    date_and_time: str
     file_objs: List[Any] = field(default_factory=list)   # actual File objects from Patient
     metadata: Optional[Any] = None  # original FileMetadata or related info
     children: List["Node"] = field(default_factory=list)
 
 
+def _format_dcm_str_datetime(date_str: str, time_str: str, *, mode: str = "full") -> str:
+    """
+    Format DICOM date and time strings into readable format.
+    mode = "full" -> YYYY-MM-DD HH:MM:SS
+    mode = "hm"   -> YYYY-MM-DD HH:MM
+    """
+    if date_str and time_str:
+        try:
+            if mode == "hm":
+                return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {time_str[:2]}:{time_str[2:4]}"
+            else:  # full
+                return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}"
+        except Exception:
+            return f"{date_str} {time_str}"
+    elif date_str:
+        try:
+            return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        except Exception:
+            return date_str
+    return "N/A"
+
+
 def get_patient_dates(patient: Patient) -> Dict[str, Optional[str]]:
     # Helper to return date fields as iso or "N/A"
-    def dt_fmt(dt):
-        return dt.isoformat() if dt else "N/A"
+    def dt_fmt(dt) -> str:
+        if not dt:
+            return "N/A"
+        if isinstance(dt, datetime):
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        return str(dt)
+
     return {
-        "DateCreated": dt_fmt(patient.created_at),
-        "DateLastModified": dt_fmt(patient.modified_at) if hasattr(patient, 'modified_at') else "N/A",
-        "DateLastAccessed": dt_fmt(patient.accessed_at) if hasattr(patient, 'accessed_at') else "N/A",
-        "DateLastProcessed": dt_fmt(patient.processed_at) if hasattr(patient, 'processed_at') else "N/A",
+        "DateCreated": dt_fmt(getattr(patient, "created_at", None)),
+        "DateLastModified": dt_fmt(getattr(patient, "modified_at", None)),
+        "DateLastAccessed": dt_fmt(getattr(patient, "accessed_at", None)),
+        "DateLastProcessed": dt_fmt(getattr(patient, "processed_at", None)),
     }
 
 
@@ -126,23 +153,85 @@ def build_dicom_structure(patient: Patient, selected_files: Set[str]) -> None:
                 # container-level checkbox (only one)
                 container_ud = _node_user_data(node, None)
                 cbox = dpg.add_checkbox(callback=checkbox_callback, user_data=container_ud)
+                with dpg.tooltip(dpg.last_item()):
+                    dpg.add_text(node.description or "")
                 container_ud["checkbox"] = cbox
 
                 # single tree node which will contain all linked files and child nodes
-                with dpg.tree_node(label=f"{row_num}. Grouped Files ({num_files} files)", default_open=False):
+                with dpg.tree_node(label=f"{row_num}. Grouped Files ({num_files} files)", default_open=False, span_text_width=True):
                     # render each child (child may create its own tree node if it meets 'must_tree')
                     for child in node.children:
                         child_ud = _render_node_inline(child, container_ud, checkbox_callback, dcm_view_cb)
                         container_ud["children"].append(child_ud)
 
             # Metadata columns
-            kind_text = node.kind.value if hasattr(node.kind, "value") else str(node.kind)
-            dpg.add_text(kind_text)
-            dpg.add_text(node.label)
-            desc = node.description
-            dpg.add_text(desc[:50] + "..." if len(desc) > 50 else desc)
-            dpg.add_text(node.datetime)
-            dpg.add_text(f"{num_files} files")
+            buckets = gather_metadata(node)
+            dpg.add_text(format_metadata_lines(buckets["names"]))
+            dpg.add_text(format_metadata_lines(buckets["labels"]))
+            dpg.add_text(format_metadata_lines(buckets["descriptions"]))
+            dpg.add_text(format_metadata_lines(buckets["datetimes"]))
+
+
+# ---------- Aggregation Helpers for Metadata Columns ----------
+
+def gather_metadata(node: Node) -> Dict[str, Dict[ContainerKind, List[str]]]:
+    """Collect metadata values from a node subtree, grouped by ContainerKind and field type."""
+
+    buckets = {
+        "names": {ck: [] for ck in ContainerKind},
+        "labels": {ck: [] for ck in ContainerKind},
+        "descriptions": {ck: [] for ck in ContainerKind},
+        "datetimes": {ck: [] for ck in ContainerKind},
+    }
+    
+    def visit(n: Node):
+        # Map a NodeType into its logical container
+        if n.kind == NodeType.DOSE:
+            ckind = ContainerKind.DOSES
+        elif n.kind == NodeType.PLAN:
+            ckind = ContainerKind.PLANS
+        elif n.kind == NodeType.STRUCTURE_SET:
+            ckind = ContainerKind.STRUCTURE_SETS
+        elif n.kind == NodeType.IMAGE_SERIES:
+            ckind = ContainerKind.IMAGE_SERIES_GROUPS
+        else:
+            ckind = None
+
+        if ckind:
+            for fobj in getattr(n, "file_objs", []) or []:
+                md: FileMetadata = getattr(fobj, "file_metadata", None)
+                if not md:
+                    continue
+                if md.name:
+                    buckets["names"][ckind].append(md.name)
+                if md.label:
+                    buckets["labels"][ckind].append(md.label)
+                if md.description:
+                    buckets["descriptions"][ckind].append(md.description)
+                if md.date or md.time:
+                    buckets["datetimes"][ckind].append(
+                        _format_dcm_str_datetime(md.date, md.time, mode="hm")
+                    )
+                
+                if n.kind == NodeType.IMAGE_SERIES:
+                    break  # only need one file's metadata for series-level info
+        for c in n.children:
+            visit(c)
+
+    visit(node)
+
+    return buckets
+
+
+def format_metadata_lines(bucket: Dict[ContainerKind, List[str]], suffix: str = "") -> str:
+    """Format a single metadata bucket into newline text with container labels."""
+    suffix = f" {suffix}" if suffix else ""
+    lines = []
+    for ckind in ContainerKind:
+        vals = bucket.get(ckind, [])
+        if vals:
+            lines.append(f"{ckind.value}{suffix}:\n\t{', '.join(vals)}")
+    return "\n".join(lines)
 
 
 def load_patient_data(sender: Union[int, str], app_data: Any, user_data: Tuple[Patient, Set[str]]) -> None:
@@ -198,21 +287,6 @@ def load_patient_data(sender: Union[int, str], app_data: Any, user_data: Tuple[P
     fill_right_col_ptdata(patient)
     request_texture_update(texture_action_type="initialize")
     logger.info(f"Loaded {len(selected_files)} files for patient {patient.name}")
-
-
-def _format_dicom_datetime(date_str: str, time_str: str) -> str:
-    """Format DICOM date and time strings into readable format."""
-    if date_str and time_str:
-        try:
-            return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}"
-        except:
-            return f"{date_str} {time_str}"
-    elif date_str:
-        try:
-            return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
-        except:
-            return date_str
-    return "N/A"
 
 
 def _node_user_data(node: Node, parent_ud: Optional[Dict] = None) -> Dict[str, Any]:
@@ -344,7 +418,7 @@ def _render_node_inline(node: Node, parent_ud: Optional[Dict], checkbox_callback
                                     f"Label: {fmd.label or 'N/A'}\n"
                                     f"Name: {fmd.name or 'N/A'}\n"
                                     f"Description: {fmd.description or 'N/A'}\n"
-                                    f"Date/Time: {_format_dicom_datetime(fmd.date, fmd.time) or 'N/A'}\n"
+                                    f"Date/Time: {_format_dcm_str_datetime(fmd.date, fmd.time) or 'N/A'}\n"
                                     f"Frame of Reference UID: {fmd.frame_of_reference_uid or 'N/A'}\n"
                                     f"Modality: {fmd.modality or 'N/A'}\n"
                                     f"SOP Instance UID: {fmd.sop_instance_uid or 'N/A'}\n"
@@ -377,7 +451,7 @@ def _render_node_inline(node: Node, parent_ud: Optional[Dict], checkbox_callback
                                 f"Label: {fmd.label or 'N/A'}\n"
                                 f"Name: {fmd.name or 'N/A'}\n"
                                 f"Description: {fmd.description or 'N/A'}\n"
-                                f"Date/Time: {_format_dicom_datetime(fmd.date, fmd.time) or 'N/A'}\n"
+                                f"Date/Time: {_format_dcm_str_datetime(fmd.date, fmd.time) or 'N/A'}\n"
                                 f"Frame of Reference UID: {fmd.frame_of_reference_uid or 'N/A'}\n"
                                 f"Modality: {fmd.modality or 'N/A'}\n"
                                 f"SOP Instance UID: {fmd.sop_instance_uid or 'N/A'}\n"
@@ -441,7 +515,7 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
         
         # Basic metadata
         modality = (md.modality or "").upper()
-        dt = _format_dicom_datetime(md.date, md.time)
+        dt = _format_dcm_str_datetime(md.date, md.time)
         label = md.label or md.name or md.modality or md.sop_instance_uid or "Unknown"
         desc = md.description or ""
         
@@ -453,7 +527,7 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
                     kind=NodeType.IMAGE_SERIES,
                     label=md.description or label,
                     description=desc,
-                    datetime=dt,
+                    date_and_time=dt,
                     file_objs=[],
                     metadata={"modality": modality, "series_uid": s_uid, "sopi_to_file": {}},
                 ),
@@ -461,12 +535,12 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
             series.file_objs.append(file_obj)
             series.metadata["sopi_to_file"][md.sop_instance_uid] = file_obj
 
-        elif modality in modalities.get("structure", set()):
+        elif modality in modalities.get("rtstruct", set()):
             struct_map[md.sop_instance_uid] = Node(
                 kind=NodeType.STRUCTURE_SET,
                 label=label,
                 description=desc,
-                datetime=dt,
+                date_and_time=dt,
                 file_objs=[file_obj],
                 metadata={"ref_series": get_json_list(md.referenced_series_instance_uid_seq)},
             )
@@ -476,7 +550,7 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
                 kind=NodeType.PLAN,
                 label=label,
                 description=desc,
-                datetime=dt,
+                date_and_time=dt,
                 file_objs=[file_obj],
                 metadata={"ref_structs": get_json_list(md.referenced_structure_set_sopi_seq)},
             )
@@ -515,7 +589,7 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
             kind=NodeType.DOSE,
             label=label,
             description="Dose files grouped by referenced plan",
-            datetime="",
+            date_and_time="",
             file_objs=list(files),
             metadata={"ref_plan": plan_sopi},
             children=children,
@@ -526,13 +600,13 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
     for fobj in orphan_dose_files:
         fobj: File
         md = fobj.file_metadata
-        dt = _format_dicom_datetime(md.date, md.time)
+        dt = _format_dcm_str_datetime(md.date, md.time)
         label = md.label or md.name or "Dose"
         dn = Node(
             kind=NodeType.DOSE,
             label=label,
             description=md.description or "",
-            datetime=dt,
+            date_and_time=dt,
             file_objs=[fobj],
             metadata={},
             children=[],
@@ -564,8 +638,8 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
             Node(
                 kind=ContainerKind.DOSES,
                 label="Doses",
-                description="All dose objects grouped by referenced plan",
-                datetime="",
+                description="RT Dose Container\nMay contain referenced RT Plan(s), Structure Set(s), and Image Series Group(s)",
+                date_and_time="",
                 file_objs=_aggregate_file_objs(dose_children),
                 metadata=None,
                 children=dose_children,
@@ -577,8 +651,8 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
             Node(
                 kind=ContainerKind.PLANS,
                 label="Plans",
-                description="All plan objects",
-                datetime="",
+                description="RT Plan Container\nMay contain referenced Structure Set(s) and Image Series Group(s)",
+                date_and_time="",
                 file_objs=_aggregate_file_objs(plan_children),
                 metadata=None,
                 children=plan_children,
@@ -590,8 +664,8 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
             Node(
                 kind=ContainerKind.STRUCTURE_SETS,
                 label="Structure Sets",
-                description="All structure sets",
-                datetime="",
+                description="Structure Set Container\nMay contain referenced Image Series Group(s)",
+                date_and_time="",
                 file_objs=_aggregate_file_objs(struct_children),
                 metadata=None,
                 children=struct_children,
@@ -603,8 +677,8 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
             Node(
                 kind=ContainerKind.IMAGE_SERIES_GROUPS,
                 label="Image Series Groups",
-                description="All image series groups",
-                datetime="",
+                description="Image Series Container",
+                date_and_time="",
                 file_objs=_aggregate_file_objs(series_children),
                 metadata=None,
                 children=series_children,

@@ -104,7 +104,7 @@ def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None) 
             return
         
         # If no data is loaded and no action is active, simply submit the action.
-        if action is not None and not data_mgr.check_if_data_loaded("any") and not ss_mgr.is_action_in_progress():
+        if action is not None and not data_mgr.is_any_data_loaded and not ss_mgr.is_action_in_progress():
             ss_mgr.submit_action(partial(action, sender, app_data, user_data))
             return
 
@@ -114,7 +114,7 @@ def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None) 
                 while ss_mgr.is_action_in_progress():
                     sleep(0.1)
                 with ss_mgr.thread_lock:
-                    if data_mgr.check_if_data_loaded("any"):
+                    if data_mgr.is_any_data_loaded:
                         data_mgr.clear_data()
                         _reset_gui_layout()
                         logger.info("Cleanup complete.")

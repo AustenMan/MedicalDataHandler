@@ -94,8 +94,8 @@ def _get_core_texture_params(texture_action_type: str) -> Tuple[List[int], List[
     spacing_cbox_tag = img_tags["voxel_spacing_cbox"]
     
     # Get unmodified params for size and spacing
-    original_size = data_mgr.return_sitk_reference_param("original_size") or default_display_dict["DATA_SIZE"]
-    original_spacing = data_mgr.return_sitk_reference_param("original_spacing") or default_display_dict["VOXEL_SPACING"]
+    original_size = data_mgr.get_image_reference_param("original_size") or default_display_dict["DATA_SIZE"]
+    original_spacing = data_mgr.get_image_reference_param("original_spacing") or default_display_dict["VOXEL_SPACING"]
     
     # Get core data viewing parameters
     if texture_action_type == "reset":

@@ -64,7 +64,7 @@ def _add_rtp_button(tag_modality_node: Union[str, int], rtp_sopiuid: str, rtplan
     rtplan_info_dict["rt_plan_machine"] = treatment_machine
     
     # Get the original PTV names
-    orig_ptv_names = data_mgr.return_list_of_all_original_roi_names("ptv")
+    orig_ptv_names = data_mgr.get_orig_roi_names("ptv")
     
     # Try to find disease site
     plan_disease_site = rtplan_info_dict.get("rt_plan_disease_site", find_disease_site(RTPlanLabel, RTPlanName, orig_ptv_names))

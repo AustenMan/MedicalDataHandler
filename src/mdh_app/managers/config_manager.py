@@ -386,7 +386,7 @@ class ConfigManager:
     def get_dicom_modalities(self) -> Dict[str, Set[str]]:
         return {
             "image": {"CT", "MR", "MRI", "PT", "PET"},
-            "structure": {"RS", "RTS", "RTSTR", "RTSTRUCT", "STRUCT"},
+            "rtstruct": {"RS", "RTS", "RTSTR", "RTSTRUCT", "STRUCT"},
             "plan": {"RP", "RTP", "RTPLAN", "PLAN"},
             "dose": {
                 "RD", "RTD", "RTDOSE", "DOSE",

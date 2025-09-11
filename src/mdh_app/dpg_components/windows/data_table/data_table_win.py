@@ -210,8 +210,6 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
     original_reload_label = dpg.get_item_label(tag_table_reload_button)
     dpg.configure_item(tag_table_reload_button, enabled=False, label="Loading...")
     
-    logger.info("Updating the patient data table...")
-    
     # Get necessary parameters
     ss_mgr: SharedStateManager = get_user_data(td_key="shared_state_manager")
     dcm_mgr: DicomManager = get_user_data(td_key="dicom_manager")
@@ -318,12 +316,11 @@ def _display_patient_files_table(sender: Union[str, int], app_data: Any, user_da
     tag_data_table = get_tag("data_table")
     
     # Table Setup
-    dpg.add_table_column(parent=tag_data_table, label="Select", width_fixed=True)
-    dpg.add_table_column(parent=tag_data_table, label="Type", width_fixed=True)
-    dpg.add_table_column(parent=tag_data_table, label="Label", width_fixed=True)
-    dpg.add_table_column(parent=tag_data_table, label="Description", width_fixed=True)
-    dpg.add_table_column(parent=tag_data_table, label="Date/Time", width_fixed=True)
-    dpg.add_table_column(parent=tag_data_table, label="Files", width_fixed=True)
+    dpg.add_table_column(parent=tag_data_table, label="Selections", width_fixed=True)
+    dpg.add_table_column(parent=tag_data_table, label="Name(s)", width_fixed=True)
+    dpg.add_table_column(parent=tag_data_table, label="Label(s)", width_fixed=True)
+    dpg.add_table_column(parent=tag_data_table, label="Description(s)", width_fixed=True)
+    dpg.add_table_column(parent=tag_data_table, label="Date/Time(s)", width_fixed=True)
 
     # Track selected files for loading
     selected_files: Set[str] = set()

@@ -249,7 +249,7 @@ def _add_rts_roi_buttons(
         tag_group_roi = dpg.generate_uuid()
         with dpg.group(tag=tag_group_roi, parent=tag_modality_node, horizontal=True):
             # Checkbox to toggle ROI display
-            display_data_keys = ("rtstruct", rts_sopiuid, "list_roi_sitk", roi_idx)
+            display_data_keys = (rts_sopiuid, "list_roi_sitk", roi_idx)
             save_dict = dpg.get_item_user_data(tag_save_button)
             save_dict[display_data_keys] = roi_sitk_ref
             

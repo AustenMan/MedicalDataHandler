@@ -335,6 +335,7 @@ def build_userdata(tag: Any = "", VR: Any = None, value: Any = None) -> dict:
 
 def add_dicom_dataset_to_tree(
     window_tag: Union[str, int],
+    window_states: dict,
     data: Any,
     label: str = "",
     parent: Optional[int] = None,
@@ -342,7 +343,7 @@ def add_dicom_dataset_to_tree(
     text_color_one: Tuple[int, int, int] = (30, 200, 120),
     text_color_two: Tuple[int, int, int] = (140, 220, 250),
     max_depth: int = 10,
-    current_depth: int = 0
+    current_depth: int = 0,
 ) -> None:
     """
     Recursively adds DICOM data to a Dear PyGUI tree structure.
@@ -365,9 +366,10 @@ def add_dicom_dataset_to_tree(
         v-ein — 03/20/2024 2:29 AM
             The code you posted creates the entire tree at the start, with tree nodes in the closed state. I'd suggest that you only create children when a tree node is expanded - see add_item_toggled_open_handler. You can attach the list or dict of supposed child values to the tree node via user_data, and when it gets expanded, just pick up user_data and build children from there.
             Note: the user_data argument in add_item_toggled_open_handler receives user data for the handler itself, not for the tree node. Use get_item_user_data to retrieve it from the tree node.
-    """
+    """   
     # Early exit if window no longer exists
-    if not dpg.does_item_exist(window_tag):
+    if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+        window_states["aborted"] = True
         return
     
     if current_depth > max_depth:
@@ -406,7 +408,8 @@ def add_dicom_dataset_to_tree(
             new_parent = parent
         for elem in data:
             # Check if window still exists before each element
-            if not dpg.does_item_exist(window_tag):
+            if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+                window_states["aborted"] = True
                 return
             
             tag = elem.tag
@@ -421,7 +424,8 @@ def add_dicom_dataset_to_tree(
                 text_color_one=text_color_one,
                 text_color_two=text_color_two,
                 max_depth=max_depth,
-                current_depth=current_depth + 1
+                current_depth=current_depth + 1,
+                window_states=window_states
             )
     # Handle pydicom DataElement
     elif isinstance(data, DataElement):
@@ -446,7 +450,8 @@ def add_dicom_dataset_to_tree(
                     text_color_one=text_color_one,
                     text_color_two=text_color_two,
                     max_depth=max_depth,
-                    current_depth=current_depth + 1
+                    current_depth=current_depth + 1,
+                    window_states=window_states
                 )
             elif isinstance(value, Sequence):
                 # Special handling for Contour Sequence
@@ -457,7 +462,8 @@ def add_dicom_dataset_to_tree(
                 
                 if is_contour_sequence and len(value) > 1:
                     # Only show first item
-                    if not dpg.does_item_exist(window_tag):
+                    if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+                        window_states["aborted"] = True
                         return
                     
                     add_dicom_dataset_to_tree(
@@ -469,7 +475,8 @@ def add_dicom_dataset_to_tree(
                         text_color_one=text_color_one,
                         text_color_two=text_color_two,
                         max_depth=max_depth,
-                        current_depth=current_depth + 1
+                        current_depth=current_depth + 1,
+                        window_states=window_states
                     )
                     
                     # Add truncation notice
@@ -483,7 +490,8 @@ def add_dicom_dataset_to_tree(
                 else:
                     for idx, item in enumerate(value):
                         # Check if window still exists before each item
-                        if not dpg.does_item_exist(window_tag):
+                        if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+                            window_states["aborted"] = True
                             return
 
                         item_label = f"Item #{idx}"
@@ -496,7 +504,8 @@ def add_dicom_dataset_to_tree(
                             text_color_one=text_color_one,
                             text_color_two=text_color_two,
                             max_depth=max_depth,
-                            current_depth=current_depth + 1
+                            current_depth=current_depth + 1,
+                            window_states=window_states
                         )
             elif isinstance(value, (list, tuple)):
                 dpg.add_text(
@@ -543,7 +552,8 @@ def add_dicom_dataset_to_tree(
         
         if is_contour_sequence and len(data) > 1:
             # Only show first item for Contour Sequence
-            if not dpg.does_item_exist(window_tag):
+            if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+                window_states["aborted"] = True
                 return
             
             add_dicom_dataset_to_tree(
@@ -555,7 +565,8 @@ def add_dicom_dataset_to_tree(
                 text_color_one=text_color_one,
                 text_color_two=text_color_two,
                 max_depth=max_depth,
-                current_depth=current_depth + 1
+                current_depth=current_depth + 1,
+                window_states=window_states
             )
             
             # Add truncation notice
@@ -569,7 +580,8 @@ def add_dicom_dataset_to_tree(
         else:
             for idx, item in enumerate(data):
                 # Check if window still exists before each item
-                if not dpg.does_item_exist(window_tag):
+                if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+                    window_states["aborted"] = True
                     return
                 
                 item_label = f"Item #{idx}"
@@ -582,7 +594,8 @@ def add_dicom_dataset_to_tree(
                     text_color_one=text_color_one,
                     text_color_two=text_color_two,
                     max_depth=max_depth,
-                    current_depth=current_depth + 1
+                    current_depth=current_depth + 1,
+                    window_states=window_states
                 )
     # Handle dictionary
     elif isinstance(data, dict):
@@ -593,7 +606,8 @@ def add_dicom_dataset_to_tree(
         )
         for key, value in data.items():
             # Check if window still exists before each item
-            if not dpg.does_item_exist(window_tag):
+            if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+                window_states["aborted"] = True
                 return
             
             if value:
@@ -606,7 +620,8 @@ def add_dicom_dataset_to_tree(
                     text_color_one=text_color_one,
                     text_color_two=text_color_two,
                     max_depth=max_depth,
-                    current_depth=current_depth + 1
+                    current_depth=current_depth + 1,
+                    window_states=window_states
                 )
             else:
                 add_empty_value(new_parent, key)
@@ -619,7 +634,8 @@ def add_dicom_dataset_to_tree(
         )
         for idx, item in enumerate(data):
             # Check if window still exists before each item
-            if not dpg.does_item_exist(window_tag):
+            if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+                window_states["aborted"] = True
                 return
             
             item_label = f"Item #{idx}"
@@ -633,7 +649,8 @@ def add_dicom_dataset_to_tree(
                     text_color_one=text_color_one,
                     text_color_two=text_color_two,
                     max_depth=max_depth,
-                    current_depth=current_depth + 1
+                    current_depth=current_depth + 1,
+                    window_states=window_states
                 )
             else:
                 add_empty_value(new_parent, item_label)

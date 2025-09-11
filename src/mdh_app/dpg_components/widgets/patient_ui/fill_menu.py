@@ -91,8 +91,8 @@ def fill_right_col_ptdata(active_pt: Patient) -> None:
     )
     
     # Retrieve RT Doses and RT Plans
-    rtdoses_dict = data_mgr.return_data_from_modality("rtdose")
-    rtplans_dict = data_mgr.return_data_from_modality("rtplan")
+    rtdoses_dict = data_mgr.get_modality_data("rtdose")
+    rtplans_dict = data_mgr.get_modality_data("rtplan")
     
     # Update RT Doses with the number of fractions planned from the RT Plans
     for ref_rtp_sopiuid, rtdose_types_dict in rtdoses_dict.items():
@@ -106,7 +106,7 @@ def fill_right_col_ptdata(active_pt: Patient) -> None:
                 rtdose_value.SetMetaData("number_of_fractions_planned", fxns)
     
     # Build mappings for matched and unmatched data
-    images_dict = data_mgr.return_data_from_modality("image")
+    images_dict = data_mgr.get_modality_data("image")
     rtd_rtp_matched_dict = {
         ref_rtp_sopiuid: (rtdoses_dict[ref_rtp_sopiuid], rtplans_dict[ref_rtp_sopiuid])
         for ref_rtp_sopiuid in rtdoses_dict if ref_rtp_sopiuid in rtplans_dict
@@ -119,7 +119,7 @@ def fill_right_col_ptdata(active_pt: Patient) -> None:
         rtp_sopiuid: rtplans_dict[rtp_sopiuid]
         for rtp_sopiuid in rtplans_dict if rtp_sopiuid not in rtdoses_dict
     }
-    rtstructs_dict = data_mgr.return_data_from_modality("rtstruct")
+    rtstructs_dict = data_mgr.get_modality_data("rtstruct")
     
     add_images_to_menu(images_dict)
     _update_rmenu_matched_rtd_rtp(rtd_rtp_matched_dict)

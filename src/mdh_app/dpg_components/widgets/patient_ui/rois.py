@@ -619,24 +619,37 @@ def _update_views_roi_center(sender: Union[str, int], app_data: Any, user_data: 
         user_data: The tag of the ROI checkbox.
     """
     tag_checkbox = user_data
-    keys = dpg.get_item_user_data(tag_checkbox)
+    keys_or_handle = dpg.get_item_user_data(tag_checkbox)
     data_mgr: DataManager = get_user_data("data_manager")
     img_tags = get_tag("img_tags")
     
     any_data_active_before = data_mgr.return_is_any_data_active()
     dpg.set_value(tag_checkbox, True)
-    data_mgr.update_active_data(True, keys)
+    
+    # Check if we have a handle or legacy keys
+    from mdh_app.managers.data_manager import DataHandle
+    if isinstance(keys_or_handle, DataHandle):
+        # Use handle-based system
+        handle = keys_or_handle
+        data_mgr.update_active_data_with_handle(handle, True)
+        roi_center = handle.get_center_of_mass()
+        roi_extents = handle.get_extent_ranges()
+    else:
+        # Use legacy system
+        keys = keys_or_handle
+        data_mgr.update_active_data(True, keys)
+        roi_center = data_mgr.return_npy_center_of_mass(keys)
+        roi_extents = data_mgr.return_npy_extent_ranges(keys)
+    
     any_data_active_after = data_mgr.return_is_any_data_active()
     
     if not any_data_active_before and any_data_active_after:
         request_texture_update(texture_action_type="initialize")
         sleep(1/10) # Wait to ensure the callback has time to update state
     
-    roi_center = data_mgr.return_npy_center_of_mass(keys)
-    roi_extents = data_mgr.return_npy_extent_ranges(keys)
-    
     if not roi_center or not roi_extents:
-        logger.info(f"ROI '{keys[-1]}' has no center of mass or extents. Center: {roi_center}, Extents: {roi_extents}")
+        roi_identifier = handle.identifier if isinstance(keys_or_handle, DataHandle) else str(keys_or_handle[-1]) 
+        logger.info(f"ROI '{roi_identifier}' has no center of mass or extents. Center: {roi_center}, Extents: {roi_extents}")
         return
     
     # Modify the current view limits to display the ROI

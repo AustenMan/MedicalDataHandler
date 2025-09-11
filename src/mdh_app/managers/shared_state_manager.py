@@ -65,7 +65,7 @@ class SharedStateManager:
         self._texture_thread.start()
         
         # Persistent action thread: it will continuously wait for and execute actions.
-        self._action_queue = queue.Queue(maxsize=1)
+        self._action_queue = queue.Queue(maxsize=2)
         self._action_thread = threading.Thread(target=self._persistent_action_loop, daemon=True)
         self._action_thread.start()
     
@@ -115,13 +115,12 @@ class SharedStateManager:
         """Submit action for execution."""
         if self.shutdown_event.is_set():
             logger.info(f"'{get_callable_name(func)}' was not performed because program is shutting down.")
-        elif self.shutdown_event.is_set():
-            logger.info(f"'{get_callable_name(func)}' was not performed because cleanup is in progress.")
-        elif self.action_event.is_set():
-            logger.info(f"'{get_callable_name(func)}' was not performed because another action is in progress.")
         else:
             try:
+                busy = self.action_event.is_set()
                 self._action_queue.put_nowait((func, args, kwargs))
+                if busy:
+                    logger.info(f"'{get_callable_name(func)}' was successfully queued up next (another action is in progress).")
             except queue.Full:
                 logger.info(f"'{get_callable_name(func)}' was not performed because an action is already in progress; try again afterwards.")
     
@@ -141,8 +140,6 @@ class SharedStateManager:
         """Submit action to executor pool."""
         if self.shutdown_event.is_set():
             logger.info(f"Executor '{get_callable_name(func)}' was not performed because program is shutting down.")
-        elif self.shutdown_event.is_set():
-            logger.info(f"Executor '{get_callable_name(func)}' was not performed because cleanup is in progress.")
         elif self._executor is None:
             logger.info("Executor action was not performed because the executor does not exist. It must be started first.")
         else:

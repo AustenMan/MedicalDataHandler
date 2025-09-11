@@ -57,16 +57,13 @@ def _add_rtd_buttons(tag_parent: Union[str, int], rtp_sopiuid: str, rtdose_types
                 for rtd_sopiuid, sitk_dose_ref in value.items():
                     if sitk_dose_ref() is None:
                         continue
-                    display_keys = ("rtdose", rtp_sopiuid, rtdose_type, rtd_sopiuid)
                     beam_num = sitk_dose_ref().GetMetaData("referenced_beam_number")
-                    _add_rtd_button(beam_node, rtd_sopiuid, sitk_dose_ref, display_keys, f"Beam #{beam_num}")
+                    _add_rtd_button(beam_node, rtd_sopiuid, sitk_dose_ref, f"Beam #{beam_num}")
         elif rtdose_type == "plan_dose":
             for idx, (rtd_sopiuid, sitk_dose_ref) in enumerate(value.items(), start=1):
-                display_keys = ("rtdose", rtp_sopiuid, rtdose_type, rtd_sopiuid)
-                _add_rtd_button(tag_parent, rtd_sopiuid, sitk_dose_ref, display_keys, f"Plan-based #{idx}")
+                _add_rtd_button(tag_parent, rtd_sopiuid, sitk_dose_ref, f"Plan-based #{idx}")
         elif rtdose_type == "beams_composite":
-            display_keys = ("rtdose", rtp_sopiuid, rtdose_type)
-            _add_rtd_button(tag_parent, None, value, display_keys, "Beams Composite")
+            _add_rtd_button(tag_parent, None, value, "Beams Composite")
         else:
             logger.error(f"Unknown RT Dose type: {rtdose_type}")
 
@@ -75,7 +72,6 @@ def _add_rtd_button(
     tag_parent: Union[str, int], 
     rtd_sopiuid: Optional[str], 
     sitk_dose_ref: Any,
-    display_data_keys: Tuple[Any, ...], 
     button_label: str = ""
 ) -> None:
     """
@@ -85,25 +81,20 @@ def _add_rtd_button(
         tag_parent: The parent node tag.
         rtd_sopiuid: RT Dose SOP Instance UID.
         sitk_dose_ref: Reference to the SimpleITK RT Dose image.
-        display_data_keys: Keys identifying the displayed data.
         button_label: Button label text.
     """
-    tag_save_button = get_tag("save_button")
     size_dict = get_user_data(td_key="size_dict")
-    save_dict = dpg.get_item_user_data(tag_save_button)
-    save_dict[display_data_keys] = sitk_dose_ref
 
     button_label = f"RTD {button_label}" if button_label and isinstance(button_label, str) else "RTD"
     with dpg.group(parent=tag_parent, horizontal=True):
-        tag_rtd_cbox = dpg.add_checkbox(default_value=False, callback=update_cbox_callback, user_data=display_data_keys)
+        tag_rtd_cbox = dpg.add_checkbox(default_value=False, callback=update_cbox_callback, user_data=sitk_dose_ref)
         with dpg.tooltip(parent=tag_rtd_cbox):
             dpg.add_text(f"Display {button_label}", wrap=size_dict["tooltip_width"])
-        tag_tooltip = dpg.generate_uuid()
         tag_button = dpg.add_button(
             label=button_label,
             width=size_dict["button_width"],
             callback=_popup_inspect_rtdose,
-            user_data=(rtd_sopiuid, sitk_dose_ref, tag_tooltip)
+            user_data=(rtd_sopiuid, tag_rtd_cbox),
         )
         dpg.bind_item_theme(tag_button, get_colored_button_theme((90, 110, 70)))
         _update_rtd_button_tooltip(tag_button)
@@ -116,7 +107,10 @@ def _update_rtd_button_tooltip(tag_button: Union[str, int]) -> None:
     Args:
         tag_button: The tag of the button to update.
     """
-    rtd_sopiuid, sitk_dose_ref, tag_tooltip = dpg.get_item_user_data(tag_button)
+    rtd_sopiuid, tag_rtd_cbox = dpg.get_item_user_data(tag_button)
+    sitk_dose_ref = dpg.get_item_user_data(tag_rtd_cbox)
+    tag_tooltip = f"{tag_button}_tooltip"
+    
     safe_delete(tag_tooltip)
     sitk_dose = sitk_dose_ref()
     if sitk_dose is None:
@@ -132,7 +126,7 @@ def _update_rtd_button_tooltip(tag_button: Union[str, int]) -> None:
                 dpg.add_text(f"{key}: {value}", wrap=size_dict["tooltip_width"])
 
 
-def _popup_inspect_rtdose(sender: Union[str, int], app_data: Any, user_data: Tuple[Any, Any, Any]) -> None:
+def _popup_inspect_rtdose(sender: Union[str, int], app_data: Any, user_data: Tuple[str, Union[str, int]]) -> None:
     """
     Open a popup window for RT Dose metadata inspection and editing.
 
@@ -145,7 +139,8 @@ def _popup_inspect_rtdose(sender: Union[str, int], app_data: Any, user_data: Tup
     safe_delete(tag_inspect)
     
     tag_button = sender
-    rtd_sopiuid, sitk_dose_ref, tag_tooltip = user_data
+    rtd_sopiuid, tag_rtd_checkbox = user_data
+    sitk_dose_ref = dpg.get_item_user_data(tag_rtd_checkbox)
     size_dict = get_user_data(td_key="size_dict")
     
     popup_width, popup_height, popup_pos = get_popup_params()

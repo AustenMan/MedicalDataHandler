@@ -255,7 +255,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                 ):
                     roi_physical_property_value = -1.0
                 
-                structure_set_dict = data_mgr.return_data_from_modality("rtstruct")[key[1]]
+                structure_set_dict = data_mgr.get_modality_data("rtstruct")[key[1]]
                 StructureSetLabel = structure_set_dict.get("StructureSetLabel")
                 StructureSetName = structure_set_dict.get("StructureSetName")
                 StructureSetDate = structure_set_dict.get("StructureSetDate")
@@ -442,7 +442,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                 num_fxn_rtdose = value().GetMetaData("number_of_fractions_rtdose")
                 SOPIUID = value().GetMetaData("SOPInstanceUID")
                 referenced_rtplan_sopiuid = key[1]
-                rtplan_dict = data_mgr.return_data_from_modality("rtplan").get(referenced_rtplan_sopiuid, {})
+                rtplan_dict = data_mgr.get_modality_data("rtplan").get(referenced_rtplan_sopiuid, {})
                 
                 RTPlanLabel = rtplan_dict.get("RTPlanLabel", "NoPlanLabel")
                 RTPlanName = rtplan_dict.get("RTPlanName", "NoPlanName")

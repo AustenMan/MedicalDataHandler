@@ -236,13 +236,13 @@ class RTStructBuilder:
     def __init__(
         self,
         file_path: str,
-        sitk_image_params_dict: Dict[str, Dict[str, Any]],
+        image_params: Dict[str, Any],
         ss_mgr: SharedStateManager,
         conf_mgr: ConfigManager
     ) -> None:
         """Initialize RT Structure Builder with required parameters."""
         self.file_path: str = file_path
-        self.sitk_image_params_dict: Dict[str, Dict[str, Any]] = sitk_image_params_dict
+        self.image_params: Dict[str, Any] = image_params
         self.ss_mgr: SharedStateManager = ss_mgr
         self.conf_mgr: ConfigManager = conf_mgr
         
@@ -274,38 +274,22 @@ class RTStructBuilder:
             return False
 
         # Validate image parameters dictionary
-        if not self.sitk_image_params_dict or not isinstance(self.sitk_image_params_dict, dict):
+        if not self.image_params or not isinstance(self.image_params, dict):
             logger.error(
                 f"Image parameters must be provided as a non-empty dictionary. "
-                f"Received type: '{type(self.sitk_image_params_dict).__name__}' "
-                f"with value: '{self.sitk_image_params_dict}'"
+                f"Received type: '{type(self.image_params).__name__}' "
+                f"with value: '{self.image_params}'"
             )
             return False
         
-        # Validate structure of each image parameter entry
-        for series_uid, params in self.sitk_image_params_dict.items():
-            if not isinstance(series_uid, str):
-                logger.error(
-                    f"Series instance UID keys must be strings, "
-                    f"got {type(series_uid).__name__} for key '{series_uid}'"
-                )
-                return False
-                
-            if not isinstance(params, dict):
-                logger.error(
-                    f"Image parameters must be dictionaries, "
-                    f"got {type(params).__name__} for series '{series_uid}'"
-                )
-                return False
-            
-            # Check for all required SimpleITK parameter keys
-            missing_keys = set(StructConstants.REQUIRED_SITK_PARAMS) - set(params.keys())
-            if missing_keys:
-                logger.error(
-                    f"Image parameters for series '{series_uid}' missing required keys: "
-                    f"{missing_keys}. Found keys: {set(params.keys())}"
-                )
-                return False
+        # Check for all required SimpleITK parameter keys
+        missing_keys = set(StructConstants.REQUIRED_SITK_PARAMS) - set(self.image_params.keys())
+        if missing_keys:
+            logger.error(
+                f"Image parameters are missing required keys: {missing_keys}. "
+                f"Found keys: {set(self.image_params.keys())}"
+            )
+            return False
         
         # Validate shared state manager
         if not self.ss_mgr:
@@ -360,14 +344,6 @@ class RTStructBuilder:
         if not ref_series_uid:
             logger.error(
                 f"Referenced Series Instance UID not found in RT Structure Set file: '{self.file_path}'"
-            )
-            return False
-
-        if ref_series_uid not in self.sitk_image_params_dict:
-            logger.error(
-                f"Referenced Series Instance UID '{ref_series_uid}' from RT Structure Set "
-                f"not found in provided image parameters. Available series: "
-                f"{list(self.sitk_image_params_dict.keys())}"
             )
             return False
 
@@ -561,8 +537,6 @@ class RTStructBuilder:
         6. Validate results and update structure set information
         """
         # Get required parameters for mask building
-        series_uid = self.rtstruct_info_dict["ReferencedSeriesInstanceUID"]
-        sitk_image_params = self.sitk_image_params_dict[series_uid]
         tg_263_names = self.conf_mgr.get_tg_263_names(ready_for_dpg=True)
         organ_match_dict = self.conf_mgr.get_organ_matching_dict()
         unmatched_organ_name = self.conf_mgr.get_unmatched_organ_name()
@@ -582,7 +556,7 @@ class RTStructBuilder:
                 future = self.ss_mgr.submit_executor_action(
                     build_single_mask,
                     roi_info_dict,
-                    sitk_image_params,
+                    self.image_params,
                     tg_263_names,
                     organ_match_dict,
                     unmatched_organ_name

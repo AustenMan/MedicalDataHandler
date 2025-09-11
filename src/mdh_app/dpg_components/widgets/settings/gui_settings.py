@@ -94,11 +94,13 @@ def add_gui_controls(
                     tag=tag_width, 
                     default_value=default_width, 
                     user_data=tags_popup_settings, 
+                    step=1,
+                    step_fast=5,
                     min_clamped=False, 
                     max_clamped=False, 
                     on_enter=True,
                     width=size_dict["button_width"], 
-                    callback=_update_gui_size
+                    callback=_update_gui_size,
                 )
                 
             # App Height
@@ -114,6 +116,8 @@ def add_gui_controls(
                     tag=tag_height, 
                     default_value=default_height, 
                     user_data=tags_popup_settings, 
+                    step=1,
+                    step_fast=5,
                     min_clamped=False, 
                     max_clamped=False, 
                     on_enter=True,
@@ -308,13 +312,24 @@ def _update_gui_size(
     
     width = min(max(dpg.get_value(tag_width), width_limits[0]), width_limits[1])
     height = min(max(dpg.get_value(tag_height), height_limits[0]), height_limits[1])
+    
+    # Always compute new_screen_size in pixels
+    if mode == "Percentage":
+        new_screen_size = (
+            round(max_screen_size[0] * width / 100),
+            round(max_screen_size[1] * height / 100),
+        )
+    else:  # Pixels
+        new_screen_size = (width, height)
+    
     new_screen_size = (round(max_screen_size[0] * width / 100), round(max_screen_size[1] * height / 100)) if mode == "Percentage" else (width, height)
     
-    dpg.set_value(tag_width, width)
-    dpg.set_value(tag_height, height)
-    
+    # Store pixels in config
     conf_mgr.update_user_config({"screen_size": new_screen_size})
     
+    # Refresh displayed values
+    dpg.set_value(tag_width, width)
+    dpg.set_value(tag_height, height)
     request_texture_update(texture_action_type="update")
 
 
@@ -334,31 +349,33 @@ def _update_gui_size_mode(
     mode: str = app_data
     tag_WH_mode_toggle, tag_width, tag_height = user_data
     
+    # Validate mode and set it
     if mode not in ["Percentage", "Pixels"]:
         logger.error(f"Mode '{mode}' is invalid; defaulting to 'Percentage'.")
         mode = "Percentage"
-        dpg.set_value(tag_WH_mode_toggle, mode)
+    dpg.set_value(tag_WH_mode_toggle, mode)
     
+    # Get screen limits from config
     conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
-    prev_mode = conf_mgr.get_screen_size_input_mode()
     max_screen_size = conf_mgr.get_max_screen_size()
     width_limits, height_limits = _get_screen_limits(mode)
-    width, height = dpg.get_value(tag_width), dpg.get_value(tag_height)
     
-    # Convert width/height values if mode changed and update config
-    if mode != prev_mode:
-        if mode == "Percentage":
-            width = round(width / max_screen_size[0] * 100)
-            height = round(height / max_screen_size[1] * 100)
-        elif mode == "Pixels":
-            width = round(width * max_screen_size[0] / 100)
-            height = round(height * max_screen_size[1] / 100)
-        conf_mgr.update_user_config({"screen_size_input_mode": mode})
+    # Calculate current width and height in units of the new mode
+    screen_size_px = conf_mgr.get_user_config().get("screen_size", max_screen_size)
+    if mode == "Percentage":
+        width = round(screen_size_px[0] / max_screen_size[0] * 100)
+        height = round(screen_size_px[1] / max_screen_size[1] * 100)
+    else:  # Pixels
+        width, height = screen_size_px
     
     # Ensure width and height are within limits
     width = min(max(width, width_limits[0]), width_limits[1])
     height = min(max(height, height_limits[0]), height_limits[1])
     
+    # Update config with new mode
+    conf_mgr.update_user_config({"screen_size_input_mode": mode})
+    
+    # Refresh displayed values
     dpg.set_value(tag_width, width)
     dpg.set_value(tag_height, height)
     request_texture_update(texture_action_type="update")

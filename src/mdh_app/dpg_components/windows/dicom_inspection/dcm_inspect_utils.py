@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Set, Tuple, Union
 
 
 import dearpygui.dearpygui as dpg
-
+from dearpygui.dearpygui import (
+    set_value, configure_item, get_item_user_data,
+    get_item_type, get_item_children, get_item_parent
+)
 
 from mdh_app.utils.dpg_utils import normalize_dcm_string, match_child_tags
 
@@ -49,12 +52,7 @@ def filter_dicom_inspection(
         "... This may take a while, please wait!"
     )
     
-    # Cache lookup functions & constants
-    set_value = dpg.set_value
-    get_item_type = dpg.get_item_type
     tree_node_type = "mvAppItemType::mvTreeNode"
-    configure_item = dpg.configure_item
-    get_item_user_data = dpg.get_item_user_data
     
     # If no search terms are provided, collapse all nodes and exit
     if not any(search_terms.values()):
@@ -104,21 +102,18 @@ def get_all_tree_nodes(root: Union[str, int]) -> List[Union[str, int]]:
     """
     result: List[Union[str, int]] = []
     stack = [root]
-    
-    # Cache lookup functions & constants
-    get_type = dpg.get_item_type
-    get_children = dpg.get_item_children
     tree_node_type = "mvAppItemType::mvTreeNode"
 
+    # Cache
     append = result.append
     extend = stack.extend
     
     while stack:
         current = stack.pop()
-        if get_type(current) == tree_node_type:
+        if get_item_type(current) == tree_node_type:
             append(current)
         try:
-            extend(get_children(current, 1))  # slot=1 for children
+            extend(get_item_children(current, 1))  # slot=1 for children
         except:
             pass
     return result
@@ -136,12 +131,9 @@ def get_all_parents(node: Union[str, int], stop_node: Union[str, int]) -> Set[Un
         A set of parent node IDs.
     """
     parents: Set[Union[str, int]] = set()
-    
-    # Cache lookup functions & constants
-    get_item_parent = dpg.get_item_parent
-    get_item_type = dpg.get_item_type
     tree_node_type = "mvAppItemType::mvTreeNode"
     
+    # Cache
     add = parents.add
     
     while node and node != stop_node:
