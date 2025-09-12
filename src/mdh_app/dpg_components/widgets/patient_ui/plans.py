@@ -12,6 +12,7 @@ from mdh_app.dpg_components.core.utils import get_tag, get_user_data, add_custom
 from mdh_app.dpg_components.themes.button_themes import get_hidden_button_theme, get_colored_button_theme
 from mdh_app.utils.dpg_utils import safe_delete, get_popup_params
 from mdh_app.utils.general_utils import find_disease_site
+from mdh_app.managers.data_manager import PlanHandle
 
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ def add_plans_to_menu(rtplans_unmatched_dict: Dict[str, Any]) -> None:
         dpg.add_spacer(height=size_dict["spacer_height"])
 
 
-def _add_rtp_button(tag_modality_node: Union[str, int], rtp_sopiuid: str, rtplan_info_dict: Dict[str, Any]) -> None:
+def _add_rtp_button(tag_modality_node: Union[str, int], rtp_sopiuid: str) -> None:
     """
     Add an RT Plan button to the UI.
 
@@ -71,9 +72,9 @@ def _add_rtp_button(tag_modality_node: Union[str, int], rtp_sopiuid: str, rtplan
     rtplan_info_dict["rt_plan_disease_site"] = plan_disease_site
     
     with dpg.group(parent=tag_modality_node, horizontal=True):
-        display_data_keys = ("rtplan", rtp_sopiuid)
+        plan_handle = PlanHandle(plan_uid=rtp_sopiuid)
         save_dict = dpg.get_item_user_data(tag_save_button)
-        save_dict[display_data_keys] = rtplan_info_dict
+        save_dict[plan_handle] = rtplan_info_dict
 
         tag_tooltip = dpg.generate_uuid()
         tag_button = dpg.add_button(
@@ -132,7 +133,7 @@ def _popup_inspect_rtplan_dict(sender: Union[str, int], app_data: Any, user_data
         app_data: Additional event data.
         user_data: Tuple containing (RT Plan SOPInstanceUID, RT Plan metadata, tooltip tag).
     """
-    tag_inspect = get_tag("inspect_sitk_popup")
+    tag_inspect = get_tag("inspect_data_popup")
     size_dict = get_user_data(td_key="size_dict")
     
     safe_delete(tag_inspect)

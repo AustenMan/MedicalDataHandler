@@ -19,7 +19,6 @@ from mdh_app.dpg_components.widgets.settings.display_settings import add_data_vi
 from mdh_app.dpg_components.widgets.settings.gui_settings import add_gui_controls, add_program_controls
 from mdh_app.dpg_components.widgets.settings.interaction_settings import add_interaction_controls
 from mdh_app.utils.dpg_utils import get_popup_params, safe_delete
-from mdh_app.utils.general_utils import get_traceback
 
 
 if TYPE_CHECKING:
@@ -123,7 +122,7 @@ def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None) 
                     ss_mgr.submit_action(partial(action, sender, app_data, user_data))
                 safe_delete(get_tag("confirmation_popup"))
             except Exception as e:
-                logger.error(f"Failed to perform cleanup." + get_traceback(e))
+                logger.exception(f"Failed to perform cleanup!")
 
         create_confirmation_popup(
             button_callback=partial(ss_mgr.start_cleanup, _execute_action),
@@ -147,7 +146,7 @@ def _reset_gui_layout() -> None:
         get_tag("color_picker_popup"), 
         get_tag("inspect_ptobj_window"),
         get_tag("inspect_dicom_popup"),
-        get_tag("inspect_sitk_popup"),
+        get_tag("inspect_data_popup"),
         get_tag("save_sitk_window")
     ]
     safe_delete(tags_to_delete)

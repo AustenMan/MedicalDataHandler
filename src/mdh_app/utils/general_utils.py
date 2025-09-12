@@ -144,9 +144,9 @@ def atomic_save(
             except Exception:
                 pass
         if error_message:
-            logger.error(error_message + get_traceback(e))
+            logger.exception(error_message)
         else:
-            logger.error(f"Failed to save file '{filepath}'." + get_traceback(e))
+            logger.exception(f"Failed to save file '{filepath}'.")
         return False
 
 
@@ -592,7 +592,7 @@ def find_disease_site(
     return "SELECT_MAIN_SITE"
 
 
-def verify_roi_goals_format(roi_goals_string: str) -> Tuple[bool, List[str]]:
+def validate_roi_goals_format(roi_goals_string: str) -> Tuple[bool, List[str]]:
     """
     Verifies that the ROI goals follow the expected template and specific rules for each metric.
     

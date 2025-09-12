@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 import logging
-from typing import TYPE_CHECKING, Tuple, Any, Union, Dict, Optional
+from typing import TYPE_CHECKING, Tuple, Any, Union, Dict, Optional, List
 
 
 import dearpygui.dearpygui as dpg
@@ -12,6 +12,7 @@ from mdh_app.dpg_components.core.utils import get_tag, get_user_data, add_custom
 from mdh_app.dpg_components.widgets.patient_ui.pt_ui_utilities import update_cbox_callback
 from mdh_app.dpg_components.themes.button_themes import get_hidden_button_theme, get_colored_button_theme
 from mdh_app.utils.dpg_utils import safe_delete, get_popup_params
+from mdh_app.managers.data_manager import DoseHandle
 
 
 if TYPE_CHECKING:
@@ -39,7 +40,7 @@ def add_doses_to_menu(rtdoses_unmatched_dict: Dict[str, Any]) -> None:
         dpg.add_spacer(height=size_dict["spacer_height"])
 
 
-def _add_rtd_buttons(tag_parent: Union[str, int], rtp_sopiuid: str, rtdose_types_dict: Dict[str, Any]) -> None:
+def _add_rtd_buttons(tag_parent: Union[str, int], rtp_sopiuid: str, rtd_sopiuids: List[str]) -> None:
     """
     Add buttons for each RT Dose type to the UI.
 
@@ -57,13 +58,11 @@ def _add_rtd_buttons(tag_parent: Union[str, int], rtp_sopiuid: str, rtdose_types
                 for rtd_sopiuid, sitk_dose_ref in value.items():
                     if sitk_dose_ref() is None:
                         continue
-                    beam_num = sitk_dose_ref().GetMetaData("referenced_beam_number")
+                    beam_num = sitk_dose_ref().GetMetaData("ReferencedRTPlanBeamNumber")
                     _add_rtd_button(beam_node, rtd_sopiuid, sitk_dose_ref, f"Beam #{beam_num}")
         elif rtdose_type == "plan_dose":
             for idx, (rtd_sopiuid, sitk_dose_ref) in enumerate(value.items(), start=1):
                 _add_rtd_button(tag_parent, rtd_sopiuid, sitk_dose_ref, f"Plan-based #{idx}")
-        elif rtdose_type == "beams_composite":
-            _add_rtd_button(tag_parent, None, value, "Beams Composite")
         else:
             logger.error(f"Unknown RT Dose type: {rtdose_type}")
 
@@ -86,8 +85,12 @@ def _add_rtd_button(
     size_dict = get_user_data(td_key="size_dict")
 
     button_label = f"RTD {button_label}" if button_label and isinstance(button_label, str) else "RTD"
+    
+    # Create dose handle
+    dose_handle = DoseHandle(dose_uid=rtd_sopiuid)
+    
     with dpg.group(parent=tag_parent, horizontal=True):
-        tag_rtd_cbox = dpg.add_checkbox(default_value=False, callback=update_cbox_callback, user_data=sitk_dose_ref)
+        tag_rtd_cbox = dpg.add_checkbox(default_value=False, callback=update_cbox_callback, user_data=dose_handle)
         with dpg.tooltip(parent=tag_rtd_cbox):
             dpg.add_text(f"Display {button_label}", wrap=size_dict["tooltip_width"])
         tag_button = dpg.add_button(
@@ -135,7 +138,7 @@ def _popup_inspect_rtdose(sender: Union[str, int], app_data: Any, user_data: Tup
         app_data: Additional event data.
         user_data: Tuple containing (RT Dose SOPInstanceUID, SimpleITK RT Dose reference, tooltip tag).
     """
-    tag_inspect = get_tag("inspect_sitk_popup")
+    tag_inspect = get_tag("inspect_data_popup")
     safe_delete(tag_inspect)
     
     tag_button = sender

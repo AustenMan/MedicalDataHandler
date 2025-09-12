@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 import logging
-from typing import TYPE_CHECKING, Dict, Any
+from typing import TYPE_CHECKING, Dict, Any, List
 
 
 import dearpygui.dearpygui as dpg
@@ -90,83 +90,40 @@ def fill_right_col_ptdata(active_pt: Patient) -> None:
         visible=False
     )
     
-    # Retrieve RT Doses and RT Plans
-    rtdoses_dict = data_mgr.get_modality_data("rtdose")
-    rtplans_dict = data_mgr.get_modality_data("rtplan")
-    
-    # Update RT Doses with the number of fractions planned from the RT Plans
-    for ref_rtp_sopiuid, rtdose_types_dict in rtdoses_dict.items():
-        for rtdose_type, rtdose_value in rtdose_types_dict.items():
-            fxns = str(int(rtplans_dict.get(ref_rtp_sopiuid, {}).get("number_of_fractions_planned", 0) or 0))
-            if isinstance(rtdose_value, dict):
-                for rtd_sopiuid, sitk_rtdose_ref in rtdose_value.items():
-                    if sitk_rtdose_ref() is not None:
-                        sitk_rtdose_ref().SetMetaData("number_of_fractions_planned", fxns)
-            elif isinstance(rtdose_value, sitk.Image):
-                rtdose_value.SetMetaData("number_of_fractions_planned", fxns)
-    
-    # Build mappings for matched and unmatched data
-    images_dict = data_mgr.get_modality_data("image")
-    rtd_rtp_matched_dict = {
-        ref_rtp_sopiuid: (rtdoses_dict[ref_rtp_sopiuid], rtplans_dict[ref_rtp_sopiuid])
-        for ref_rtp_sopiuid in rtdoses_dict if ref_rtp_sopiuid in rtplans_dict
-    }
-    rtdoses_unmatched_dict = {
-        ref_rtp_sopiuid: rtdoses_dict[ref_rtp_sopiuid]
-        for ref_rtp_sopiuid in rtdoses_dict if ref_rtp_sopiuid not in rtplans_dict
-    }
-    rtplans_unmatched_dict = {
-        rtp_sopiuid: rtplans_dict[rtp_sopiuid]
-        for rtp_sopiuid in rtplans_dict if rtp_sopiuid not in rtdoses_dict
-    }
-    rtstructs_dict = data_mgr.get_modality_data("rtstruct")
-    
-    add_images_to_menu(images_dict)
-    _update_rmenu_matched_rtd_rtp(rtd_rtp_matched_dict)
-    add_doses_to_menu(rtdoses_unmatched_dict)
-    add_plans_to_menu(rtplans_unmatched_dict)
-    add_structure_sets_to_menu(rtstructs_dict)
+    # Retrieve data mappings
+    rtp_rtd_mappings: Dict[str, Any] = data_mgr.get_rtp_rtd_mappings()
+    rtp_rtd_mapped: Dict[str, List[str]] = rtp_rtd_mappings.get("plan_to_doses", {})
+    rtdoses_unmapped: List[str] = rtp_rtd_mappings.get("unmapped_doses", [])
+    rtplans_unmapped: List[str] = rtp_rtd_mappings.get("unmapped_plans", [])
+
+    add_images_to_menu()
+    _update_rmenu_matched_rtd_rtp(rtp_rtd_mapped)
+    add_doses_to_menu(rtdoses_unmapped)
+    add_plans_to_menu(rtplans_unmapped)
+    add_structure_sets_to_menu()
     
     # Show the save button after all data is loaded
     dpg.configure_item(tag_save_button, show=True)
 
 
-def _update_rmenu_matched_rtd_rtp(rtd_rtp_matched_dict: Dict[str, Any]) -> None:
+def _update_rmenu_matched_rtd_rtp(rtp_rtd_mapped: Dict[str, List[str]]) -> None:
     """
     Update the right menu with linked RT Dose and RT Plan data.
 
     Args:
-        rtd_rtp_matched_dict: Dictionary of matched RT dose and RT plan data keyed by SOPInstanceUID.
+        rtp_rtd_mapped: Dictionary of RT Plan SOPInstanceUIDs mapped to lists of RT Dose SOPInstanceUIDs.
     """
-    if not rtd_rtp_matched_dict:
+    if not rtp_rtd_mapped:
         return
     size_dict = get_user_data(td_key="size_dict")
     with dpg.tree_node(parent="mw_right", label="Doses & Plans (Linked)", default_open=True):
-        for idx, (rtp_sopiuid, (rtd_dict, rtplan_dict)) in enumerate(rtd_rtp_matched_dict.items(), start=1):
+        for idx, (rtp_sopiuid, rtd_sopiuids) in enumerate(rtp_rtd_mapped.items(), start=1):
             modality_node = dpg.generate_uuid()
             with dpg.tree_node(tag=modality_node, label=f"Linked Group #{idx}", default_open=True):
-                _add_rtp_button(modality_node, rtp_sopiuid, rtplan_dict)
-                _add_rtd_buttons(modality_node, rtp_sopiuid, rtd_dict)
+                _add_rtp_button(modality_node, rtp_sopiuid)
+                _add_rtd_buttons(modality_node, rtp_sopiuid, rtd_sopiuids)
         dpg.add_spacer(height=size_dict["spacer_height"])
 
-
-def _update_rmenu_matched_rtd_rtp(rtd_rtp_matched_dict: Dict[str, Any]) -> None:
-    """
-    Update the right menu with linked RT Dose and RT Plan data.
-
-    Args:
-        rtd_rtp_matched_dict: Dictionary of matched RT dose and RT plan data keyed by SOPInstanceUID.
-    """
-    if not rtd_rtp_matched_dict:
-        return
-    size_dict = get_user_data(td_key="size_dict")
-    with dpg.tree_node(parent="mw_right", label="Doses & Plans (Linked)", default_open=True):
-        for idx, (rtp_sopiuid, (rtd_dict, rtplan_dict)) in enumerate(rtd_rtp_matched_dict.items(), start=1):
-            modality_node = dpg.generate_uuid()
-            with dpg.tree_node(tag=modality_node, label=f"Linked Group #{idx}", default_open=True):
-                _add_rtp_button(modality_node, rtp_sopiuid, rtplan_dict)
-                _add_rtd_buttons(modality_node, rtp_sopiuid, rtd_dict)
-        dpg.add_spacer(height=size_dict["spacer_height"])
 
 
 

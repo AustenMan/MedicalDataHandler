@@ -11,7 +11,6 @@ import dearpygui.dearpygui as dpg
 from mdh_app.dpg_components.core.utils import get_tag, get_user_data
 from mdh_app.dpg_components.rendering.texture_manager import request_texture_update
 from mdh_app.utils.dpg_utils import safe_delete, match_child_tags
-from mdh_app.utils.general_utils import get_traceback
 
 
 if TYPE_CHECKING:
@@ -116,7 +115,7 @@ def copy_log_text() -> None:
                         logger.info(f"{prepend_text} '{child_text[:75]}...'")
                     return
     except Exception as e:
-        logger.debug(f"Failed to copy text from log window." + get_traceback(e))
+        logger.debug(f"Failed to copy text from log window.", exc_info=True)
 
 def _handler_MouseLeftClick(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """Toggle tooltip visibility for the hovered view."""

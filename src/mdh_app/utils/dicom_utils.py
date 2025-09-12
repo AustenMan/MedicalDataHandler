@@ -9,7 +9,7 @@ import pydicom
 from pydicom.datadict import keyword_for_tag
 
 
-from mdh_app.utils.general_utils import safe_type_conversion, get_traceback
+from mdh_app.utils.general_utils import safe_type_conversion
 
 
 if TYPE_CHECKING:
@@ -82,17 +82,129 @@ def safe_keyword_for_tag(tag: Union[str, int]) -> Optional[str]:
         return None
 
 
-def read_dcm_file(
-    file_path: str, 
-    stop_before_pixels: bool = True, 
-    to_json_dict: bool = False
-) -> Optional[Union[pydicom.Dataset, Dict[str, Any]]]:
-    """Read DICOM file with optional JSON conversion and pixel data handling."""
+def get_first_ref_series_uid(ds: pydicom.Dataset) -> str:
+    """Retrieve the first Referenced Series Instance UID from the dataset."""
+    matched_ref_series_uid = ""
     try:
-        ds = pydicom.dcmread(str(file_path).strip(), force=True, stop_before_pixels=stop_before_pixels)
-        return ds.to_json_dict() if to_json_dict else ds
+        for frame_item in ds.get("ReferencedFrameOfReferenceSequence", []):
+            for study_item in frame_item.get("RTReferencedStudySequence", []):
+                for series_item in study_item.get("RTReferencedSeriesSequence", []):
+                    series_uid = series_item.get("SeriesInstanceUID", "")
+                    if series_uid:
+                        found_series_uid = str(series_uid).strip()
+                        if not matched_ref_series_uid:
+                            matched_ref_series_uid = found_series_uid
+                        elif matched_ref_series_uid != found_series_uid:
+                            logger.warning(
+                                f"Multiple SeriesInstanceUIDs found in structure set! "
+                                f"First one encountered: {matched_ref_series_uid}, another one found: {found_series_uid}. "
+                                f"Using the first one encountered."
+                            )
+        if not matched_ref_series_uid:
+            logger.error("No Referenced Series Instance UID found in RT Structure Set.")
     except Exception as e:
-        logger.error(f"Failed to read file '{file_path}'." + get_traceback(e))
+        logger.error("Error retrieving Referenced Series Instance UID.", exc_info=True)
+    return matched_ref_series_uid
+
+
+def get_first_ref_struct_sop_uid(ds: pydicom.Dataset) -> str:
+    """Retrieve the first Referenced Structure Set SOP Instance UID from an RT Plan dataset."""
+    matched_ref_rts_sop_uid = ""
+    try:
+        for struct_ds in ds.get("ReferencedStructureSetSequence", []):
+            found_ref_rts_sop_uid = struct_ds.get("ReferencedSOPInstanceUID", None)
+            if found_ref_rts_sop_uid and not matched_ref_rts_sop_uid:
+                matched_ref_rts_sop_uid = found_ref_rts_sop_uid
+            elif found_ref_rts_sop_uid and matched_ref_rts_sop_uid != found_ref_rts_sop_uid:
+                logger.warning(
+                    f"Multiple Referenced Structure Set SOP Instance UIDs found in the plan file! "
+                    f"First one encountered: {matched_ref_rts_sop_uid}, another one found: {found_ref_rts_sop_uid}. "
+                    f"Using the first one encountered."
+                )
+        if not matched_ref_rts_sop_uid:
+            logger.error("No Referenced Structure Set SOP Instance UID found in the plan file.")
+    except Exception as e:
+        logger.error("Error retrieving Referenced Structure Set SOP Instance UID.", exc_info=True)
+    return matched_ref_rts_sop_uid
+
+
+def get_first_ref_plan_sop_uid(ds: pydicom.Dataset) -> str:
+    """Retrieve the first Referenced SOP Instance UID from an RT Dose dataset."""
+    matched_ref_rtp_sop_uid = ""
+    try:
+        for plan_ds in ds.get("ReferencedRTPlanSequence", []):
+            found_ref_rtp_sop_uid = plan_ds.get("ReferencedSOPInstanceUID", None)
+            if found_ref_rtp_sop_uid and not matched_ref_rtp_sop_uid:
+                matched_ref_rtp_sop_uid = found_ref_rtp_sop_uid
+            elif found_ref_rtp_sop_uid and matched_ref_rtp_sop_uid != found_ref_rtp_sop_uid:
+                logger.warning(
+                    f"Multiple Referenced RT Plan SOP Instance UIDs found in the dose file! "
+                    f"First one encountered: {matched_ref_rtp_sop_uid}, another one found: {found_ref_rtp_sop_uid}. "
+                    f"Using the first one encountered."
+                )
+        if not matched_ref_rtp_sop_uid:
+            logger.error("No Referenced RT Plan SOP Instance UID found in the dose file.")
+    except Exception as e:
+        logger.error("Error retrieving Referenced RT Plan SOP Instance UID.", exc_info=True)
+    return matched_ref_rtp_sop_uid
+
+
+def get_first_num_fxns_planned(ds: pydicom.Dataset) -> Optional[int]:
+    """Retrieve the Number of Fractions Planned from the RT Plan dataset."""    
+    matched_num_fxns_planned: Optional[int] = None
+    try:
+        for fraction_group_ds in ds.get("FractionGroupSequence", []):
+            try:
+                found_num_fxns_planned = int(fraction_group_ds.get("NumberOfFractionsPlanned", None))
+            except (TypeError, ValueError):
+                continue
+            if matched_num_fxns_planned is None:
+                matched_num_fxns_planned = found_num_fxns_planned
+            elif matched_num_fxns_planned != found_num_fxns_planned:
+                logger.warning(
+                    f"Multiple Number of Fractions Planned found in RT Plan! "
+                    f"First one encountered: {matched_num_fxns_planned}, another one found: {found_num_fxns_planned}. "
+                    f"Using the first one encountered."
+                )
+        if matched_num_fxns_planned is None:
+            logger.info("No Number of Fractions Planned found in RT Plan.")
+    except Exception as e:
+        logger.error("Error retrieving Number of Fractions Planned.", exc_info=True)
+    return matched_num_fxns_planned
+
+
+def get_first_ref_beam_number(ds: pydicom.Dataset) -> Optional[int]:
+    """Retrieve the first Referenced Beam Number from the RT Plan dataset."""
+    try:
+        for ref_fxn_grp_ds in ds.get("ReferencedFractionGroupSequence", []):
+            for ref_beam_ds in ref_fxn_grp_ds.get("ReferencedBeamSequence", []):
+                try:
+                    return int(ref_beam_ds.get("ReferencedBeamNumber"))
+                except (TypeError, ValueError):
+                    continue
+    except Exception as e:
+        logger.error("Error retrieving Referenced Beam Number.", exc_info=True)
+    return None
+
+
+def read_dcm_file(
+    file_path: str,
+    **kwargs
+) -> Optional[pydicom.Dataset]:
+    """Read a DICOM file safely with optional arguments passed to pydicom.dcmread.
+
+    Args:
+        file_path: Path to the DICOM file.
+        **kwargs: Additional keyword arguments for `pydicom.dcmread`,
+                  e.g., stop_before_pixels=True, force=True.
+
+    Returns:
+        A pydicom.Dataset if successful, otherwise None.
+    """
+    try:
+        return pydicom.dcmread(str(file_path).strip(), **kwargs)
+    except Exception as e:
+        logger.error(f"Failed to read file '{file_path}'.", exc_info=True)
         return None
 
 

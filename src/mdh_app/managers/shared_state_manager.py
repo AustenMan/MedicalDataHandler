@@ -10,7 +10,7 @@ from time import sleep
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 
-from mdh_app.utils.general_utils import get_traceback, get_callable_name
+from mdh_app.utils.general_utils import get_callable_name
 
 
 if TYPE_CHECKING:
@@ -18,6 +18,14 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+def should_exit(ss_mgr: SharedStateManager, msg: str = "Aborting task due to cleanup/shutdown event.") -> bool:
+    """Check if task should terminate due to cleanup/shutdown events."""
+    if ss_mgr and (ss_mgr.cleanup_event.is_set() or ss_mgr.shutdown_event.is_set()):
+        logger.info(msg)
+        return True
+    return False
 
 
 class SharedStateManager:
@@ -82,7 +90,7 @@ class SharedStateManager:
                 if not self.cleanup_event.is_set():
                     func(*args, **kwargs)
             except Exception as e:
-                logger.error(f"Failed to perform '{get_callable_name(func)}'." + get_traceback(e))
+                logger.exception(f"Failed to perform '{get_callable_name(func)}'.")
             finally:
                 self.action_event.clear()
                 self._action_queue.task_done()
@@ -109,7 +117,7 @@ class SharedStateManager:
             try:
                 func(*args, **kwargs)
             except Exception as e:
-                logger.error(f"Failed to render the texture using '{get_callable_name(func)}'." + get_traceback(e))
+                logger.exception(f"Failed to render the texture using '{get_callable_name(func)}'.")
     
     def submit_action(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
         """Submit action for execution."""
@@ -146,7 +154,7 @@ class SharedStateManager:
             try:
                 return self._executor.submit(func, *args, **kwargs)
             except Exception as e:
-                logger.error(f"Submission failed for executor '{get_callable_name(func)}'." + get_traceback(e))
+                logger.exception(f"Submission failed for executor '{get_callable_name(func)}'.")
         return None
     
     def startup_executor(self, use_process_pool: bool = False, max_workers: Optional[int] = None) -> None:

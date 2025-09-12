@@ -17,13 +17,14 @@ from mdh_app.utils.dpg_utils import safe_delete, get_popup_params, add_dicom_dat
 
 
 if TYPE_CHECKING:
+    from pydicom import Dataset
     from mdh_app.managers.shared_state_manager import SharedStateManager
 
 
 logger = logging.getLogger(__name__)
 
 
-def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
+def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_data: Union[str, Dataset]) -> None:
     """
     Create and display a popup with detailed DICOM file information.
 
@@ -33,7 +34,6 @@ def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_d
         user_data: Custom user data passed to the callback.
     """
     ss_mgr: SharedStateManager = get_user_data(td_key="shared_state_manager")
-    dcm_file: str = user_data
     tag_inspect_dcm = get_tag("inspect_dicom_popup")
     size_dict: Dict[str, Any] = get_user_data(td_key="size_dict")
     popup_width, popup_height, popup_pos = get_popup_params()
@@ -41,9 +41,16 @@ def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_d
     # Delete any pre-existing popup
     safe_delete(tag_inspect_dcm)
     
-    # Try to read the DICOM file
-    dicom_dataset = read_dcm_file(dcm_file)
-    if not dicom_dataset:
+    # Get the DICOM dataset
+    dicom_dataset = None
+    dicom_path = None
+    if isinstance(user_data, str):
+        dicom_path = user_data
+        dicom_dataset = read_dcm_file(dicom_path)
+    elif isinstance(user_data, Dataset):
+        dicom_dataset = user_data
+    if not isinstance(dicom_dataset, Dataset):
+        logger.error(f"Failed to fetch DICOM dataset for inspection! Received: {type(dicom_dataset)}")
         return
     
     tag_hidden_theme = get_hidden_button_theme()
@@ -100,12 +107,14 @@ def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_d
             theme_tag=tag_hidden_theme,
             add_separator_before=True,
         )
-        add_custom_button(
-            label=f"File Location: {str(dcm_file)[:100]}...",
-            theme_tag=tag_hidden_theme,
-            add_separator_after=True,
-            tooltip_text=f"File location: {dcm_file}"
-        )
+        
+        if dicom_path is not None:
+            add_custom_button(
+                label=f"File Location: {str(dicom_path)[:100]}...",
+                theme_tag=tag_hidden_theme,
+                add_separator_after=True,
+                tooltip_text=f"File location: {dicom_path}"
+            )
     
     # Add the DICOM dataset to the tree
     with dpg.group(tag=tag_tree_group, parent=tag_inspect_dcm, user_data=False):

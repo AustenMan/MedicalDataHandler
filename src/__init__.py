@@ -9,7 +9,6 @@ from functools import partial
 
 from mdh_app.dpg_components.core.launcher import GUILauncher, destroy_gui
 from mdh_app.managers.shared_state_manager import SharedStateManager
-from mdh_app.utils.general_utils import get_traceback
 from mdh_app.utils.logger_utils import start_root_logger
 
 
@@ -36,7 +35,7 @@ def main() -> None:
     try:
         GUILauncher(shared_state_manager).launch()
     except Exception as e:
-        logger.error("Failed to run the GUI." + get_traceback(e))
+        logger.exception("Failed to run the GUI!")
     finally:
         destroy_gui(shared_state_manager)
 

@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING, Callable, Optional, Dict, List, Any, Sequence,
 
 
 import pydicom
-from pydicom.tag import Tag
 from sqlalchemy import select, or_, delete
 from sqlalchemy.exc import IntegrityError
 
 
 from mdh_app.database.db_session import get_session
 from mdh_app.database.models import Patient, File, FileMetadata, FileMetadataOverride
+from mdh_app.utils.dicom_tags import DicomTags
 from mdh_app.utils.dicom_utils import get_ds_tag_value, get_first_available_tag
 from mdh_app.utils.general_utils import get_traceback, chunked_iterable
 
@@ -28,89 +28,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-# -----------------------------------------------------------------------------
-# DICOM Tag Constants
-# -----------------------------------------------------------------------------
-
-
-# General tags
-TAG_PATIENT_ID = Tag(0x0010, 0x0020)
-TAG_PATIENTS_NAME = Tag(0x0010, 0x0010)
-TAG_FRAME_OF_REFERENCE_UID = Tag(0x0020, 0x0052)
-TAG_MODALITY = Tag(0x0008, 0x0060)
-TAG_DOSE_SUMMATION_TYPE = Tag(0x3004, 0x000A)
-TAG_SERIES_INSTANCE_UID = Tag(0x0020, 0x000E)
-TAG_SOP_CLASS_UID = Tag(0x0008, 0x0016)
-TAG_SOP_INSTANCE_UID = Tag(0x0008, 0x0018)
-TAG_REFERENCED_SOP_CLASS_UID = Tag(0x0008, 0x1150)
-TAG_REFERENCED_SOP_INSTANCE_UID = Tag(0x0008, 0x1155)
-TAG_REFERENCED_RT_PLAN_SEQUENCE = Tag(0x300C, 0x0002)
-TAG_REFERENCED_STRUCTURE_SET_SEQUENCE = Tag(0x300C, 0x0060)
-TAG_REFERENCED_DOSE_SEQUENCE = Tag(0x300C, 0x0080)
-TAG_REFERENCED_FRAME_OF_REFERENCE_SEQUENCE = Tag(0x3006, 0x0010)
-TAG_RT_REFERENCED_STUDY_SEQUENCE = Tag(0x3006, 0x0012)
-TAG_RT_REFERENCED_SERIES_SEQUENCE = Tag(0x3006, 0x0014)
-
-
-# Label tags
-TAG_RT_PLAN_LABEL = Tag(0x300A, 0x0002)
-TAG_STRUCTURE_SET_LABEL = Tag(0x3006, 0x0002)
-TAG_RT_IMAGE_LABEL = Tag(0x3002, 0x0002)
-LABEL_DICOM_TAGS = [TAG_RT_PLAN_LABEL, TAG_STRUCTURE_SET_LABEL, TAG_RT_IMAGE_LABEL]
-
-
-# Name tags
-TAG_RT_PLAN_NAME = Tag(0x300A, 0x0003)
-TAG_STRUCTURE_SET_NAME = Tag(0x3006, 0x0004)
-TAG_RT_IMAGE_NAME = Tag(0x3002, 0x0003)
-NAME_DICOM_TAGS = [TAG_RT_PLAN_NAME, TAG_STRUCTURE_SET_NAME, TAG_RT_IMAGE_NAME]
-
-# Description tags
-TAG_RT_DOSE_COMMENT = Tag(0x3004, 0x0006)
-TAG_IMAGE_COMMENTS = Tag(0x0020, 0x4000)
-TAG_RT_PLAN_DESCRIPTION = Tag(0x300A, 0x0004)
-TAG_STRUCTURE_SET_DESCRIPTION = Tag(0x3006, 0x0006)
-TAG_SERIES_DESCRIPTION = Tag(0x0008, 0x103E)
-TAG_RT_IMAGE_DESCRIPTION = Tag(0x3002, 0x0004)
-TAG_STUDY_DESCRIPTION = Tag(0x0008, 0x1030)
-DESCRIPTION_DICOM_TAGS = [
-    TAG_RT_DOSE_COMMENT, TAG_IMAGE_COMMENTS, TAG_RT_PLAN_DESCRIPTION, TAG_STRUCTURE_SET_DESCRIPTION,
-    TAG_SERIES_DESCRIPTION, TAG_RT_IMAGE_DESCRIPTION, TAG_STUDY_DESCRIPTION
-]
-
-
-# Date tags
-TAG_RT_PLAN_DATE = Tag(0x300A, 0x0006)
-TAG_STRUCTURE_SET_DATE = Tag(0x3006, 0x0008)
-TAG_CONTENT_DATE = Tag(0x0008, 0x0023)
-TAG_SERIES_DATE = Tag(0x0008, 0x0021)
-TAG_STUDY_DATE = Tag(0x0008, 0x0020)
-DATE_DICOM_TAGS = [
-    TAG_RT_PLAN_DATE, TAG_STRUCTURE_SET_DATE, TAG_CONTENT_DATE, TAG_SERIES_DATE, TAG_STUDY_DATE
-]
-
-
-# Time tags
-TAG_RT_PLAN_TIME = Tag(0x300A, 0x0007)
-TAG_STRUCTURE_SET_TIME = Tag(0x3006, 0x0009)
-TAG_CONTENT_TIME = Tag(0x0008, 0x0033)
-TAG_SERIES_TIME = Tag(0x0008, 0x0031)
-TAG_STUDY_TIME = Tag(0x0008, 0x0030)
-TIME_DICOM_TAGS = [
-    TAG_RT_PLAN_TIME, TAG_STRUCTURE_SET_TIME, TAG_CONTENT_TIME, TAG_SERIES_TIME, TAG_STUDY_TIME
-]
-
-
-# All tags that the worker should read
-LINK_WORKER_DICOM_TAGS = [
-    TAG_PATIENT_ID, TAG_PATIENTS_NAME, TAG_FRAME_OF_REFERENCE_UID, TAG_MODALITY, TAG_DOSE_SUMMATION_TYPE,
-    TAG_SERIES_INSTANCE_UID, TAG_SOP_CLASS_UID, TAG_SOP_INSTANCE_UID, TAG_REFERENCED_SOP_CLASS_UID,
-    TAG_REFERENCED_SOP_INSTANCE_UID, TAG_REFERENCED_RT_PLAN_SEQUENCE, TAG_REFERENCED_STRUCTURE_SET_SEQUENCE,
-    TAG_REFERENCED_DOSE_SEQUENCE, TAG_REFERENCED_FRAME_OF_REFERENCE_SEQUENCE, TAG_RT_REFERENCED_STUDY_SEQUENCE,
-    TAG_RT_REFERENCED_SERIES_SEQUENCE,
-] + LABEL_DICOM_TAGS + NAME_DICOM_TAGS + DESCRIPTION_DICOM_TAGS + DATE_DICOM_TAGS + TIME_DICOM_TAGS
 
 
 # -----------------------------------------------------------------------------
@@ -157,35 +74,35 @@ def scan_folder_for_dicom(folder: str) -> List[str]:
 def read_dicom_metadata(file_path: str) -> Dict[str, Any]:
     """Read essential metadata from a DICOM file."""
     try:
-        ds = pydicom.dcmread(file_path, stop_before_pixels=True, force=True, specific_tags=LINK_WORKER_DICOM_TAGS)
+        ds = pydicom.dcmread(file_path, stop_before_pixels=True, force=True, specific_tags=DicomTags.link_worker_tags)
     except Exception as e:
-        logger.error(f"Failed to read DICOM file {file_path}." + get_traceback(e))
+        logger.exception(f"Failed to read DICOM file {file_path}.")
         return {}
 
     # Basic tags
-    patient_id          = get_ds_tag_value(ds, TAG_PATIENT_ID,          reformat_str=True)
-    patient_name        = get_ds_tag_value(ds, TAG_PATIENTS_NAME,       reformat_str=True)
-    frame_of_reference_uid = get_ds_tag_value(ds, TAG_FRAME_OF_REFERENCE_UID)
-    modality            = get_ds_tag_value(ds, TAG_MODALITY)
-    sop_instance_uid    = get_ds_tag_value(ds, TAG_SOP_INSTANCE_UID)
-    sop_class_uid       = get_ds_tag_value(ds, TAG_SOP_CLASS_UID)
-    dose_summation_type = get_ds_tag_value(ds, TAG_DOSE_SUMMATION_TYPE)
-    series_instance_uid = get_ds_tag_value(ds, TAG_SERIES_INSTANCE_UID)
-    
+    patient_id          = get_ds_tag_value(ds, DicomTags.patient_id,          reformat_str=True)
+    patient_name        = get_ds_tag_value(ds, DicomTags.patients_name,       reformat_str=True)
+    frame_of_reference_uid = get_ds_tag_value(ds, DicomTags.frame_of_reference_uid)
+    modality            = get_ds_tag_value(ds, DicomTags.modality)
+    sop_instance_uid    = get_ds_tag_value(ds, DicomTags.sop_instance_uid)
+    sop_class_uid       = get_ds_tag_value(ds, DicomTags.sop_class_uid)
+    dose_summation_type = get_ds_tag_value(ds, DicomTags.dose_summation_type)
+    series_instance_uid = get_ds_tag_value(ds, DicomTags.series_instance_uid)
+
     # Multi-option tags
-    label       = get_first_available_tag(ds, LABEL_DICOM_TAGS, reformat_str=True)
-    name        = get_first_available_tag(ds, NAME_DICOM_TAGS, reformat_str=True)
-    description = get_first_available_tag(ds, DESCRIPTION_DICOM_TAGS, reformat_str=True)
-    date        = get_first_available_tag(ds, DATE_DICOM_TAGS)
-    time        = get_first_available_tag(ds, TIME_DICOM_TAGS)
-    
+    label       = get_first_available_tag(ds, DicomTags.label_tags, reformat_str=True)
+    name        = get_first_available_tag(ds, DicomTags.name_tags, reformat_str=True)
+    description = get_first_available_tag(ds, DicomTags.description_tags, reformat_str=True)
+    date        = get_first_available_tag(ds, DicomTags.date_tags)
+    time        = get_first_available_tag(ds, DicomTags.time_tags)
+
     # Fallback to referenced Frame of Reference UIDs if Frame of Reference UID is not found
     if not frame_of_reference_uid:
-        ref_seq = ds.get(TAG_REFERENCED_FRAME_OF_REFERENCE_SEQUENCE)
+        ref_seq = ds.get(DicomTags.referenced_frame_of_reference_sequence)
         if ref_seq:
             referenced_uids = {
-                uid for item in ref_seq 
-                if (uid := get_ds_tag_value(item, TAG_FRAME_OF_REFERENCE_UID)) is not None
+                uid for item in ref_seq
+                if (uid := get_ds_tag_value(item, DicomTags.frame_of_reference_uid)) is not None
             }
             if referenced_uids:
                 sorted_uids = sorted(referenced_uids)
@@ -229,54 +146,54 @@ def read_dicom_metadata(file_path: str) -> Dict[str, Any]:
     }
     
     # Direct referenced tags
-    referenced_sop_class_uid = get_ds_tag_value(ds, TAG_REFERENCED_SOP_CLASS_UID)
+    referenced_sop_class_uid = get_ds_tag_value(ds, DicomTags.referenced_sop_class_uid)
     if referenced_sop_class_uid and referenced_sop_class_uid not in metadata["referenced_sop_class_uid_seq"]:
         metadata["referenced_sop_class_uid_seq"].append(referenced_sop_class_uid)
-    
-    referenced_sop_instance_uid = get_ds_tag_value(ds, TAG_REFERENCED_SOP_INSTANCE_UID)
+
+    referenced_sop_instance_uid = get_ds_tag_value(ds, DicomTags.referenced_sop_instance_uid)
     if referenced_sop_instance_uid and referenced_sop_instance_uid not in metadata["referenced_sop_instance_uid_seq"]:
         metadata["referenced_sop_instance_uid_seq"].append(referenced_sop_instance_uid)
     
     # Process Referenced Frame of Reference Sequence
-    ref_for_seq = ds.get(TAG_REFERENCED_FRAME_OF_REFERENCE_SEQUENCE)
+    ref_for_seq = ds.get(DicomTags.referenced_frame_of_reference_sequence)
     if ref_for_seq:
         for item in ref_for_seq:
-            item_for_uid = get_ds_tag_value(item, TAG_FRAME_OF_REFERENCE_UID)
+            item_for_uid = get_ds_tag_value(item, DicomTags.frame_of_reference_uid)
             if item_for_uid and item_for_uid not in metadata["referenced_frame_of_reference_uid_seq"]:
                 metadata["referenced_frame_of_reference_uid_seq"].append(item_for_uid)
             
             # Use proper constant for RT Referenced Study Sequence
-            rt_ref_study_seq = item.get(TAG_RT_REFERENCED_STUDY_SEQUENCE)
+            rt_ref_study_seq = item.get(DicomTags.rt_referenced_study_sequence)
             if rt_ref_study_seq:
                 for study_item in rt_ref_study_seq:
-                    item_sopc = get_ds_tag_value(study_item, TAG_REFERENCED_SOP_CLASS_UID)
+                    item_sopc = get_ds_tag_value(study_item, DicomTags.referenced_sop_class_uid)
                     if item_sopc and item_sopc not in metadata["referenced_sop_class_uid_seq"]:
                         metadata["referenced_sop_class_uid_seq"].append(item_sopc)
-                    item_sopi = get_ds_tag_value(study_item, TAG_REFERENCED_SOP_INSTANCE_UID)
+                    item_sopi = get_ds_tag_value(study_item, DicomTags.referenced_sop_instance_uid)
                     if item_sopi and item_sopi not in metadata["referenced_sop_instance_uid_seq"]:
                         metadata["referenced_sop_instance_uid_seq"].append(item_sopi)
 
-                    rt_ref_series_seq = study_item.get(TAG_RT_REFERENCED_SERIES_SEQUENCE)
+                    rt_ref_series_seq = study_item.get(DicomTags.rt_referenced_series_sequence)
                     if rt_ref_series_seq:
                         for series_item in rt_ref_series_seq:
-                            series_uid = get_ds_tag_value(series_item, TAG_SERIES_INSTANCE_UID)
+                            series_uid = get_ds_tag_value(series_item, DicomTags.series_instance_uid)
                             if series_uid and series_uid not in metadata["referenced_series_instance_uid_seq"]:
                                 metadata["referenced_series_instance_uid_seq"].append(series_uid)
 
     # Process additional sequences: RT Plan, Structure Set, and Dose
     for sopc_key, sopi_key, seq_tag in [
-        ("referenced_rt_plan_sopc_seq", "referenced_rt_plan_sopi_seq", TAG_REFERENCED_RT_PLAN_SEQUENCE),
-        ("referenced_structure_set_sopc_seq", "referenced_structure_set_sopi_seq", TAG_REFERENCED_STRUCTURE_SET_SEQUENCE),
-        ("referenced_dose_sopc_seq", "referenced_dose_sopi_seq", TAG_REFERENCED_DOSE_SEQUENCE),
+        ("referenced_rt_plan_sopc_seq", "referenced_rt_plan_sopi_seq", DicomTags.referenced_rt_plan_sequence),
+        ("referenced_structure_set_sopc_seq", "referenced_structure_set_sopi_seq", DicomTags.referenced_structure_set_sequence),
+        ("referenced_dose_sopc_seq", "referenced_dose_sopi_seq", DicomTags.referenced_dose_sequence),
     ]:
         seq = ds.get(seq_tag)
         if not seq:
             continue
         for item in seq:
-            sopc = get_ds_tag_value(item, TAG_REFERENCED_SOP_CLASS_UID)
+            sopc = get_ds_tag_value(item, DicomTags.referenced_sop_class_uid)
             if sopc and sopc not in metadata[sopc_key]:
                 metadata[sopc_key].append(sopc)
-            sopi = get_ds_tag_value(item, TAG_REFERENCED_SOP_INSTANCE_UID)
+            sopi = get_ds_tag_value(item, DicomTags.referenced_sop_instance_uid)
             if sopi and sopi not in metadata[sopi_key]:
                 metadata[sopi_key].append(sopi)
                     
@@ -388,7 +305,7 @@ class DicomManager():
                 if isinstance(result, list):
                     dicom_files.extend(result)
             except Exception as e:
-                logger.error(f"Failed to scan a folder for DICOM files." + get_traceback(e))
+                logger.exception(f"Failed to scan a folder for DICOM files.")
             finally:
                 if isinstance(fu, Future) and not fu.done():
                     fu.cancel()
@@ -436,7 +353,7 @@ class DicomManager():
                         meta = fu.result()
                         inserted += self._upsert(ses, meta)
                     except Exception as e:
-                        logger.error(f"Failed to process DICOM metadata." + get_traceback(e))
+                        logger.exception(f"Failed to process DICOM metadata.")
                     finally:
                         if isinstance(fu, Future) and not fu.done():
                             fu.cancel()
@@ -544,7 +461,7 @@ class DicomManager():
             ses.rollback()
             return 0
         except Exception as e:
-            logger.error(f"Failed to upsert metadata for {meta['file_path']}." + get_traceback(e))
+            logger.exception(f"Failed to upsert metadata for {meta['file_path']}.")
             ses.rollback()
             return 0
 
@@ -602,7 +519,7 @@ class DicomManager():
 
                 self.progress_callback(total, total, f"Loaded {len(results)} patients from database.")
         except Exception as e:
-            logger.error("Failed to load patient data from database." + get_traceback(e))
+            logger.exception("Failed to load patient data from database.")
             return {}
 
         return results
@@ -635,7 +552,7 @@ class DicomManager():
                 return True
             except Exception as e:
                 ses.rollback()
-                logger.error("❌ Failed to delete patient: " + get_traceback(e))
+                logger.exception("❌ Failed to delete patient: ")
                 return False
     
     def purge_all_patient_data_from_db(self) -> None:
@@ -652,5 +569,5 @@ class DicomManager():
                 logger.info("✅ All patient data deleted from database.")
             except Exception as e:
                 ses.rollback()
-                logger.error("❌ Failed to purge patient data: " + get_traceback(e))
+                logger.exception("❌ Failed to purge patient data: ")
 

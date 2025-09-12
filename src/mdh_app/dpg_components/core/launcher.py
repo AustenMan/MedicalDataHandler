@@ -32,7 +32,6 @@ from mdh_app.dpg_components.windows.main.main_win import create_main_window
 from mdh_app.managers.config_manager import ConfigManager
 from mdh_app.managers.data_manager import DataManager
 from mdh_app.managers.dicom_manager import DicomManager
-from mdh_app.utils.general_utils import get_traceback
 
 
 if TYPE_CHECKING:
@@ -101,7 +100,7 @@ class GUILauncher:
             self._start_render_loop()
             
         except Exception as e:
-            logger.critical(f"Failed to launch GUI: {get_traceback(e)}")
+            logger.critical(f"Failed to launch GUI!", exc_info=True)
             raise
     
     def _create_registries(self) -> None:
@@ -129,7 +128,7 @@ class GUILauncher:
             self._configure_font_registry()
             
         except Exception as e:
-            logger.error(f"Failed to create registries: {get_traceback(e)}")
+            logger.exception(f"Failed to create registries!")
             raise
     
     def _create_handler_registry(self) -> None:
@@ -303,8 +302,7 @@ class GUILauncher:
             
         except Exception as e:
             logger.warning(
-                f"Failed to configure custom font '{font_name}': {get_traceback(e)}. "
-                "Using DearPyGUI default font."
+                f"Failed to configure custom font '{font_name}'! Using DearPyGUI default font.", exc_info=True
             )
     
     def _configure_callbacks(self) -> None:
@@ -371,7 +369,7 @@ class GUILauncher:
             )
             
         except Exception as e:
-            logger.error(f"Failed to start DearPyGUI viewport: {get_traceback(e)}")
+            logger.exception("Failed to start DearPyGUI viewport!")
             raise
     
     def _validate_viewport_parameters(
@@ -439,14 +437,14 @@ class GUILauncher:
             try:
                 dpg.render_dearpygui_frame()
             except Exception as e:
-                logger.error(f"Failed to render GUI frame: {get_traceback(e)}")
+                logger.exception(f"Failed to render GUI frame!")
                 continue
             
             try:
                 refresh_logger_messages()
             except Exception as e:
-                logger.error(f"Failed to refresh logger messages: {get_traceback(e)}")
-        
+                logger.exception(f"Failed to refresh logger messages!")
+
         logger.debug("Render loop terminated")
     
     def _update_tag_dictionary(self) -> None:
@@ -502,7 +500,7 @@ class GUILauncher:
                 "color_picker_popup": dpg.generate_uuid(),
                 "inspect_ptobj_window": dpg.generate_uuid(),
                 "inspect_dicom_popup": dpg.generate_uuid(),
-                "inspect_sitk_popup": dpg.generate_uuid(),
+                "inspect_data_popup": dpg.generate_uuid(),
                 "save_sitk_window": dpg.generate_uuid(),
                 
                 # Progress bar tag
@@ -677,9 +675,9 @@ def destroy_gui(shared_state_manager: SharedStateManager) -> None:
     try:
         dpg.destroy_context()
     except Exception as e:
-        logger.error("Failed to destroy the DPG context." + get_traceback(e))
+        logger.exception("Failed to destroy the DPG context!")
     
     try:
         shared_state_manager.shutdown_manager()
     except Exception as e:
-        logger.error("Failed to shut down the shared state manager." + get_traceback(e))
+        logger.exception("Failed to shut down the shared state manager!")

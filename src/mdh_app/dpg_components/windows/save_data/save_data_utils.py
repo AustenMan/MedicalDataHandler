@@ -13,7 +13,7 @@ import SimpleITK as sitk
 
 from mdh_app.database.db_utils import update_patient_processed_at
 from mdh_app.dpg_components.core.utils import get_tag, get_user_data
-from mdh_app.utils.general_utils import validate_filename, get_traceback, atomic_save
+from mdh_app.utils.general_utils import validate_filename, atomic_save
 from mdh_app.utils.numpy_utils import create_HU_to_RED_map
 from mdh_app.utils.sitk_utils import sitk_to_array, array_to_sitk, sitk_resample_to_reference
 
@@ -164,7 +164,7 @@ def _process_image_saving(sender: Union[str, int], save_data_dict: Dict[str, Any
             sitk.WriteImage(new_image_sitk, save_path)
             logger.info(f"SITK Image saved to: {save_path}")
         except Exception as e:
-            logger.error(f"Failed to save SITK Image to: {save_path}." + get_traceback(e))
+            logger.exception(f"Failed to save SITK Image to: {save_path}.")
 
 
 def _process_roi_saving(sender: Union[str, int], save_data_dict: Dict[str, Any], base_save_path: str) -> None:
@@ -237,7 +237,7 @@ def _process_roi_saving(sender: Union[str, int], save_data_dict: Dict[str, Any],
             sitk.WriteImage(data_sitk, save_path)
             logger.info(f"SITK ROI saved to: {save_path}")
         except Exception as e:
-            logger.error(f"Failed to write SITK ROI to {save_path}." + get_traceback(e))
+            logger.exception(f"Failed to write SITK ROI to {save_path}.")
 
 
 def _process_plan_saving(sender: Union[str, int], save_data_dict: Dict[str, Any], base_save_path: str) -> None:
@@ -321,7 +321,7 @@ def _process_dose_saving(sender: Union[str, int], save_data_dict: Dict[str, Any]
             try:
                 sitk.WriteImage(dose_sum_sitk, save_path)
             except Exception as e:
-                logger.error(f"Failed to write combined RT Dose to {save_path}." + get_traceback(e))
+                logger.exception(f"Failed to write combined RT Dose to {save_path}.")
         else:
             logger.error(
                 msg=(
@@ -369,5 +369,5 @@ def _process_dose_saving(sender: Union[str, int], save_data_dict: Dict[str, Any]
             sitk.WriteImage(new_dose_sitk, save_path)
             logger.info(f"SITK RT Dose saved to: {save_path}")
         except Exception as e:
-            logger.error(f"Failed to write SITK RT Dose to {save_path}." + get_traceback(e))
+            logger.exception(f"Failed to write SITK RT Dose to {save_path}.")
 

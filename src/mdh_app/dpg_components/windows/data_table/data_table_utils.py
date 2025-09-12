@@ -243,47 +243,10 @@ def load_patient_data(sender: Union[int, str], app_data: Any, user_data: Tuple[P
         logger.info("No files selected for loading.")
         return
     
+    # Load data and update UI
     logger.info("Starting to load selected data. Please wait...")
     data_mgr: DataManager = get_user_data(td_key="data_manager")
-    conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
-    
-    # Build a data structure for DataManager
-    rt_data = {"IMAGE": [], "RTSTRUCT": [], "RTPLAN": [], "RTDOSE": []}
-    image_series: Dict[Tuple[str, str], List[str]] = {}
-    
-    # Get modalities for classification
-    modalities = conf_mgr.get_dicom_modalities()
-    
-    # Group selected files by modality
-    for file_obj in getattr(patient, "files", []):
-        if file_obj.path not in selected_files:
-            continue
-        
-        md = getattr(file_obj, "file_metadata", None)
-        if not md:
-            continue
-            
-        modality = (md.modality or "").upper()
-        path = file_obj.path
-        sopi = md.sop_instance_uid or ""
-        
-        if modality in modalities.get("image", set()):
-            series_uid = md.series_instance_uid or ""
-            key = (modality, series_uid)
-            image_series.setdefault(key, []).append(path)
-        elif modality in modalities.get("structure", set()):
-            rt_data["RTSTRUCT"].append((modality, sopi, path))
-        elif modality in modalities.get("plan", set()):
-            rt_data["RTPLAN"].append((modality, sopi, path))
-        elif modality in modalities.get("dose", set()):
-            rt_data["RTDOSE"].append((modality, sopi, path))
-    
-    # Collect image series entries
-    for (modality, series_uid), paths in image_series.items():
-        rt_data["IMAGE"].append((modality, series_uid, paths))
-    
-    # Load data and update UI
-    data_mgr.load_all_dicom_data(rt_data, patient.mrn)
+    data_mgr.load_all_dicom_data(patient, selected_files)
     fill_right_col_ptdata(patient)
     request_texture_update(texture_action_type="initialize")
     logger.info(f"Loaded {len(selected_files)} files for patient {patient.name}")
@@ -545,7 +508,7 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
                 metadata={"ref_series": get_json_list(md.referenced_series_instance_uid_seq)},
             )
 
-        elif modality in modalities.get("plan", set()):
+        elif modality in modalities.get("rtplan", set()):
             plan_map[md.sop_instance_uid] = Node(
                 kind=NodeType.PLAN,
                 label=label,
@@ -555,7 +518,7 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
                 metadata={"ref_structs": get_json_list(md.referenced_structure_set_sopi_seq)},
             )
 
-        elif modality in modalities.get("dose", set()):
+        elif modality in modalities.get("rtdose", set()):
             ref_plans = get_json_list(md.referenced_rt_plan_sopi_seq)
             if ref_plans:
                 for ref in ref_plans:

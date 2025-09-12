@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 from concurrent.futures import as_completed, Future
 
 
+from mdh_app.managers.shared_state_manager import should_exit
 from mdh_app.utils.dicom_utils import read_dcm_file, get_dict_tag_values, safe_keyword_for_tag
-from mdh_app.utils.general_utils import get_traceback
 
 
 if TYPE_CHECKING:
@@ -636,7 +636,7 @@ def process_single_beam(
         return beam_info
         
     except Exception as e:
-        logger.error(f"Error processing beam #{beam_number}: {get_traceback(e)}")
+        logger.exception(f"Error processing beam #{beam_number}!")
         # Return minimal beam info to allow processing to continue
         return {
             "beam_number": beam_number,
@@ -705,29 +705,7 @@ class RTPlanBuilder:
         self.read_beam_cp_data: bool = read_beam_cp_data
         self.rt_plan_info_dict: Dict[str, Any] = {}
         self.ds_dict: Optional[Dict[str, Any]] = None
-    
-    def _should_exit(self) -> bool:
-        """
-        Check if processing should be aborted due to application shutdown events.
         
-        This method checks for cleanup and shutdown events that may be triggered
-        by user actions or system events, allowing for graceful termination of
-        long-running RT Plan processing tasks.
-        
-        Returns:
-            True if processing should be aborted, False if it should continue.
-            
-        Note:
-            This method is called frequently during processing to ensure
-            responsive cancellation of operations when needed.
-        """
-        if (self.ss_mgr is not None and 
-            (self.ss_mgr.cleanup_event.is_set() or 
-             self.ss_mgr.shutdown_event.is_set())):
-            logger.info("Aborting RT Plan Builder task due to shutdown event.")
-            return True
-        return False
-    
     def _validate_inputs(self) -> bool:
         """
         Validate all input parameters and prerequisites for RT Plan processing.
@@ -780,7 +758,7 @@ class RTPlanBuilder:
             return True
             
         except Exception as e:
-            logger.error(f"Exception while reading DICOM file '{self.file_path}': {get_traceback(e)}")
+            logger.exception(f"Exception while reading DICOM file '{self.file_path}'!")
             return False
     
     def _extract_plan_info(self) -> None:
@@ -980,8 +958,7 @@ class RTPlanBuilder:
         try:
             # Submit beam processing tasks
             for beam_sequence_item in beam_sequence:
-                if self._should_exit():
-                    logger.info("Beam processing cancelled due to shutdown event")
+                if should_exit(self.ss_mgr, msg="Beam processing cancelled by user."):
                     break
                 
                 beam_number = get_dict_tag_values(beam_sequence_item, RTPDicomTags.BEAM_NUMBER)
@@ -1017,8 +994,7 @@ class RTPlanBuilder:
             # Collect results from parallel processing
             completed_beams = 0
             for future in as_completed(futures):
-                if self._should_exit():
-                    logger.info("Cancelling remaining beam processing due to shutdown")
+                if should_exit(self.ss_mgr, msg="Cancelling remaining beam processing at user request."):
                     break
                 
                 try:
@@ -1034,7 +1010,7 @@ class RTPlanBuilder:
                         logger.warning("Received invalid beam info from processing")
                         
                 except Exception as e:
-                    logger.error(f"Failed to process beam information: {get_traceback(e)}")
+                    logger.exception(f"Failed to process beam information!")
                 finally:
                     # Ensure future is properly cleaned up
                     if isinstance(future, Future) and not future.done():
@@ -1043,15 +1019,14 @@ class RTPlanBuilder:
             logger.info(f"Successfully processed {completed_beams} treatment beams")
             
         except Exception as e:
-            logger.error(f"Error during beam information extraction: {get_traceback(e)}")
-            
+            logger.exception(f"Error during beam information extraction!")
+
         finally:
             # Always shutdown executor to free resources
             self.ss_mgr.shutdown_executor()
         
         # Check for shutdown before finalizing results
-        if self._should_exit():
-            logger.info("Beam processing aborted due to shutdown event")
+        if should_exit(self.ss_mgr, msg="Beam processing cancelled by user."):
             return
         
         self.rt_plan_info_dict["beam_dict"] = beam_dict
@@ -1088,11 +1063,15 @@ class RTPlanBuilder:
         logger.info(f"Starting RT Plan processing for file: {self.file_path}")
         
         # Validate inputs and read dataset
-        if self._should_exit() or not self._validate_inputs():
+        if should_exit(self.ss_mgr, msg="RT Plan processing cancelled by user."):
+            return None
+        if not self._validate_inputs():
             logger.error("RT Plan processing aborted due to input validation failure")
             return None
-            
-        if self._should_exit() or not self._read_and_validate_dataset():
+
+        if should_exit(self.ss_mgr, msg="RT Plan processing cancelled by user."):
+            return None
+        if not self._read_and_validate_dataset():
             logger.error("RT Plan processing aborted due to dataset reading failure")
             return None
         
@@ -1106,20 +1085,18 @@ class RTPlanBuilder:
         ]
         
         for step_name, step_method in processing_steps:
-            if self._should_exit():
-                logger.info(f"RT Plan processing cancelled during {step_name} extraction")
+            if should_exit(self.ss_mgr, msg=f"RT Plan processing cancelled during {step_name} extraction"):
                 return None
                 
             try:
                 step_method()
                 logger.debug(f"Completed {step_name} extraction")
             except Exception as e:
-                logger.error(f"Error extracting {step_name}: {get_traceback(e)}")
+                logger.exception(f"Error extracting {step_name}!")
                 return None
         
         # Final validation and logging
-        if self._should_exit():
-            logger.info("RT Plan processing cancelled before completion")
+        if should_exit(self.ss_mgr, msg="RT Plan processing cancelled before completion"):
             return None
         
         plan_name = self.rt_plan_info_dict.get('rt_plan_name', 'Unknown')

@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Optional, Union, Set
 
 
 from mdh_app.utils.general_utils import (
-    atomic_save, get_traceback, get_source_dir,
-    get_main_screen_size, validate_directory, format_name
+    atomic_save, get_source_dir, get_main_screen_size, validate_directory, 
+    format_name
 )
 
 
@@ -91,7 +91,7 @@ class ConfigManager:
             with open(file_path, "r", encoding="utf-8") as file:
                 return json.load(file)
         except Exception as e:
-            logger.error(f"Unable to load configuration file '{file_path}'." + get_traceback(e))
+            logger.exception(f"Unable to load configuration file '{file_path}'.")
             return None
     
     def _save_config(self, key: str, new_config: Union[dict, list]) -> bool:
@@ -341,7 +341,7 @@ class ConfigManager:
 
     def get_unmatched_organ_name(self) -> str:
         """Get unmatched organ name setting."""
-        return self.get_user_setting("unmatched_organ_name", "")
+        return self.get_user_setting("unmatched_organ_name", "MISSING")
     
     def get_organ_matching_dict(self) -> Dict[str, Any]:
         """Return the organ matching configuration dictionary."""
@@ -387,8 +387,8 @@ class ConfigManager:
         return {
             "image": {"CT", "MR", "MRI", "PT", "PET"},
             "rtstruct": {"RS", "RTS", "RTSTR", "RTSTRUCT", "STRUCT"},
-            "plan": {"RP", "RTP", "RTPLAN", "PLAN"},
-            "dose": {
+            "rtplan": {"RP", "RTP", "RTPLAN", "PLAN"},
+            "rtdose": {
                 "RD", "RTD", "RTDOSE", "DOSE",
                 "RD BEAM", "RTD BEAM", "RTDOSE BEAM", "DOSE BEAM",
                 "RD PLAN", "RTD PLAN", "RTDOSE PLAN", "DOSE PLAN"
