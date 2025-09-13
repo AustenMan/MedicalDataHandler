@@ -12,12 +12,12 @@ import dearpygui.dearpygui as dpg
 from mdh_app.database.db_utils import get_num_patients, get_patient_full
 from mdh_app.dpg_components.core.gui_lifecycle import wrap_with_cleanup
 from mdh_app.dpg_components.core.utils import get_tag, get_user_data, add_custom_separator
+from mdh_app.dpg_components.themes.button_themes import get_colored_button_theme
 from mdh_app.dpg_components.themes.table_themes import get_table_cell_spacing_theme
 from mdh_app.dpg_components.windows.data_table.data_table_utils import (
     get_patient_dates, confirm_removal_callback, load_patient_data, build_dicom_structure,
-    
 )
-
+from mdh_app.dpg_components.windows.dicom_search.dcm_search_win import create_dicom_action_window
 from mdh_app.dpg_components.windows.patient_object.pt_obj_window import create_window_ptobj_inspection
 from mdh_app.utils.dpg_utils import get_popup_params, safe_delete
 
@@ -144,6 +144,19 @@ def toggle_data_window(force_show: bool = False, label: str = "") -> None:
                         label="Load Data Table",
                         callback=wrap_with_cleanup(_create_ptobj_table),
                     )
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                            dpg.add_text(
+                                default_value=(
+                                    "Add patient data to this local database by reading DICOM files from a directory."
+                                )
+                            )
+                    dpg.add_button(
+                        width=size_dict["button_width"],
+                        label="Add New Data",
+                        callback=create_dicom_action_window, 
+                    )
+                        
         
         add_custom_separator(parent_tag=tag_data_window)
     else:

@@ -30,10 +30,7 @@ from mdh_app.utils.general_utils import (
     validate_rgb_color,
 )
 from mdh_app.utils.numpy_utils import numpy_roi_mask_generation
-from mdh_app.utils.sitk_utils import (
-    sitk_resample_to_reference, resample_sitk_data_with_params, get_orientation_labels, 
-    sitk_transform_physical_points_to_index,
-)
+from mdh_app.utils.sitk_utils import sitk_resample_to_reference, resample_sitk_data_with_params, get_orientation_labels
 
 
 if TYPE_CHECKING:
@@ -55,16 +52,19 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
         logger.error(f"ROI number is missing for ROI with name '{roi_name}'. Cannot build mask.")
         return None
 
-    # Initialize binary mask array with proper dimensions
-    mask_shape = (
-        sitk_image_params["slices"],
-        sitk_image_params["rows"], 
-        sitk_image_params["cols"]
-    )
-    mask_np = np.zeros(mask_shape, dtype=bool)
-    has_valid_contour_data = False
+    # Initialize mask with (slices, rows, cols) shape
+    mask_shape = (sitk_image_params["slices"], sitk_image_params["rows"], sitk_image_params["cols"])
+    mask_np = np.zeros(mask_shape, dtype=np.uint8)
     
+    # Precompute transformation matrix components
+    origin_array = np.array(sitk_image_params["origin"], dtype=np.float32)
+    spacing_array = np.array(sitk_image_params["spacing"], dtype=np.float32)
+    direction_array = np.array(sitk_image_params["direction"], dtype=np.float32).reshape(3, 3)
+    A_inv_T = np.linalg.inv(direction_array @ np.diag(spacing_array)).T
+    
+    has_valid_contour_data = False
     contour_seq = roi_ds_dict.get("ROIContour", {}).get("ContourSequence", [])
+    
     for contour_ds in contour_seq:
         try:
             contour_num = contour_ds.get("ContourNumber", None)
@@ -84,24 +84,13 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
                     f"in ROI '{roi_name}' (number: {roi_number}). Found: {contour_points_flat}"
                 )
                 continue
-            contour_points_3d = np.array(contour_points_flat, dtype=np.float32).reshape(-1, 3)
             
             # Transform physical coordinates to image matrix indices
-            matrix_points = sitk_transform_physical_points_to_index(
-                contour_points_3d,
-                sitk_image_params["origin"],
-                sitk_image_params["spacing"],
-                sitk_image_params["direction"]
-            )
+            contour_points_3d = np.array(contour_points_flat, dtype=np.float32).reshape(-1, 3)
+            matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
             
-            # Generate binary mask
-            mask_np = numpy_roi_mask_generation(
-                cols=sitk_image_params["cols"],
-                rows=sitk_image_params["rows"],
-                mask=mask_np,
-                matrix_points=matrix_points,
-                geometric_type=contour_geom_type
-            )
+            # Add points to mask
+            numpy_roi_mask_generation(mask=mask_np, matrix_points=matrix_points, geometric_type=contour_geom_type)
             has_valid_contour_data = True
         except Exception as e:
             logger.error(
@@ -115,13 +104,8 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
         logger.warning(f"No valid contour data processed for ROI '{roi_name}' (number: {roi_number}).")
         return None
     
-    # Ensure binary mask values are 0 or 1
-    mask_np = np.clip(mask_np % 2, 0, 1)
-    
     # Create SimpleITK image from numpy array
-    mask_sitk: sitk.Image = sitk.Cast(sitk.GetImageFromArray(mask_np.astype(np.uint8)), sitk.sitkUInt8)
-    
-    # Set spatial information
+    mask_sitk: sitk.Image = sitk.GetImageFromArray(mask_np)
     mask_sitk.SetSpacing(sitk_image_params["spacing"])
     mask_sitk.SetDirection(sitk_image_params["direction"])
     mask_sitk.SetOrigin(sitk_image_params["origin"])
@@ -524,6 +508,10 @@ class DataManager:
             # Add to dictionary
             self.rtstruct_datasets[sop_instance_uid] = rtstruct_ds
             self.rtstruct_roi_ds_dicts[sop_instance_uid] = roi_ds_dict
+            
+            # Add metadata for each ROI
+            for roi_number in roi_ds_dict.keys():
+                self.init_roi_gui_metadata_by_uid(sop_instance_uid, roi_number)
     
     def get_rtstruct_uids(self) -> List[str]:
         """Return list of available RTSTRUCT SOPInstanceUIDs."""
@@ -660,14 +648,6 @@ class DataManager:
         if mask_sitk is None:
             return
         self.rois[(struct_uid, roi_number)] = mask_sitk
-    
-    def build_all_rtstruct_rois(self, struct_uid: str) -> None:
-        """ Build and cache all ROI masks for a given RTSTRUCT. """
-        if struct_uid not in self.rtstruct_roi_ds_dicts:
-            logger.error(f"RTSTRUCT with UID {struct_uid} not found. Cannot build ROIs.")
-            return
-        for roi_number in self.rtstruct_roi_ds_dicts[struct_uid].keys():
-            self.build_rtstruct_roi(struct_uid, roi_number)
     
     def get_rtstruct_roi_numbers_by_uid(
         self,
@@ -816,9 +796,10 @@ class DataManager:
 
         if struct_uid not in self.rtstruct_roi_metadata:
             self.rtstruct_roi_metadata[struct_uid] = {}
+        
         self.rtstruct_roi_metadata[struct_uid][roi_number] = {
             "ROIName": roi_name,
-            "TemplateName": templated_roi_name,
+            "ROITemplateName": templated_roi_name,
             "ROIDisplayColor": roi_display_color,
             "RTROIInterpretedType": rt_roi_interpreted_type,
             "ROIPhysicalPropertyValue": roi_phys_prop_value,
@@ -1228,47 +1209,39 @@ class DataManager:
             logger.error(f"Invalid display keys provided to updating active data: {display_keys}")
             return
         
-        def _clear_data() -> bool:
-            if not load_data and display_keys in self._cached_sitk_objects:
+        # Handle data removal
+        if not load_data:
+            if display_keys in self._cached_sitk_objects:
                 del self._cached_sitk_objects[display_keys]
                 if not self._cached_sitk_objects:
                     self._cached_sitk_reference = None
-                return True
-            return False
+            return
         
+        # Check if already loaded
+        if display_keys in self._cached_sitk_objects:
+            return
         
+        # Load the appropriate data
         if display_keys[0] == "image":
             series_uid = display_keys[1]
             if series_uid not in self.images:
                 logger.error(f"Cannot update active image data: SeriesInstanceUID '{series_uid}' not found.")
                 return
-            if _clear_data():
-                return  # Cleared data, nothing more to do
-            if display_keys in self._cached_sitk_objects:
-                return  # Already loaded
             sitk_data = self.images[series_uid]
+        
         elif display_keys[0] == "roi":
-            struct_uid = display_keys[1]
-            roi_number = display_keys[2]
+            struct_uid, roi_number = display_keys[1:]
+            self.build_rtstruct_roi(struct_uid, roi_number)  # Checks and only builds if needed
             if (struct_uid, roi_number) not in self.rois:
-                self.build_rtstruct_roi(struct_uid, roi_number)
-                if (struct_uid, roi_number) not in self.rois:
-                    logger.error(f"Cannot update active ROI data: ROI number {roi_number} in RTSTRUCT with SOPInstanceUID '{struct_uid}' not found or failed to build.")
-                    return
-            if _clear_data():
-                return  # Cleared data, nothing more to do
-            if display_keys in self._cached_sitk_objects:
-                return  # Already loaded
+                logger.error(f"Cannot update active ROI data: ROI number {roi_number} in RTSTRUCT with SOPInstanceUID '{struct_uid}' not found or failed to build.")
+                return
             sitk_data = self.rois[(struct_uid, roi_number)]
+        
         elif display_keys[0] == "dose":
             dose_uid = display_keys[1]
             if dose_uid not in self.rtdoses:
                 logger.error(f"Cannot update active dose data: RTDOSE with SOPInstanceUID '{dose_uid}' not found.")
                 return
-            if _clear_data():
-                return  # Cleared data, nothing more to do
-            if display_keys in self._cached_sitk_objects:
-                return  # Already loaded
             sitk_data = self.rtdoses[dose_uid]
 
         self._cached_sitk_objects[display_keys] = self._sitk_cache_process(sitk_data)
@@ -1825,7 +1798,7 @@ class DataManager:
             
             # Get ROI metadata
             if self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "use_template_name", True):
-                display_name = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "TemplateName", "Unknown")
+                display_name = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "ROITemplateName", "Unknown")
             else:
                 display_name = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "ROIName", "Unknown")
             

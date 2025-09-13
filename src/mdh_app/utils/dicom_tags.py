@@ -54,67 +54,63 @@ class DicomTags:
     content_time = Tag(0x0008, 0x0033)
     series_time = Tag(0x0008, 0x0031)
     study_time = Tag(0x0008, 0x0030)
+
+    label_tags = [
+        rt_plan_label,
+        structure_set_label,
+        rt_image_label
+    ]
+
+    name_tags = [
+        rt_plan_name,
+        structure_set_name,
+        rt_image_name
+    ]
     
-    @property
-    def label_tags(self):
-        return [self.rt_plan_label, self.structure_set_label, self.rt_image_label]
+    description_tags = [
+        rt_dose_comment,
+        image_comments,
+        rt_plan_description,
+        structure_set_description,
+        series_description,
+        rt_image_description,
+        study_description,
+    ]
+    
+    date_tags = [
+        rt_plan_date,
+        structure_set_date,
+        content_date,
+        series_date,
+        study_date,
+    ]
+    
+    time_tags = [
+        rt_plan_time,
+        structure_set_time,
+        content_time,
+        series_time,
+        study_time,
+    ]
 
-    @property
-    def name_tags(self):
-        return [self.rt_plan_name, self.structure_set_name, self.rt_image_name]
-
-    @property
-    def description_tags(self):
-        return [
-            self.rt_dose_comment,
-            self.image_comments,
-            self.rt_plan_description,
-            self.structure_set_description,
-            self.series_description,
-            self.rt_image_description,
-            self.study_description,
-        ]
-
-    @property
-    def date_tags(self):
-        return [
-            self.rt_plan_date,
-            self.structure_set_date,
-            self.content_date,
-            self.series_date,
-            self.study_date,
-        ]
-
-    @property
-    def time_tags(self):
-        return [
-            self.rt_plan_time,
-            self.structure_set_time,
-            self.content_time,
-            self.series_time,
-            self.study_time,
-        ]
-
-    @property
-    def link_worker_tags(self):
-        return [
-            self.patient_id,
-            self.patients_name,
-            self.frame_of_reference_uid,
-            self.modality,
-            self.dose_summation_type,
-            self.series_instance_uid,
-            self.sop_class_uid,
-            self.sop_instance_uid,
-            self.referenced_sop_class_uid,
-            self.referenced_sop_instance_uid,
-            self.referenced_rt_plan_sequence,
-            self.referenced_structure_set_sequence,
-            self.referenced_dose_sequence,
-            self.referenced_frame_of_reference_sequence,
-            self.rt_referenced_study_sequence,
-            self.rt_referenced_series_sequence,
-        ] + self.label_tags + self.name_tags + self.description_tags + self.date_tags + self.time_tags
+    link_worker_tags = [
+        patient_id,
+        patients_name,
+        frame_of_reference_uid,
+        modality,
+        dose_summation_type,
+        series_instance_uid,
+        sop_class_uid,
+        sop_instance_uid,
+        referenced_sop_class_uid,
+        referenced_sop_instance_uid,
+        referenced_rt_plan_sequence,
+        referenced_structure_set_sequence,
+        referenced_dose_sequence,
+        referenced_frame_of_reference_sequence,
+        rt_referenced_study_sequence,
+        rt_referenced_series_sequence,
+    ] + label_tags + name_tags + description_tags + date_tags + time_tags
     
     @staticmethod
     def tag_to_str(tag: Tag) -> str:

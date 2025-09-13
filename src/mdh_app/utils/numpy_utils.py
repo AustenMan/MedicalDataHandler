@@ -18,57 +18,54 @@ logger = logging.getLogger(__name__)
 
 
 def numpy_roi_mask_generation(
-    cols: int,
-    rows: int,
-    mask: np.ndarray,
-    matrix_points: np.ndarray,
+    mask: np.ndarray,  # Pre-allocated 3D uint8 mask array in [slices, rows, cols] order
+    matrix_points: np.ndarray,  # (N, 3) array of (x, y, z) coordinates, where x=col, y=row, z=slice. dtype=int32
     geometric_type: str
-) -> np.ndarray:
-    """Generate 3D ROI mask from matrix points (credit: github.com/brianmanderson)."""
+) -> None:
+    """Generate 3D ROI mask from matrix points (credit for initial inspiration: github.com/brianmanderson)."""
     if geometric_type != "OPEN_NONPLANAR":
-        col_val = matrix_points[:, 0]
-        row_val = matrix_points[:, 1]
-        z_vals  = matrix_points[:, 2]
-        
-        temp_mask = poly2mask(row_val, col_val, (rows, cols))
-        mask[z_vals[0], temp_mask] = True
+        slice = int(matrix_points[0, 2])  # All points should have same z. Otherwise iterate through slices (matrix_points[:, 2])
+        points = np.ascontiguousarray(matrix_points[:, :2])
+        cv2.fillPoly(mask[slice], [points], 1)
     else:
-        # Compute interpolated values for each of col, row, z using np.linspace
-        interp_arrays = [
-            np.linspace(
-                matrix_points[i], 
-                matrix_points[i-1], 
-                int(abs(matrix_points[i-1, 2] - matrix_points[i, 2])) + 1, # Determine number of interpolation steps (ensuring at least 2 points)
-                dtype=int
-            ) for i in range(1, len(matrix_points)) if matrix_points[i, 2] != matrix_points[i-1, 2] # Skip segments where no change in z occurs
-        ]
+        # Compute total points needed
+        segments = []
+        for i in range(1, len(matrix_points)):
+            # Skip segments where no change in z occurs
+            if matrix_points[i, 2] == matrix_points[i-1, 2]:
+                continue
+            n_points = int(abs(matrix_points[i-1, 2] - matrix_points[i, 2])) + 1
+            segments.append((i, n_points))
         
-        if interp_arrays:
-            # Concatenate all interpolated points into one array. all_points has shape (N, 3) in the order [col, row, z]
-            all_points = np.concatenate(interp_arrays, axis=0, dtype=int)
-            # Reorder columns to match mask indexing ([z, row, col])
-            all_points = all_points[:, [2, 1, 0]]
-            # Clip indices to ensure they're within mask bounds.
-            all_points[:, 0] = np.clip(all_points[:, 0], 0, mask.shape[0]-1) # z
-            all_points[:, 1] = np.clip(all_points[:, 1], 0, mask.shape[1]-1) # row
-            all_points[:, 2] = np.clip(all_points[:, 2], 0, mask.shape[2]-1) # col
-            # Update the mask
-            mask[all_points[:, 0], all_points[:, 1], all_points[:, 2]] = True
-    
-    return mask
-
-
-def poly2mask(
-    vertex_row_coords: np.ndarray,
-    vertex_col_coords: np.ndarray,
-    shape: Tuple[int, int]
-) -> np.ndarray:
-    """Convert polygon coordinates to filled boolean mask (credit: github.com/brianmanderson)."""
-    xy_coords = np.array([vertex_col_coords, vertex_row_coords])
-    coords = np.expand_dims(xy_coords.T, 0)
-    mask = np.zeros(shape, dtype=np.uint8)
-    cv2.fillPoly(mask, coords, 1)
-    return mask.astype(bool)
+        if not segments:
+            return
+        
+        # Pre-allocate array
+        total_points = sum(n for _, n in segments)
+        all_points = np.empty((total_points, 3), dtype=int)
+        
+        idx = 0
+        for i, n_points in segments:
+            # Vectorized interpolation
+            for j in range(3):
+                all_points[idx:idx+n_points, j] = np.linspace(
+                    matrix_points[i, j],
+                    matrix_points[i-1, j],
+                    n_points,
+                    dtype=int
+                )
+            idx += n_points
+        
+        # Reorder columns to match mask indexing ([z, row, col])
+        all_points = all_points[:, [2, 1, 0]]
+        
+        # Clip to mask bounds
+        all_points[:, 0] = np.clip(all_points[:, 0], 0, mask.shape[0]-1)  # z
+        all_points[:, 1] = np.clip(all_points[:, 1], 0, mask.shape[1]-1)  # row  
+        all_points[:, 2] = np.clip(all_points[:, 2], 0, mask.shape[2]-1)  # col
+        
+        # Update the mask
+        mask[all_points[:, 0], all_points[:, 1], all_points[:, 2]] = True
 
 
 def create_HU_to_RED_map(

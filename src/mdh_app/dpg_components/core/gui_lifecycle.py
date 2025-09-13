@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Callable, Optional, Any, Union, Dict
 import dearpygui.dearpygui as dpg
 
 
+from mdh_app.database.db_utils import delete_all_data
 from mdh_app.dpg_components.core.utils import get_tag, get_user_data
 from mdh_app.dpg_components.rendering.texture_manager import request_texture_update
 from mdh_app.dpg_components.themes.button_themes import get_hidden_button_theme
@@ -84,7 +85,7 @@ def create_settings_window(refresh: bool = False) -> None:
     add_program_controls(tag_isw, size_dict, confirm_remove_all_data)
 
 
-def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None) -> Callable:
+def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None, skip_confirmation: bool = False) -> Callable:
     """
     Returns a DPG-compatible callback that wraps the given action with cleanup logic.
 
@@ -118,12 +119,18 @@ def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None) 
                         _reset_gui_layout()
                         logger.info("Cleanup complete.")
                 ss_mgr.cleanup_event.clear()
+                while ss_mgr.cleanup_event.is_set():
+                    sleep(0.1) # Wait for the flag to be cleared
                 if action is not None:
                     ss_mgr.submit_action(partial(action, sender, app_data, user_data))
                 safe_delete(get_tag("confirmation_popup"))
             except Exception as e:
                 logger.exception(f"Failed to perform cleanup!")
-
+        
+        if skip_confirmation:
+            _execute_action()
+            return
+        
         create_confirmation_popup(
             button_callback=partial(ss_mgr.start_cleanup, _execute_action),
             button_theme=get_hidden_button_theme(),
@@ -179,15 +186,15 @@ def _reset_gui_layout() -> None:
 
 def confirm_remove_all_data(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """Remove all patient data objects after confirmation."""
-    dcm_mgr: DicomManager = get_user_data(td_key="dicom_manager")
     tag_data_window = get_tag("data_display_window")
     
     def delete_all_func(sender, app_data, user_data) -> None:
-        dcm_mgr.delete_all_patient_data_objects()
+        delete_all_data()
         safe_delete(tag_data_window)
     
     def submit_remove_all_func(sender, app_data, user_data) -> None:
-        clean_wrap = wrap_with_cleanup(delete_all_func)
+        safe_delete(get_tag("confirmation_popup"))
+        clean_wrap = wrap_with_cleanup(delete_all_func, skip_confirmation=True)
         clean_wrap(sender, app_data, user_data)
     
     create_confirmation_popup(

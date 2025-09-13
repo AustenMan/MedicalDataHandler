@@ -54,6 +54,7 @@ def create_dicom_action_window(sender: Union[str, int], app_data: Any, user_data
         width=popup_width, 
         height=popup_height, 
         pos=popup_pos, 
+        modal=True,
         no_open_over_existing_popup=False, 
         no_title_bar=False, 
         no_collapse=True, 

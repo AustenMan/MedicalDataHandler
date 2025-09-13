@@ -158,7 +158,7 @@ def build_dicom_structure(patient: Patient, selected_files: Set[str]) -> None:
                 container_ud["checkbox"] = cbox
 
                 # single tree node which will contain all linked files and child nodes
-                with dpg.tree_node(label=f"{row_num}. Grouped Files ({num_files} files)", default_open=False, span_text_width=True):
+                with dpg.tree_node(label=f"{row_num}. Grouped Files ({num_files} files)", default_open=True, span_text_width=True):
                     # render each child (child may create its own tree node if it meets 'must_tree')
                     for child in node.children:
                         child_ud = _render_node_inline(child, container_ud, checkbox_callback, dcm_view_cb)

@@ -481,7 +481,7 @@ class DicomManager():
         
         results: Dict[Tuple[str, str], Patient] = {}
         try:
-            with get_session() as ses:
+            with get_session(expire_all=True) as ses:
                 # Build base query
                 stmt = select(Patient)
 
@@ -508,7 +508,7 @@ class DicomManager():
                     stmt = stmt.limit(subset_size).offset(subset_idx * subset_size)
 
                 # execute
-                all_patients = list(ses.scalars(stmt).all())
+                all_patients = ses.scalars(stmt).all()
                 
                 total = len(all_patients)
                 for idx, p in enumerate(all_patients, start=1):
@@ -528,13 +528,13 @@ class DicomManager():
         """Delete patient and related data using MRN and Name."""
         logger.info(f"Attempting to delete patient: MRN={mrn}, Name={name}")
         with get_session() as ses:
+            # Find patient by MRN and Name
+            patient = ses.query(Patient).filter_by(mrn=mrn, name=name).one_or_none()
+            if not patient:
+                logger.warning(f"No patient found with MRN={mrn} and Name={name}.")
+                return False # Valid case, nothing to delete
+            
             try:
-                # Find patient by MRN and Name
-                patient = ses.query(Patient).filter_by(mrn=mrn, name=name).one_or_none()
-                if not patient:
-                    logger.warning(f"No patient found with MRN={mrn} and Name={name}.")
-                    return False
-
                 # Find all Files for this patient
                 file_ids = [f.id for f in patient.files]
                 if file_ids:
@@ -547,27 +547,19 @@ class DicomManager():
 
                 # Delete the Patient
                 ses.delete(patient)
-                ses.commit()
-                logger.info(f"✅ Deleted patient MRN={mrn}, Name={name} and all associated data.")
+                logger.info(f"Successfully deleted patient MRN={mrn}, Name={name} and all their associated data from the database!")
                 return True
             except Exception as e:
-                ses.rollback()
-                logger.exception("❌ Failed to delete patient: ")
+                logger.exception(f"Failed to delete patient data!", exc_info=e, stack_info=True)
                 return False
     
     def purge_all_patient_data_from_db(self) -> None:
         """Delete all patient data from database (irreversible)."""
         logger.warning("Purging ALL patient data from database…")
         with get_session() as ses:
-            try:
-                # Order matters due to foreign keys
-                ses.execute(delete(FileMetadataOverride))
-                ses.execute(delete(FileMetadata))
-                ses.execute(delete(File))
-                ses.execute(delete(Patient))
-                ses.commit()
-                logger.info("✅ All patient data deleted from database.")
-            except Exception as e:
-                ses.rollback()
-                logger.exception("❌ Failed to purge patient data: ")
-
+            # Order matters due to foreign keys
+            ses.execute(delete(FileMetadataOverride))
+            ses.execute(delete(FileMetadata))
+            ses.execute(delete(File))
+            ses.execute(delete(Patient))
+        logger.info("Successfully purged all patient data from the database!")

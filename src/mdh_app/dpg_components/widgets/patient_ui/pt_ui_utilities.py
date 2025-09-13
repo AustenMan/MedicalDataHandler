@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 import logging
-from typing import TYPE_CHECKING, Union, Tuple, Any
+from typing import TYPE_CHECKING, Union, Tuple, Any, List
 
 
 import dearpygui.dearpygui as dpg
@@ -66,13 +66,24 @@ def toggle_all_rois(sender: Union[str, int], app_data: Any, user_data: Tuple[Lis
         app_data: Additional event data.
         user_data: Tuple of (list of ROI checkbox tags, struct SOPInstanceUID).
     """
+    # Disable the button to prevent rapid re-clicks
+    dpg.disable_item(sender)
     roi_checkboxes, struct_uid = user_data
     valid_checkboxes = [chk for chk in roi_checkboxes if dpg.does_item_exist(chk)]
     if not valid_checkboxes:
+        # Re-enable the button and exit if no valid checkboxes
+        dpg.enable_item(sender)
         return
-
+    
+    # Disable other checkboxes too
+    [dpg.disable_item(chk) for chk in valid_checkboxes]
+    
     should_load = not any(dpg.get_value(chk) for chk in valid_checkboxes)
     for chk in valid_checkboxes:
         dpg.set_value(chk, should_load)
     update_cbox_callback(sender, should_load, ("toggle_all_rois", struct_uid))
+    
+    # Re-enable all items
+    [dpg.enable_item(chk) for chk in valid_checkboxes + [sender]]
+    
 

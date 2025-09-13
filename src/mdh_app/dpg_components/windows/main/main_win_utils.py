@@ -12,7 +12,6 @@ from mdh_app.dpg_components.core.gui_lifecycle import create_settings_window
 from mdh_app.dpg_components.core.utils import get_tag, add_custom_button
 from mdh_app.dpg_components.themes.button_themes import get_colored_button_theme, get_hidden_button_theme
 from mdh_app.dpg_components.windows.logging.log_window import toggle_logger_display
-from mdh_app.dpg_components.windows.dicom_search.dcm_search_win import create_dicom_action_window
 from mdh_app.dpg_components.windows.data_table.data_table_win import toggle_data_window
 
 
@@ -65,16 +64,7 @@ def _fill_mw_settings_table() -> None:
                 tooltip_text="Toggles the log window."
             )
             add_custom_button(
-                label="Add New Data", 
-                parent_tag=tag_row, 
-                width=-1,
-                height=-1,
-                theme_tag=get_colored_button_theme((180, 100, 45)), 
-                callback=create_dicom_action_window, 
-                tooltip_text="Start here to add data to the program.\n1) Find DICOM files in a directory\n2) Link the files\n3) Use 'View Data' and reload the table."
-            )
-            add_custom_button(
-                label="Explore Data", 
+                label="Data Explorer", 
                 parent_tag=tag_row, 
                 width=-1,
                 height=-1,

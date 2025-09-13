@@ -9,7 +9,7 @@ import dearpygui.dearpygui as dpg
 
 
 from mdh_app.dpg_components.core.gui_lifecycle import wrap_with_cleanup
-from mdh_app.dpg_components.core.utils import get_user_data
+from mdh_app.dpg_components.core.utils import get_user_data, get_tag
 from mdh_app.utils.dpg_utils import get_popup_params
 
 
@@ -25,10 +25,8 @@ def _get_directory(sender: Union[str, int], app_data: Any, user_data: Any) -> No
     """Open a file dialog to select a DICOM directory, then start processing the directory."""
     conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
     popup_width, popup_height, popup_pos = get_popup_params(height_ratio=0.5)
-    tag_fd = dpg.generate_uuid()
     
     dpg.add_file_dialog(
-        tag=tag_fd,
         label="Choose a directory containing DICOM files",
         directory_selector=True,
         default_path=conf_mgr.get_project_dir(),
@@ -41,6 +39,8 @@ def _get_directory(sender: Union[str, int], app_data: Any, user_data: Any) -> No
 
 def _start_processing_directory(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """Start processing the selected DICOM directory."""
+    tag_action_window = get_tag("action_window")
+    dpg.configure_item(tag_action_window, show=True)
     dcm_mgr: DicomManager = get_user_data(td_key="dicom_manager")
     dcm_mgr.process_dicom_directory(app_data.get("file_path_name"))
 

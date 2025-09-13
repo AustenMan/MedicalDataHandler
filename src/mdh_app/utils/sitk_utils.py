@@ -34,7 +34,7 @@ def sitk_transform_physical_points_to_index(
     # Vectorized transformation for all points
     origin_array = np.array(origin, dtype=np.float32)
     indices = (physical_points - origin_array) @ A_inv.T
-    return np.round(indices).astype(int)
+    return np.round(indices).astype(np.int32)  # Shape: (N, 3)
 
 
 def sitk_to_array(

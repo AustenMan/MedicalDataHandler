@@ -30,8 +30,6 @@ def safe_delete(
     children_only: bool = False
 ) -> None:
     """Safely delete Dear PyGUI item(s) if they exist."""
-    if not isinstance(children_only, bool):
-        raise ValueError(f"'children_only' must be a boolean. Received: {children_only}")
     if isinstance(item, (list, tuple, set)):
         for i in item:
             safe_delete(i, children_only)

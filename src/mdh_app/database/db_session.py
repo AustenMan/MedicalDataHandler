@@ -65,10 +65,13 @@ def init_engine(db_path: str, echo: bool = False) -> None:
     )
     _SCOPED_SESSION = scoped_session(_SESSION_FACTORY)
 
-
 @contextmanager
-def get_session() -> Generator[Session, None, None]:
-    """Provide database session with automatic transaction handling."""
+def get_session(expire_all: bool = False) -> Generator[Session, None, None]:
+    """Provide database session with automatic transaction handling.
+    
+    Args:
+        expire_all: If True, expire all objects in session to force fresh DB reads.
+    """
     if _ENGINE is None:
         raise RuntimeError(
             "Database engine not initialized. Call init_engine(db_path) first."
@@ -76,6 +79,8 @@ def get_session() -> Generator[Session, None, None]:
 
     session: Session = _SCOPED_SESSION()  # type: ignore[call-arg]
     try:
+        if expire_all:
+            session.expire_all()  # Force fresh reads from database
         yield session
         session.commit()
     except Exception:

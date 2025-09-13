@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 def update_roi_tooltip(tag_roi_button: Union[str, int]) -> None:
     """ Update the tooltip of an ROI button with its metadata. """
     if not dpg.does_item_exist(tag_roi_button):
-        logger.error(f"Cannot update tooltip for non-existent ROI button: {tag_roi_button}")
         return
     
     size_dict = get_user_data(td_key="size_dict")
@@ -54,21 +53,24 @@ def update_roi_tooltip(tag_roi_button: Union[str, int]) -> None:
     
     dpg.set_item_label(tag_roi_button, f"ROI #{roi_number}: {displayed_name}")
     safe_delete(tag_roi_tooltip)
+    
+    # Build tooltip text
+    tooltip_text = (
+        f"ROI #{roi_number}: {displayed_name}\n"
+        f"ROI Name: {roi_name}\n"
+        f"ROI Template Name: {roi_template_name} (Use Template Name: {'Yes' if use_template_name else 'No'})\n"
+        f"RT ROI Interpreted Type: {rt_roi_interpreted_type}\n"
+        f"ROI Physical Property Value: {roi_phys_prop_value if roi_phys_prop_value is not None else 'N/A'}\n"
+        f"ROI Goals: {roi_goals if roi_goals else 'N/A'}"
+    )
+    
+    if rt_roi_interpreted_type == "PTV":
+        tooltip_text += f"\nRx Dose: {roi_rx_dose or 'N/A'}"
+        tooltip_text += f"\nRx Fractions: {roi_rx_fractions or 'N/A'}"  
+        tooltip_text += f"\nRx Site: {roi_rx_site or 'N/A'}"
+    
     with dpg.tooltip(tag=tag_roi_tooltip, parent=tag_roi_button):
-        dpg.add_text(
-            (
-                f"ROI #{roi_number}: {displayed_name}\n" +
-                f"ROI Name: {roi_name}\n" +
-                f"ROI Template Name: {roi_template_name} (Use Template Name: {'Yes' if use_template_name else 'No'})\n" +
-                f"RT ROI Interpreted Type: {rt_roi_interpreted_type}\n" +
-                f"ROI Physical Property Value: {roi_phys_prop_value if roi_phys_prop_value is not None else 'N/A'}\n" +
-                f"ROI Goals: {roi_goals if roi_goals else 'N/A'}\n" +
-                f"Rx Dose: {roi_rx_dose or 'N/A'}\n" if rt_roi_interpreted_type == "PTV" else "" +
-                f"Rx Fractions: {roi_rx_fractions or 'N/A'}\n" if rt_roi_interpreted_type == "PTV" else "" +
-                f"Rx Site: {roi_rx_site or 'N/A'}\n" if rt_roi_interpreted_type == "PTV" else ""
-            ),
-            wrap=size_dict["tooltip_width"]
-        )
+        dpg.add_text(tooltip_text, wrap=size_dict["tooltip_width"])
 
 
 def _update_roi_meta_on_name_change(rts_sopiuid: str, roi_number: int) -> None:
