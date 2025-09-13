@@ -16,7 +16,7 @@ from mdh_app.dpg_components.widgets.patient_ui.rois import (
     _popup_roi_color_picker, _update_views_roi_center,
     _remove_roi, _popup_inspect_roi, update_roi_tooltip,
 )
-from mdh_app.dpg_components.widgets.patient_ui.pt_ui_utilities import update_cbox_callback
+from mdh_app.dpg_components.widgets.patient_ui.pt_ui_utilities import update_cbox_callback, toggle_all_rois
 from mdh_app.dpg_components.windows.dicom_inspection.dcm_inspect_win import create_popup_dicom_inspection
 
 
@@ -97,30 +97,6 @@ def add_structure_sets_to_menu() -> None:
                     _add_roi_button(tag_modality_node, roi_cbox_tag, rts_sopiuid, roi_number)
 
             dpg.add_spacer(height=size_dict["spacer_height"])
-
-
-def toggle_all_rois(sender: Union[str, int], app_data: Any, user_data: Tuple[List[Any], str]) -> None:
-    """
-    Toggle display for all ROIs in the RT Structure Set.
-
-    Args:
-        sender: The triggering button tag.
-        app_data: Additional event data.
-        user_data: Tuple of (list of ROI checkbox tags, struct SOPInstanceUID).
-    """
-    roi_checkboxes, struct_uid = user_data
-    valid_checkboxes = [chk for chk in roi_checkboxes if dpg.does_item_exist(chk)]
-    if not valid_checkboxes:
-        return
-
-    should_load = not any(dpg.get_value(chk) for chk in valid_checkboxes)
-    for chk in valid_checkboxes:
-        dpg.set_value(chk, should_load)
-    
-    # Use DataManager's bulk operation
-    data_mgr: DataManager = get_user_data("data_manager")
-    data_mgr.load_all_roi_data_for_struct(struct_uid, should_load)
-    ##### TO DO #####
 
 
 def _add_roi_button(

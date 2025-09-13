@@ -26,12 +26,13 @@ from mdh_app.utils.dicom_utils import (
 )
 from mdh_app.utils.general_utils import (
     get_json_list, struct_name_priority_key, regex_find_dose_and_fractions,
-    check_for_valid_dicom_string, find_reformatted_mask_name, find_disease_site,
+    clean_dicom_string, find_reformatted_mask_name, find_disease_site,
+    validate_rgb_color,
 )
 from mdh_app.utils.numpy_utils import numpy_roi_mask_generation
 from mdh_app.utils.sitk_utils import (
-    sitk_resample_to_reference, resample_sitk_data_with_params, sitk_to_array, 
-    get_sitk_roi_display_color, get_orientation_labels, sitk_transform_physical_point_to_index,
+    sitk_resample_to_reference, resample_sitk_data_with_params, get_orientation_labels, 
+    sitk_transform_physical_points_to_index,
 )
 
 
@@ -43,41 +44,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-def _get_roi_display_color(color_data: Any) -> Optional[List[int]]:
-    """ Get valid ROI display color data."""
-    if not isinstance(color_data, list) or len(color_data) != 3:
-        return [random.randint(0, 255) for _ in range(3)]
-    try:
-        # Clamp each color component to valid RGB range
-        normalized_color = [int(round(min(max(float(component), 0), 255))) for component in color_data]
-        return normalized_color
-    except (ValueError, TypeError):
-        return [random.randint(0, 255) for _ in range(3)]
-
-
-def _get_roi_interpreted_type(roi_name: str):
-    """ Return standardized RTROIInterpretedType based on ROI name. """
-    lower_name = roi_name.strip().lower()
-    if lower_name == "external":
-        return "EXTERNAL"
-    elif "ptv" in lower_name:
-        return "PTV"
-    elif "ctv" in lower_name:
-        return "CTV"
-    elif "gtv" in lower_name:
-        return "GTV"
-    elif "cavity" in lower_name:
-        return "CAVITY"
-    elif "bolus" in lower_name:
-        return "BOLUS"
-    elif "isocenter" in lower_name:
-        return "ISOCENTER"
-    elif any(x in lower_name for x in ["couch", "support", "data_table", "rail", "bridge", "mattress", "frame"]):
-        return "SUPPORT"
-    else:
-        return "OAR"
 
 
 def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[str, Any]) -> Optional[sitk.Image]:
@@ -118,18 +84,15 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
                     f"in ROI '{roi_name}' (number: {roi_number}). Found: {contour_points_flat}"
                 )
                 continue
-            contour_points_3d = np.array(contour_points_flat, dtype=np.float64).reshape(-1, 3)
+            contour_points_3d = np.array(contour_points_flat, dtype=np.float32).reshape(-1, 3)
             
             # Transform physical coordinates to image matrix indices
-            matrix_points = np.array([
-                sitk_transform_physical_point_to_index(
-                    point,
-                    sitk_image_params["origin"],
-                    sitk_image_params["spacing"],
-                    sitk_image_params["direction"]
-                )
-                for point in contour_points_3d
-            ])
+            matrix_points = sitk_transform_physical_points_to_index(
+                contour_points_3d,
+                sitk_image_params["origin"],
+                sitk_image_params["spacing"],
+                sitk_image_params["direction"]
+            )
             
             # Generate binary mask
             mask_np = numpy_roi_mask_generation(
@@ -224,7 +187,31 @@ class DataManager:
         """Initialize data manager with configuration and state managers."""
         self.conf_mgr = conf_mgr
         self.ss_mgr = ss_mgr
+        
         self.keys_roi_ds_dict: Set[str] = {"StructureSetROI", "ROIContour", "RTROIObservations"}
+        
+        # Define the dose colormap in BGR order and normalize to [0, 1]
+        self._dose_colors = np.clip(
+            np.array([
+                [0, 0, 90],     # Deep Blue (0%)  
+                [0, 15, 180],   # Blue (~10%)  
+                [0, 60, 255],   # Bright Blue (~20%)  
+                [0, 120, 255],  # Blue-Cyan (~30%)  
+                [0, 200, 255],  # Cyan (~40%)  
+                [0, 255, 200],  # Cyan-Green (~50%)  
+                [50, 255, 100], # Greenish (~55%)  
+                [120, 255, 0],  # Green (~60%)  
+                [200, 255, 0],  # Yellow-Green (~70%)  
+                [255, 255, 0],  # Yellow (~80%)  
+                [255, 180, 0],  # Yellow-Orange (~85%)  
+                [255, 120, 0],  # Orange (~90%)  
+                [255, 50, 0],   # Deep Orange (~95%)  
+                [255, 0, 0]     # Red (100%)  
+            ], dtype=np.float32) / 255.0, 
+            a_min=0.0, a_max=1.0
+        )
+        self._num_dose_colors = len(self._dose_colors)
+        
         self.initialize_data()
     
     def initialize_data(self) -> None:
@@ -781,11 +768,10 @@ class DataManager:
         unmatched_organ_name = self.conf_mgr.get_unmatched_organ_name()
         tg_263_oar_names_list = self.conf_mgr.get_tg_263_names(ready_for_dpg=True)
         organ_name_matching_dict = self.conf_mgr.get_organ_matching_dict()
-        disease_site_list = self.conf_mgr.get_disease_sites(ready_for_dpg=True)
 
         # Get ROI info
-        roi_name = check_for_valid_dicom_string(roi_ds_dict.get("StructureSetROI", {}).get("ROIName", unmatched_organ_name))
-        roi_display_color = _get_roi_display_color(roi_ds_dict.get("ROIContour", {}).get("ROIDisplayColor", None))
+        roi_name = clean_dicom_string(roi_ds_dict.get("StructureSetROI", {}).get("ROIName", unmatched_organ_name))
+        roi_display_color = validate_rgb_color(roi_ds_dict.get("ROIContour", {}).get("ROIDisplayColor", None))
         rt_roi_interpreted_type = roi_ds_dict.get("RTROIObservations", {}).get("RTROIInterpretedType", "CONTROL")
         
         # Get ROI Physical Properties (REL_ELEC_DENSITY overrides)
@@ -802,7 +788,7 @@ class DataManager:
             break  # Use first valid REL_ELEC_DENSITY value found
         
         # Try to match a TG-263 name, or a default match
-        templated_roi_name = find_reformatted_mask_name(roi_name, rt_roi_interpreted_type, tg_263_oar_names_list, unmatched_organ_name)
+        templated_roi_name = find_reformatted_mask_name(roi_name, rt_roi_interpreted_type, tg_263_oar_names_list, organ_name_matching_dict, unmatched_organ_name)
         
         # Defaults
         roi_rx_dose = None
@@ -1286,48 +1272,25 @@ class DataManager:
             sitk_data = self.rtdoses[dose_uid]
 
         self._cached_sitk_objects[display_keys] = self._sitk_cache_process(sitk_data)
-        
-        doses = [dose for (k, dose) in self._cached_sitk_objects.items() if k[0] == "dose"]
-        if not doses:
-            self._cached_dose_sum = None
-        else:
-            dose_sum = doses[0]
-            for d in doses[1:]:
-                dose_sum = sitk.Add(dose_sum, d)
-            # Normalize by (max + 1e-4)
+        self._update_dose_sum_cache()
+    
+    def _update_dose_sum_cache(self) -> None:
+        """Update the dose sum cache based on current active dose data."""
+        dose_keys = [k for k in self._cached_sitk_objects.keys() if k[0] == "dose"]
+        if dose_keys:
+            dose_objects = [self._cached_sitk_objects[k] for k in dose_keys]
+            dose_sum = dose_objects[0]
+            for dose in dose_objects[1:]:
+                dose_sum = sitk.Add(dose_sum, dose)
+            # Normalize the sum so that max is 1.0
             stats = sitk.StatisticsImageFilter()
             stats.Execute(dose_sum)
             max_val = stats.GetMaximum()
             self._cached_dose_sum = sitk.Divide(dose_sum, max_val + 1e-4)
-    
-    
-    
-    ### Re-write all npy ops to use cached SITK objects ###
-    
-    
-    def _get_np(self, sitk_data: sitk.Image) -> np.ndarray:
-        """
-        Convert a SimpleITK image to a NumPy array after resampling.
-
-        Args:
-            sitk_data: A SimpleITK image.
-
-        Returns:
-            The resulting NumPy array.
-        """
-        resampled = self._resample_sitk_to_cached_reference(sitk_data)
-        return sitk_to_array(resampled)
-    
-    def _update_dose_sum_cache(self) -> None:
-        """Update the dose sum cache based on current active dose data."""
-        dose_keys = [k for k in self._npy_cache.keys() if k.startswith("rtdose:")]
-        if dose_keys:
-            dose_arrays = [self._npy_cache.get(k) for k in dose_keys]
-            dose_sum = np.sum([arr for arr in dose_arrays if arr is not None], axis=0)
-            self._cached_numpy_dose_sum = dose_sum / (np.max(dose_sum) + 1e-4)
         else:
-            self._cached_numpy_dose_sum = None
+            self._cached_dose_sum = None
     
+    ### Texture Methods ###
     def return_texture_from_active_data(self, texture_params: Dict[str, Any]) -> np.ndarray:
         """
         Generate and return a flattened texture slice from the cached data based on the given parameters.
@@ -1349,7 +1312,7 @@ class DataManager:
 
         texture_RGB_size = image_length * image_length * 3
 
-        slicer = texture_params.get("slicer")
+        slicer = texture_params.get("slicer") # (z, y, x) order
         if not slicer or not isinstance(slicer, tuple) or not all(isinstance(s, (slice, int)) for s in slicer):
             logger.error(f"Texture generation failed: 'slicer' is missing or invalid in {texture_params}")
             return np.zeros(texture_RGB_size, dtype=np.float32)
@@ -1361,28 +1324,16 @@ class DataManager:
         
         try:
             # Rebuild cache if texture parameters have changed
-            if self._check_for_texture_param_changes(texture_params, ignore_keys=["view_type", "slicer", "slices", "xyz_ranges"]):
-                # Store current handles before clearing cache
-                current_handles = []
-                for key in self._npy_cache.keys():
-                    if key.startswith("image:"):
-                        series_uid = key.split(":", 1)[1]
-                        current_handles.append(ImageHandle(series_uid=series_uid))
-                    elif key.startswith("rtstruct:"):
-                        parts = key.split(":")
-                        if len(parts) == 3:
-                            struct_uid, roi_number = parts[1], int(parts[2])
-                            current_handles.append(ROIHandle(struct_uid=struct_uid, roi_number=roi_number))
-                    elif key.startswith("rtdose:"):
-                        dose_uid = key.split(":", 1)[1]
-                        current_handles.append(DoseHandle(dose_uid=dose_uid))
+            if self._check_for_texture_param_changes(texture_params, ignore_keys=["view_type", "slicer", "xyz_slices", "xyz_ranges"]):
+                # Store current keys before clearing cache
+                cached_keys = list(self._cached_sitk_objects.keys())
                 
                 self._clear_cache()
                 self._cached_texture_param_dict = texture_params
                 
-                # Reload data using handles
-                for handle in current_handles:
-                    self.update_active_data_with_handle(handle, True)
+                # Reload data using the stored keys
+                for key in cached_keys:
+                    self.update_cached_data(True, key)
 
             # Determine base layer shape based on slicer dimensions and create base layer
             shape_RGB = tuple(s.stop - s.start for s in slicer if isinstance(s, slice)) + (3,)
@@ -1402,21 +1353,22 @@ class DataManager:
                 base_layer, 
                 texture_params["show_crosshairs"], 
                 view_type, 
-                texture_params["slices"], 
+                texture_params["xyz_slices"], 
                 texture_params["xyz_ranges"]
             )
             
             # Adjust dimension order based on view type
             if view_type == "coronal":
-                base_layer = np.swapaxes(base_layer, 0, 1)
+                base_layer = base_layer[::-1, :, :]  # Flip z axis
             elif view_type == "sagittal":
-                base_layer = np.fliplr(np.swapaxes(base_layer, 0, 1))
+                base_layer = base_layer[::-1, ::-1, :]  # Flip z and x axes
             
             # Normalize and clip to [0, 1]
-            base_layer = np.clip(base_layer, 0, 255) / 255.0
+            np.clip(base_layer, 0, 255, out=base_layer)
+            base_layer /= 255.0
             
             # Resize to the desired image dimensions
-            base_layer = cv2.resize(base_layer, (image_length, image_length), interpolation=cv2.INTER_LINEAR)
+            base_layer = cv2.resize(src=base_layer, dsize=(image_length, image_length), interpolation=cv2.INTER_LINEAR)
             
             # Add orientation labels after resizing to avoid text distortion
             self._draw_orientation_labels(
@@ -1432,7 +1384,7 @@ class DataManager:
         except Exception as e:
             logger.exception(f"Failed to generate a texture.")
             return np.zeros(texture_RGB_size, dtype=np.float32)
-        
+    
     def _check_for_texture_param_changes(
         self, 
         texture_params: Dict[str, Any], 
@@ -1462,7 +1414,8 @@ class DataManager:
                 return True
 
         return False
-       
+    
+    ### Texture Blending Methods ###
     def _blend_layers(self, base_layer: np.ndarray, overlay: np.ndarray, alpha: float) -> None:
         """
         Blend an overlay onto the base layer using the specified alpha value.
@@ -1475,11 +1428,14 @@ class DataManager:
             alpha: The blending alpha value (0-100).
         """
         overlay_indices = overlay.any(axis=-1)
+        if not overlay_indices.any():  # Skip if no overlay pixels
+            return
+        
         alpha_ratio = alpha / 100.0
-        base_layer[overlay_indices] = (
-            base_layer[overlay_indices] * (1 - alpha_ratio) +
-            overlay[overlay_indices].astype(np.float32) * alpha_ratio
-        )
+        inv_alpha = 1.0 - alpha_ratio
+        
+        base_layer[overlay_indices] *= inv_alpha
+        base_layer[overlay_indices] += overlay[overlay_indices] * alpha_ratio
     
     def _blend_images_RGB(
         self,
@@ -1499,8 +1455,8 @@ class DataManager:
             image_window_width: The window width value.
             alpha: The blending alpha (0-100).
         """
-        numpy_images = self.find_active_npy_images()
-        if not numpy_images:
+        sitk_images = self.find_active_sitk_images()
+        if not sitk_images:
             return
 
         if image_window_level is None or image_window_width is None or alpha is None:
@@ -1509,16 +1465,26 @@ class DataManager:
 
         lower_bound = image_window_level - (image_window_width / 2)
         upper_bound = image_window_level + (image_window_width / 2)
-
-        image_list = []
-        for numpy_image in numpy_images:
-            image_slice = ((np.clip(numpy_image[slicer], lower_bound, upper_bound) - lower_bound) /
-                        ((upper_bound - lower_bound) + 1e-4) * 255)
-            image_list.append(np.stack((image_slice,) * 3, axis=-1))
-
-        num_images = len(image_list)
-        composite_image = np.sum([img.astype(np.float32) for img in image_list if img is not None], axis=0)
-        composite_image /= num_images  # Average the images
+        scale_factor = 255.0 / (upper_bound - lower_bound + 1e-4)
+        
+        # Initialize image slice accumulator
+        composite_image = np.zeros((*base_layer.shape[:2], 3), dtype=np.float32)
+        
+        for sitk_image in sitk_images:
+            # Convert the needed slice to numpy
+            view = sitk.GetArrayViewFromImage(sitk_image)
+            image_slice = view[slicer].astype(np.float32)  # 2D slice
+            
+            np.clip(image_slice, lower_bound, upper_bound, out=image_slice)
+            image_slice -= lower_bound
+            image_slice *= scale_factor
+            
+            # Add to RGB channels
+            composite_image[:, :, 0] += image_slice
+            composite_image[:, :, 1] += image_slice
+            composite_image[:, :, 2] += image_slice
+        
+        composite_image /= len(sitk_images) # Average of images
 
         self._blend_layers(base_layer, composite_image, alpha)
     
@@ -1538,7 +1504,7 @@ class DataManager:
             contour_thickness: The thickness of the mask contour.
             alpha: The blending alpha (0-100).
         """
-        roi_keys_list = [k for k in self._sitk_objects.keys() if k.startswith("rtstruct:")]
+        roi_keys_list = [k for k in self._cached_sitk_objects.keys() if k[0] == "roi"]
         if not roi_keys_list:
             return
 
@@ -1552,18 +1518,18 @@ class DataManager:
 
         composite_masks_RGB = np.zeros_like(base_layer, dtype=np.uint8)
         
-        # Copy the keys to avoid error due to dictionary change during iteration
-        cached_keys = list(roi_keys_list)
-        for roi_keys in cached_keys:
-            if roi_keys not in self._sitk_objects:
+        for roi_keys in roi_keys_list:
+            roi_sitk = self._cached_sitk_objects[roi_keys]
+            roi_view = sitk.GetArrayViewFromImage(roi_sitk)
+            if not np.any(roi_view[slicer]):
                 continue
-            roi_sitk = self._sitk_objects[roi_keys]
-            roi_array = self._npy_cache.get(roi_keys)
-            if roi_array is None:
-                continue
-            roi_display_color = get_sitk_roi_display_color(roi_sitk)
+            
+            struct_uid, roi_number = roi_keys[1], roi_keys[2]
+            roi_display_color = self.rtstruct_roi_metadata.get(struct_uid, {}).get(roi_number, {}).get("ROIDisplayColor", (0, 255, 0))
+            
+            roi_contour_input = np.ascontiguousarray(roi_view[slicer], dtype=np.uint8)
             contours, _ = cv2.findContours(
-                image=roi_array[slicer].astype(np.uint8),
+                image=roi_contour_input,
                 mode=cv2.RETR_EXTERNAL,
                 method=cv2.CHAIN_APPROX_SIMPLE
             )
@@ -1574,58 +1540,10 @@ class DataManager:
                 color=roi_display_color,
                 thickness=contour_thickness
             )
-
+        
+        composite_masks_RGB = composite_masks_RGB.astype(np.float32)
         self._blend_layers(base_layer, composite_masks_RGB, alpha)
     
-    def _dosewash_colormap(self, value_array: np.ndarray) -> np.ndarray:
-        """
-        Apply a DoseWash colormap to a normalized 2-D dose array.
-
-        Args:
-            value_array: A 2-D NumPy array with values normalized to [0, 1].
-
-        Returns:
-            A 2-D NumPy array of corresponding RGB values (each in [0, 1]).
-        """
-        if not isinstance(value_array, np.ndarray) or value_array.ndim != 2:
-            raise ValueError(f"Expected a 2-D NumPy array; received type {type(value_array)} with shape {value_array.shape if isinstance(value_array, np.ndarray) else 'N/A'}.")
-        if np.min(value_array) < 0 or np.max(value_array) > 1:
-            raise ValueError(f"Values must be normalized to [0,1] (min: {np.min(value_array)}, max: {np.max(value_array)}).")
-
-        # Define the colormap in BGR order and normalize to [0, 1]
-        base_colors = np.array([
-            [0, 0, 90],     # Deep Blue (0%)  
-            [0, 15, 180],   # Blue (~10%)  
-            [0, 60, 255],   # Bright Blue (~20%)  
-            [0, 120, 255],  # Blue-Cyan (~30%)  
-            [0, 200, 255],  # Cyan (~40%)  
-            [0, 255, 200],  # Cyan-Green (~50%)  
-            [50, 255, 100], # Greenish (~55%)  
-            [120, 255, 0],  # Green (~60%)  
-            [200, 255, 0],  # Yellow-Green (~70%)  
-            [255, 255, 0],  # Yellow (~80%)  
-            [255, 180, 0],  # Yellow-Orange (~85%)  
-            [255, 120, 0],  # Orange (~90%)  
-            [255, 50, 0],   # Deep Orange (~95%)  
-            [255, 0, 0]     # Red (100%)  
-        ])
-        base_colors = np.clip(base_colors / 255, 0.0, 1.0)
-
-        # Compute interpolated RGB values
-        num_colors = len(base_colors)
-        color_idx = value_array * (num_colors - 1)
-        lower_idx = np.floor(color_idx).astype(int)
-        upper_idx = np.ceil(color_idx).astype(int)
-        blend_factor = color_idx - lower_idx
-
-        # Ensure valid indices
-        lower_idx = np.clip(lower_idx, 0, num_colors - 1)
-        upper_idx = np.clip(upper_idx, 0, num_colors - 1)
-
-        # Get interpolated RGB values
-        rgb = (1 - blend_factor)[..., None] * base_colors[lower_idx] + blend_factor[..., None] * base_colors[upper_idx]
-        return np.clip(rgb, 0.0, 1.0)
-        
     def _blend_doses_RGB(
         self,
         base_layer: np.ndarray,
@@ -1642,7 +1560,7 @@ class DataManager:
             dose_thresholds: A tuple or list with lower and upper dose thresholds.
             alpha: The blending alpha (0-100).
         """
-        if self._cached_numpy_dose_sum is None:
+        if self._cached_dose_sum is None:
             return
 
         if (
@@ -1655,19 +1573,56 @@ class DataManager:
             return
 
         min_threshold_p, max_threshold_p = dose_thresholds
-        total_dose_slice = self._cached_numpy_dose_sum[slicer].squeeze()  # 2D slice, values in [0,1]
-        cmap_data = self._dosewash_colormap(total_dose_slice)
-        cmap_data[(total_dose_slice <= min_threshold_p / 100) | (total_dose_slice >= max_threshold_p / 100)] = 0
-        cmap_data = cmap_data[..., :3] * 255
+        min_thresh = min_threshold_p / 100
+        max_thresh = max_threshold_p / 100
+        
+        total_dose_view = sitk.GetArrayViewFromImage(self._cached_dose_sum)
+        total_dose_slice = total_dose_view[slicer]
+        
+        dose_mask = (total_dose_slice > min_thresh) & (total_dose_slice < max_thresh)
+        if not np.any(dose_mask):
+            return  # No dose in range to display
+
+        # Create a color map for the dose data, only fill where dose_mask is True
+        cmap_data = np.zeros((*total_dose_slice.shape, 3), dtype=np.float32)
+        cmap_data[dose_mask] = self._dosewash_colormap(total_dose_slice[dose_mask])
+        cmap_data *= 255.0  # Scale to [0, 255] for blending
 
         self._blend_layers(base_layer, cmap_data, alpha)
     
+    ### Texture Helper Methods ###
+    def _dosewash_colormap(self, value_array: np.ndarray) -> np.ndarray:
+        """
+        Apply a DoseWash colormap to a normalized 2-D dose array.
+
+        Args:
+            value_array: A 2-D NumPy array with values normalized to [0, 1].
+
+        Returns:
+            A 2-D NumPy array of corresponding RGB values (each in [0, 1]).
+        """
+        if not isinstance(value_array, np.ndarray) or value_array.ndim != 2:
+            raise ValueError(f"Expected a 2-D NumPy array; received type {type(value_array)} with shape {value_array.shape if isinstance(value_array, np.ndarray) else 'N/A'}.")
+        if np.min(value_array) < 0 or np.max(value_array) > 1:
+            raise ValueError(f"Values must be normalized to [0,1] (min: {np.min(value_array)}, max: {np.max(value_array)}).")
+
+        # Compute interpolated RGB values
+        color_idx = value_array * (self._num_dose_colors - 1)
+        lower_idx = color_idx.astype(np.int32) # Floor index
+        upper_idx = np.minimum(lower_idx + 1, self._num_dose_colors - 1) # Ceil index
+        blend_factor = (color_idx - lower_idx)[..., None] # Fractional part for blending
+
+        rgb = self._dose_colors[lower_idx] * (1 - blend_factor) + self._dose_colors[upper_idx] * blend_factor
+        
+        np.clip(rgb, 0.0, 1.0, out=rgb)
+        return rgb
+      
     def _draw_slice_crosshairs(
         self,
         base_layer: np.ndarray,
         show_crosshairs: bool,
         view_type: str,
-        slices: Union[Tuple[int, int, int], List[int]],
+        xyz_slices: Union[Tuple[int, int, int], List[int]],
         xyz_ranges: Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]],
         crosshair_color: int = 150
     ) -> None:
@@ -1678,15 +1633,15 @@ class DataManager:
             base_layer: The image layer on which to draw crosshairs.
             show_crosshairs: Flag indicating whether to display crosshairs.
             view_type: The view type ('axial', 'coronal', or 'sagittal').
-            slices: A tuple or list of three integer slice positions.
+            xyz_slices: A tuple or list of three integer slice positions.
             xyz_ranges: A tuple of three (min, max) integer pairs defining the spatial ranges.
             crosshair_color: The intensity/color value to use for crosshairs.
         """
         if not show_crosshairs:
             return
         
-        if not slices or not isinstance(slices, (list, tuple)) or len(slices) != 3 or not all(isinstance(s, int) for s in slices):
-            logger.error(f"Crosshair drawing failed: 'slices' is missing or invalid: {slices}")
+        if not xyz_slices or not isinstance(xyz_slices, (list, tuple)) or len(xyz_slices) != 3 or not all(isinstance(s, int) for s in xyz_slices):
+            logger.error(f"Crosshair drawing failed: 'xyz_slices' is missing or invalid: {xyz_slices}")
             return
         
         if not xyz_ranges or not isinstance(xyz_ranges, (list, tuple)) or len(xyz_ranges) != 3 or not all(
@@ -1696,34 +1651,37 @@ class DataManager:
             return
         
         # Convert absolute slice positions to relative positions within the given ranges
-        slices = [s - r[0] for s, r in zip(slices, xyz_ranges)]
+        xyz_slices = [s - r[0] for s, r in zip(xyz_slices, xyz_ranges)]
 
         def get_thickness(dim_size: int) -> int:
             """Calculate dynamic thickness: 1 plus an increment for every 500 pixels."""
             return max(1, 1 + (dim_size // 500) * 2)
-
-        if view_type == "axial":
-            thickness_x = get_thickness(base_layer.shape[1])
-            thickness_y = get_thickness(base_layer.shape[0])
-            if 0 <= slices[0] < base_layer.shape[1]:  # Vertical
-                base_layer[:, max(0, slices[0] - thickness_x // 2) : min(base_layer.shape[1], slices[0] + thickness_x // 2 + 1), :] = crosshair_color
-            if 0 <= slices[1] < base_layer.shape[0]:  # Horizontal
-                base_layer[max(0, slices[1] - thickness_y // 2) : min(base_layer.shape[0], slices[1] + thickness_y // 2 + 1), :, :] = crosshair_color
-        elif view_type == "coronal":
-            thickness_x = get_thickness(base_layer.shape[1])
-            thickness_y = get_thickness(base_layer.shape[0])
-            if 0 <= slices[2] < base_layer.shape[1]:  # Vertical
-                base_layer[:, max(0, slices[2] - thickness_x // 2) : min(base_layer.shape[1], slices[2] + thickness_x // 2 + 1), :] = crosshair_color
-            if 0 <= slices[0] < base_layer.shape[0]:  # Horizontal
-                base_layer[max(0, slices[0] - thickness_y // 2) : min(base_layer.shape[0], slices[0] + thickness_y // 2 + 1), :, :] = crosshair_color
-        elif view_type == "sagittal":
-            thickness_x = get_thickness(base_layer.shape[1])
-            thickness_y = get_thickness(base_layer.shape[0])
-            if 0 <= slices[2] < base_layer.shape[1]:  # Vertical
-                base_layer[:, max(0, slices[2] - thickness_x // 2) : min(base_layer.shape[1], slices[2] + thickness_x // 2 + 1), :] = crosshair_color
-            if 0 <= slices[1] < base_layer.shape[0]:  # Horizontal
-                base_layer[max(0, slices[1] - thickness_y // 2) : min(base_layer.shape[0], slices[1] + thickness_y // 2 + 1), :, :] = crosshair_color
         
+        if view_type == "axial":
+            # Base layer has shape (y, x, 3) and xyz_slices are in (x, y, z) order
+            thickness_y = get_thickness(base_layer.shape[0])
+            thickness_x = get_thickness(base_layer.shape[1])
+            if 0 <= xyz_slices[1] < base_layer.shape[0]:  # Horizontal line = y location
+                base_layer[max(0, xyz_slices[1] - thickness_y // 2) : min(base_layer.shape[0], xyz_slices[1] + thickness_y // 2 + 1), :, :] = crosshair_color
+            if 0 <= xyz_slices[0] < base_layer.shape[1]:  # Vertical line = x location
+                base_layer[:, max(0, xyz_slices[0] - thickness_x // 2) : min(base_layer.shape[1], xyz_slices[0] + thickness_x // 2 + 1), :] = crosshair_color
+        elif view_type == "coronal":
+            # Base layer has shape (z, x, 3) and xyz_slices are in (z, y, x) order
+            thickness_z = get_thickness(base_layer.shape[0])
+            thickness_x = get_thickness(base_layer.shape[1])
+            if 0 <= xyz_slices[2] < base_layer.shape[0]:  # Horizontal line = z location
+                base_layer[max(0, xyz_slices[2] - thickness_z // 2) : min(base_layer.shape[0], xyz_slices[2] + thickness_z // 2 + 1), :, :] = crosshair_color
+            if 0 <= xyz_slices[0] < base_layer.shape[1]:  # Vertical line = x location
+                base_layer[:, max(0, xyz_slices[0] - thickness_x // 2) : min(base_layer.shape[1], xyz_slices[0] + thickness_x // 2 + 1), :] = crosshair_color
+        elif view_type == "sagittal":
+            # Base layer has shape (z, y, 3) and xyz_slices are in (z, y, x) order.
+            thickness_z = get_thickness(base_layer.shape[0])
+            thickness_y = get_thickness(base_layer.shape[1])
+            if 0 <= xyz_slices[2] < base_layer.shape[0]:  # Horizontal line = z location
+                base_layer[max(0, xyz_slices[2] - thickness_z // 2) : min(base_layer.shape[0], xyz_slices[2] + thickness_z // 2 + 1), :, :] = crosshair_color
+            if 0 <= xyz_slices[1] < base_layer.shape[1]:  # Vertical line = y location
+                base_layer[:, max(0, xyz_slices[1] - thickness_y // 2) : min(base_layer.shape[1], xyz_slices[1] + thickness_y // 2 + 1), :] = crosshair_color
+
     def _draw_orientation_labels(
         self,
         base_layer: np.ndarray,
@@ -1782,83 +1740,98 @@ class DataManager:
             if k.lower().strip().startswith(view_type.lower())
         }
         for key_position, label_text in keys_labels.items():
-            if label_text:
-                text_size = cv2.getTextSize(label_text, font, font_scale, font_thickness)[0]
-                
-                # Default center alignment
-                text_x = round((w - text_size[0]) / 2)  # Center horizontally
-                text_y = round((h + text_size[1]) / 2)  # Center vertically
-                
-                # Snap to the edges
-                if key_position.endswith("left"):
-                    text_x = buffer_x  # Fully left
-                elif key_position.endswith("right"):
-                    text_x = w - text_size[0] - buffer_x  # Fully right
-                elif key_position.endswith("top"):
-                    text_y = text_size[1] + buffer_y  # Fully top
-                elif key_position.endswith("bottom"):
-                    text_y = h - buffer_y  # Fully bottom
-                
-                cv2.putText(overlay, label_text, (text_x, text_y), font, font_scale, text_RGB, font_thickness, cv2.LINE_AA)
+            if not label_text:
+                continue
+            
+            text_size = cv2.getTextSize(label_text, font, font_scale, font_thickness)[0]
+            
+            # Default center alignment
+            text_x = round((w - text_size[0]) / 2)  # Center horizontally
+            text_y = round((h + text_size[1]) / 2)  # Center vertically
+            
+            # Snap to the edges
+            if key_position.endswith("left"):
+                text_x = buffer_x  # Fully left
+            elif key_position.endswith("right"):
+                text_x = w - text_size[0] - buffer_x  # Fully right
+            elif key_position.endswith("top"):
+                text_y = text_size[1] + buffer_y  # Fully top
+            elif key_position.endswith("bottom"):
+                text_y = h - buffer_y  # Fully bottom
+
+            cv2.putText(img=overlay, text=label_text, org=(text_x, text_y), fontFace=font, fontScale=font_scale, color=text_RGB, thickness=font_thickness, lineType=cv2.LINE_AA)
         
+        overlay = overlay.astype(np.float32)
         self._blend_layers(base_layer, overlay, alpha)
     
-    def find_active_npy_images(self) -> List[np.ndarray]:
+    ### GUI Data Retrieval Methods ###
+    def find_active_sitk_images(self) -> List[sitk.Image]:
         """
-        Retrieve all active IMAGE NumPy arrays from the cache.
+        Retrieve all active IMAGE SITK objects from the cache.
 
         Returns:
-            A list of NumPy arrays for active IMAGE data.
+            A list of SITK images for active IMAGE data.
         """
         # Copy the keys to avoid error due to dictionary change during iteration
-        cached_img_keys = [k for k in self._npy_cache.keys() if k.startswith("image:")]
-        return [numpy_data for keys in cached_img_keys if (numpy_data := self._npy_cache.get(keys)) is not None]
+        cached_img_keys = [k for k in self._cached_sitk_objects.keys() if k[0] == "image"]
+        return [sitk_data for key in cached_img_keys if (sitk_data := self._cached_sitk_objects.get(key)) is not None]
     
-    def find_active_npy_rois(self) -> List[np.ndarray]:
+    def find_active_sitk_rois(self) -> List[sitk.Image]:
         """
-        Retrieve all active RTSTRUCT NumPy arrays from the cache.
+        Retrieve all active RTSTRUCT SITK objects from the cache.
 
         Returns:
-            A list of NumPy arrays for active RTSTRUCT data.
+            A list of SITK images for active RTSTRUCT data.
         """
         # Copy the keys to avoid error due to dictionary change during iteration
-        cached_rts_keys = [k for k in self._npy_cache.keys() if k.startswith("rtstruct:")]
-        return [numpy_data for keys in cached_rts_keys if (numpy_data := self._npy_cache.get(keys)) is not None]
+        cached_rts_keys = [k for k in self._cached_sitk_objects.keys() if k[0] == "roi"]
+        return [sitk_data for key in cached_rts_keys if (sitk_data := self._cached_sitk_objects.get(key)) is not None]
     
-    def find_active_npy_doses(self) -> List[np.ndarray]:
+    def find_active_sitk_doses(self) -> List[sitk.Image]:
         """
-        Retrieve all active RTDOSE NumPy arrays from the cache.
+        Retrieve all active RTDOSE SITK objects from the cache.
 
         Returns:
-            A list of NumPy arrays for active RTDOSE data.
+            A list of SITK images for active RTDOSE data.
         """
         # Copy the keys to avoid error due to dictionary change during iteration
-        cached_rtd_keys = [k for k in self._npy_cache.keys() if k.startswith("rtdose:")]
-        return [numpy_data for keys in cached_rtd_keys if (numpy_data := self._npy_cache.get(keys)) is not None]
+        cached_rtd_keys = [k for k in self._cached_sitk_objects.keys() if k[0] == "dose"]
+        return [sitk_data for key in cached_rtd_keys if (sitk_data := self._cached_sitk_objects.get(key)) is not None]
     
-    def return_roi_info_list_at_slice(
-        self, 
-        slicer: Union[slice, Tuple[Union[slice, int], ...]]
-    ) -> List[Tuple[str, str, Tuple[int, int, int]]]:
+    def return_roi_info_list_at_slice(self, slicer: Union[slice, Tuple[Union[slice, int], ...]]) -> List[Tuple[str, str, Tuple[int, int, int]]]:
         """
         Retrieve ROI information at the specified slice.
 
         Args:
-            slicer: A slice or tuple of slices defining the current view.
+            slicer: A slice or tuple of slices defining the current view, in (z,y,x) order.
 
         Returns:
             A list of tuples containing (ROI number, current ROI name, display color).
         """
-        # Use new handle-based system
-        roi_handles = self.create_roi_handles()
+        # Get ROI information from active cached data
         result = []
-        for handle in roi_handles:
-            if self.check_data_exists_by_handle(handle, slicer):
-                roi_number = self.get_roi_metadata_by_handle(handle, "roi_number", "0")
-                roi_name = self.get_roi_metadata_by_handle(handle, "current_roi_name", "Unknown")
-                color = self.get_roi_display_color_by_handle(handle)
-                if color:
-                    result.append((roi_number, roi_name, color))
+        roi_keys = [k for k in self._cached_sitk_objects.keys() if k[0] == "roi"]
+        for key in roi_keys:
+            struct_uid, roi_number = key[1], key[2]
+            
+            # Check if ROI has data at this slice by getting the SITK object
+            roi_sitk = self._cached_sitk_objects.get(key)
+            if roi_sitk is None:
+                continue
+            
+            view = sitk.GetArrayViewFromImage(roi_sitk)
+            if not np.any(view[slicer]):
+                continue
+            
+            # Get ROI metadata
+            if self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "use_template_name", True):
+                display_name = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "TemplateName", "Unknown")
+            else:
+                display_name = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "ROIName", "Unknown")
+            
+            color = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "ROIDisplayColor", [255, 255, 255])
+            if color:
+                result.append((str(roi_number), display_name, tuple(color)))
         return result
     
     def return_image_value_list_at_slice(
@@ -1874,7 +1847,7 @@ class DataManager:
         Returns:
             A list of image slices as NumPy arrays.
         """
-        return [numpy_image[slicer] for numpy_image in self.find_active_npy_images()]
+        return [sitk.GetArrayViewFromImage(img)[slicer] for img in self.find_active_sitk_images()]
     
     def return_dose_value_list_at_slice(
         self, 
@@ -1889,7 +1862,7 @@ class DataManager:
         Returns:
             A list of dose slices as NumPy arrays.
         """
-        return [numpy_dose[slicer] for numpy_dose in self.find_active_npy_doses()]
+        return [sitk.GetArrayViewFromImage(dose)[slicer] for dose in self.find_active_sitk_doses()]
         
     def return_is_any_data_active(self) -> bool:
         """
@@ -1898,7 +1871,7 @@ class DataManager:
         Returns:
             True if active data is present; otherwise, False.
         """
-        return len(self._npy_cache) > 0
+        return len(self._cached_sitk_objects) > 0
 
     def count_active_data_items(self) -> int:
         """
@@ -1907,6 +1880,6 @@ class DataManager:
         Returns:
             The number of active data items.
         """
-        return len(self._npy_cache)
+        return len(self._cached_sitk_objects)
     
 

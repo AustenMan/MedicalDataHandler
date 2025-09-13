@@ -33,9 +33,9 @@ def _handler_KeyPress(sender: Union[str, int], app_data: List[Any], user_data: A
     if key_code in (dpg.mvKey_LControl, dpg.mvKey_RControl):
         dpg.set_item_user_data(sender, True)
         return
-    
-    # If Ctrl+C is pressed, popup cleanup confirmation
-    if key_code == dpg.mvKey_C and dpg.get_item_user_data(sender):
+
+    # If Ctrl+Z is pressed, popup cleanup confirmation
+    if key_code == dpg.mvKey_Z and dpg.get_item_user_data(sender):
         cleanup_action = wrap_with_cleanup()
         cleanup_action(sender, app_data, user_data)
         return

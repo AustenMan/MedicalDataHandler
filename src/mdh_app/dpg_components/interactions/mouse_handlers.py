@@ -78,27 +78,27 @@ def get_mouse_slice_pos_xyz(view_dict: Dict[str, Any]) -> Optional[Tuple[int, in
     # Slicer is based on NPY (Y, X, Z) order
     view_type = view_dict.get("view_type")
     if view_type == "coronal":
-        slice_pos = (
+        xyz_slice_pos = (
             round(min(max(ratio_lr * x_size + curr_x_range[0], min_x), max_x)),
             slice_y,
-            round(min(max(ratio_tb * z_size + curr_z_range[0], min_z), max_z))
+            round(min(max((1.0 - ratio_tb) * z_size + curr_z_range[0], min_z), max_z)),
         )
     elif view_type == "sagittal":
-        slice_pos = (
+        xyz_slice_pos = (
             slice_x,
             round(min(max((1.0 - ratio_lr) * y_size + curr_y_range[0], min_y), max_y)),
-            round(min(max(ratio_tb * z_size + curr_z_range[0], min_z), max_z))
+            round(min(max((1.0 - ratio_tb) * z_size + curr_z_range[0], min_z), max_z)),
         )
     elif view_type == "axial":
-        slice_pos = (
+        xyz_slice_pos = (
             round(min(max(ratio_lr * x_size + curr_x_range[0], min_x), max_x)),
             round(min(max(ratio_tb * y_size + curr_y_range[0], min_y), max_y)),
-            slice_z
+            slice_z,
         )
     else:
-        slice_pos = None
+        xyz_slice_pos = None
     
-    return slice_pos
+    return xyz_slice_pos
 
 def copy_log_text() -> None:
     """Copy the text from the log window to the clipboard."""
@@ -301,8 +301,7 @@ def _handler_MouseWheel(sender: Union[str, int], app_data: int, user_data: Any) 
         dpg.set_item_user_data(key_down_tag, False)
     
     # Scroll functionality
-    else: 
-        direction = -int(app_data) 
+    else:
         view_type = view_dict["view_type"]
         slice_tag = img_tags["viewed_slices"]
         current_slices = tuple(dpg.get_value(slice_tag)[:3])
@@ -311,12 +310,15 @@ def _handler_MouseWheel(sender: Union[str, int], app_data: int, user_data: Any) 
         if view_type == "axial":
             range_tag = img_tags["zrange"]
             slice_idx = 2
+            direction = int(app_data) 
         elif view_type == "coronal":
             range_tag = img_tags["yrange"]
             slice_idx = 1
+            direction = -int(app_data) 
         elif view_type == "sagittal":
             range_tag = img_tags["xrange"]
             slice_idx = 0
+            direction = -int(app_data) 
         
         range_min, range_max = dpg.get_value(range_tag)[:2]
         
@@ -354,16 +356,16 @@ def _itemhandler_MouseHover(sender: Union[str, int], app_data: Any, user_data: A
     if not view_dict:
         return
     
-    slicer_xyz = get_mouse_slice_pos_xyz(view_dict)
-    if not slicer_xyz:
+    xyz_slices = get_mouse_slice_pos_xyz(view_dict)
+    if not xyz_slices:
         return
-    
+
+    zyx_slices = (xyz_slices[2], xyz_slices[1], xyz_slices[0])
     # Find values at location
-    slicer_yxz = (slicer_xyz[1], slicer_xyz[0], slicer_xyz[2])
     data_mgr: DataManager = get_user_data(td_key="data_manager")
-    roi_info_list = data_mgr.return_roi_info_list_at_slice(slicer_yxz)
-    img_value_list = data_mgr.return_image_value_list_at_slice(slicer_yxz)
-    dose_value_list = data_mgr.return_dose_value_list_at_slice(slicer_yxz)
+    roi_info_list = data_mgr.return_roi_info_list_at_slice(zyx_slices)
+    img_value_list = data_mgr.return_image_value_list_at_slice(zyx_slices)
+    dose_value_list = data_mgr.return_dose_value_list_at_slice(zyx_slices)
     
     # Build tooltip content
     img_values = ", ".join([str(round(val)) for val in img_value_list]) if img_value_list else ""
@@ -374,7 +376,7 @@ def _itemhandler_MouseHover(sender: Union[str, int], app_data: Any, user_data: A
     safe_delete(view_dict["tooltip"], children_only=True)
     with dpg.group(parent=view_dict["tooltip"]):
         dpg.add_text(
-            f"Voxel location (X, Y, Z): {slicer_xyz}"
+            f"Voxel location (X, Y, Z): {xyz_slices}"
             f"\nImage value: {img_values}"
             f"\nDose value: {dose_values_sum} cGy",
         )

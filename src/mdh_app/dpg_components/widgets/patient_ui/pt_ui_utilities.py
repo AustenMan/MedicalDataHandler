@@ -5,12 +5,15 @@ import logging
 from typing import TYPE_CHECKING, Union, Tuple, Any
 
 
+import dearpygui.dearpygui as dpg
+
+
 from mdh_app.dpg_components.core.utils import get_user_data
 from mdh_app.dpg_components.rendering.texture_manager import request_texture_update
 
 
 if TYPE_CHECKING:
-    from mdh_app.managers.data_manager import DataManager, DataHandle
+    from mdh_app.managers.data_manager import DataManager
 
 
 logger = logging.getLogger(__name__)
@@ -28,24 +31,19 @@ def update_cbox_callback(sender: Union[str, int], app_data: bool, user_data: Tup
     if not isinstance(app_data, bool):
         logger.error(f"Invalid app_data provided to checkbox callback: {app_data}")
         return
-    if user_data is None or user_data[0] not in ("image", "roi", "dose"):
-        logger.error(f"Invalid user_data provided to checkbox callback: {user_data}")
+    if user_data is None or user_data[0] not in ("image", "roi", "toggle_all_rois", "dose"):
+        logger.error(f"Invalid user_data provided to checkbox callback: {user_data}. Expected first element to be one of ('image', 'roi', 'toggle_all_rois', 'dose').")
         return
     
     data_mgr: DataManager = get_user_data("data_manager")
     any_data_active_before = data_mgr.return_is_any_data_active()
-    
-    if user_data[0] == "image":
-        series_uid = user_data[1]
-        data_mgr.update_cached_data(app_data, ("image", series_uid,))
-    elif user_data[0] == "roi":
-        rts_sopiuid, roi_number = user_data[1], user_data[2]
-        data_mgr.build_rtstruct_roi(rts_sopiuid, roi_number)
-        data_mgr.update_cached_data(app_data, ("roi", rts_sopiuid, roi_number,))
-    elif user_data[0] == "dose":
-        rtd_sopiuid = user_data[1]
-        data_mgr.update_cached_data(app_data, ("dose", rtd_sopiuid,))
-    
+    if user_data[0] == "toggle_all_rois":
+        struct_uid = user_data[1]
+        roi_numbers = data_mgr.get_rtstruct_roi_numbers_by_uid(struct_uid, sort_by_name=True)
+        for roi_num in roi_numbers:
+            data_mgr.update_cached_data(app_data, ("roi", struct_uid, roi_num))
+    else:
+        data_mgr.update_cached_data(app_data, user_data)
     any_data_active_after = data_mgr.return_is_any_data_active()
     
     # Data is now cleared -> reset the texture
@@ -57,3 +55,24 @@ def update_cbox_callback(sender: Union[str, int], app_data: bool, user_data: Tup
     # No change -> update the texture
     else:
         request_texture_update(texture_action_type="update")
+
+
+def toggle_all_rois(sender: Union[str, int], app_data: Any, user_data: Tuple[List[Any], str]) -> None:
+    """
+    Toggle display for all ROIs in the RT Structure Set.
+
+    Args:
+        sender: The triggering button tag.
+        app_data: Additional event data.
+        user_data: Tuple of (list of ROI checkbox tags, struct SOPInstanceUID).
+    """
+    roi_checkboxes, struct_uid = user_data
+    valid_checkboxes = [chk for chk in roi_checkboxes if dpg.does_item_exist(chk)]
+    if not valid_checkboxes:
+        return
+
+    should_load = not any(dpg.get_value(chk) for chk in valid_checkboxes)
+    for chk in valid_checkboxes:
+        dpg.set_value(chk, should_load)
+    update_cbox_callback(sender, should_load, ("toggle_all_rois", struct_uid))
+

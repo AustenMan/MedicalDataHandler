@@ -12,7 +12,6 @@ from mdh_app.dpg_components.core.utils import get_tag, get_user_data, add_custom
 from mdh_app.dpg_components.widgets.patient_ui.pt_ui_utilities import update_cbox_callback
 from mdh_app.dpg_components.themes.button_themes import get_hidden_button_theme, get_colored_button_theme
 from mdh_app.utils.dpg_utils import safe_delete, get_popup_params
-from mdh_app.managers.data_manager import DoseHandle
 
 
 if TYPE_CHECKING:

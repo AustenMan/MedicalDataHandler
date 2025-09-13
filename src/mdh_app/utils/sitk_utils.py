@@ -19,16 +19,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def sitk_transform_physical_point_to_index(
-    physical_point: Union[Tuple[float, ...], List[float]],
+def sitk_transform_physical_points_to_index(
+    physical_points: np.ndarray,  # Shape: (N, 3)
     origin: Union[Tuple[float, ...], List[float]],
     spacing: Union[Tuple[float, ...], List[float]],
     direction: Union[Tuple[float, ...], List[float]]
-) -> Tuple[int, int, int]:
-    """Convert physical point to image index coordinates."""
-    A = np.array(direction).reshape((3, 3)) @ np.diag(spacing)
-    index = np.linalg.inv(A) @ (np.array(physical_point) - np.array(origin))
-    return tuple(np.round(index).astype(int))
+) -> np.ndarray:  # Shape: (N, 3)
+    """Convert physical points to image index coordinates."""
+    # Compute transformation matrix
+    spacing_array = np.array(spacing, dtype=np.float32)
+    A = np.array(direction, dtype=np.float32).reshape((3, 3)) @ np.diag(spacing_array)
+    A_inv = np.linalg.inv(A)
+    
+    # Vectorized transformation for all points
+    origin_array = np.array(origin, dtype=np.float32)
+    indices = (physical_points - origin_array) @ A_inv.T
+    return np.round(indices).astype(int)
 
 
 def sitk_to_array(
@@ -273,22 +279,6 @@ def copy_structure_without_sitk_images(obj: Any) -> Any:
     elif isinstance(obj, sitk.Image):
         return None
     return obj
-
-
-def get_sitk_roi_display_color(
-    sitk_data: sitk.Image,
-    default_return_color: Tuple[int, int, int] = (255, 255, 255)
-) -> Tuple[int, int, int]:
-    """Retrieves the 'roi_display_color' metadata value from an image."""
-    if not isinstance(sitk_data, sitk.Image):
-        logger.error("Object is not a SimpleITK Image.")
-        return default_return_color
-    
-    try:
-        color = sitk_data.GetMetaData("roi_display_color")
-        return tuple(map(int, color.strip("[]").split(", ")))
-    except:
-        return default_return_color
 
 
 def reduce_sitk_size(sitk_image: sitk.Image) -> sitk.Image:

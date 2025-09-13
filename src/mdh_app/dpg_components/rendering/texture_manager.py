@@ -38,7 +38,7 @@ def _update_textures(*args, **kwargs) -> None:
     tag_show_OL = img_tags["show_orientation_labels"]
     
     # Get texture params
-    size, spacing, slices, xyz_ranges, rotation, flips = _get_core_texture_params(texture_action_type)
+    size, spacing, xyz_slices, xyz_ranges, rotation, flips = _get_core_texture_params(texture_action_type)
     display_alphas, dose_range, contour_thickness, image_window_width, image_window_level = _get_visual_texture_params()
     
     # Update general display & viewport, then get image length & texture size
@@ -47,16 +47,17 @@ def _update_textures(*args, **kwargs) -> None:
     WH_ratios = update_viewport_and_popups(new_screen_size, current_screen_size)
     image_length = _get_image_length(WH_ratios)
     
+    # (z, y, x) order
     view_slicing_dict = {
-        "axial": (slice(xyz_ranges[1][0], xyz_ranges[1][1] + 1, 1), slice(xyz_ranges[0][0], xyz_ranges[0][1] + 1, 1), slices[2]),
-        "coronal": (slices[1], slice(xyz_ranges[0][0], xyz_ranges[0][1] + 1, 1), slice(xyz_ranges[2][0], xyz_ranges[2][1] + 1, 1)),
-        "sagittal": (slice(xyz_ranges[1][0], xyz_ranges[1][1] + 1, 1), slices[0], slice(xyz_ranges[2][0], xyz_ranges[2][1] + 1, 1))
+        "axial": (xyz_slices[2], slice(xyz_ranges[1][0], xyz_ranges[1][1] + 1, 1), slice(xyz_ranges[0][0], xyz_ranges[0][1] + 1, 1)),
+        "coronal": (slice(xyz_ranges[2][0], xyz_ranges[2][1] + 1, 1), xyz_slices[1], slice(xyz_ranges[0][0], xyz_ranges[0][1] + 1, 1)),
+        "sagittal": (slice(xyz_ranges[2][0], xyz_ranges[2][1] + 1, 1), slice(xyz_ranges[1][0], xyz_ranges[1][1] + 1, 1), xyz_slices[0])
     }
     
     texture_dict = {}
     for view_type, slicer in view_slicing_dict.items():
         texture_params = {
-            "view_type": view_type, "slices": slices, "xyz_ranges": xyz_ranges, "slicer": slicer, 
+            "view_type": view_type, "xyz_slices": xyz_slices, "xyz_ranges": xyz_ranges, "slicer": slicer, 
             "image_length": image_length, "size": size, "voxel_spacing": spacing, 
             "rotation": rotation, "flips": flips, "contour_thickness": contour_thickness,
             "display_alphas": display_alphas, "dose_thresholds": dose_range,

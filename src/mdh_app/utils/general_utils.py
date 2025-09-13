@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import json
+import random
 import string
 import logging
 import weakref
@@ -417,13 +418,19 @@ def regex_find_dose_and_fractions(roi_name: str) -> Dict[str, Optional[Union[flo
     return {'dose': dose, 'fractions': fractions}
 
 
-def check_for_valid_dicom_string(input_string: str) -> bool:
-    """Return True if the input string meets DICOM character standards."""
+def clean_dicom_string(input_string: str) -> str:
+    """Remove invalid DICOM characters from the input string."""
     valid_chars = set(string.ascii_letters + string.digits + string.punctuation + string.whitespace)
     valid_chars.remove('\\')  # Remove backslash
     control_chars = {chr(i) for i in range(32)}  # ASCII control characters
     valid_chars -= control_chars  # Exclude control characters
-    return all(char in valid_chars for char in input_string)
+    
+    return ''.join(char for char in input_string if char in valid_chars)
+
+
+def check_for_valid_dicom_string(input_string: str) -> bool:
+    """Return True if the input string meets DICOM character standards."""
+    return clean_dicom_string(input_string) == input_string
 
 
 def struct_name_priority_key(mask_name: str) -> Tuple[int, str]:
@@ -901,3 +908,14 @@ def parse_struct_goal(
     
     return goal_type, spare_volume, spare_dose
 
+
+def validate_rgb_color(color_data: Any) -> Optional[List[int]]:
+    """ Get valid ROI display color data."""
+    if not isinstance(color_data, list) or len(color_data) != 3:
+        return [random.randint(0, 255) for _ in range(3)]
+    try:
+        # Clamp each color component to valid RGB range
+        normalized_color = [int(round(min(max(float(component), 0), 255))) for component in color_data]
+        return normalized_color
+    except (ValueError, TypeError):
+        return [random.randint(0, 255) for _ in range(3)]

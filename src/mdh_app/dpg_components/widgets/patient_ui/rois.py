@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 def update_roi_tooltip(tag_roi_button: Union[str, int]) -> None:
     """ Update the tooltip of an ROI button with its metadata. """
     if not dpg.does_item_exist(tag_roi_button):
+        logger.error(f"Cannot update tooltip for non-existent ROI button: {tag_roi_button}")
         return
     
     size_dict = get_user_data(td_key="size_dict")
@@ -261,13 +262,19 @@ def _popup_inspect_roi(sender: Union[str, int], app_data: Any, user_data: Tuple[
     conf_mgr: ConfigManager = get_user_data("config_manager")
     data_mgr: DataManager = get_user_data("data_manager")
     
+    # Get necessary data from config_manager
+    tg_263_oar_names_list = conf_mgr.get_tg_263_names(ready_for_dpg=True)
+    # organ_name_matching_dict = conf_mgr.get_organ_matching_dict()
+    disease_site_list = conf_mgr.get_disease_sites(ready_for_dpg=True)
+    unmatched_organ_name = conf_mgr.get_unmatched_organ_name()
+    
     safe_delete(tag_inspect)
     
     tag_roi_button = sender
     rts_sopiuid, roi_number, tag_roi_tooltip = user_data
     
     # Get ROI metadata (specific to GUI)
-    original_roi_name = data_mgr.get_rtstruct_roi_ds_value_by_uid(rts_sopiuid, roi_number, "ROIName", "-MISSING-")
+    original_roi_name = data_mgr.get_rtstruct_roi_ds_value_by_uid(rts_sopiuid, roi_number, "ROIName", unmatched_organ_name)
     roi_metadata = data_mgr.get_roi_gui_metadata_by_uid(rts_sopiuid, roi_number)
     roi_name = roi_metadata.get("ROIName", unmatched_organ_name)
     roi_template_name = roi_metadata.get("ROITemplateName", roi_name)
@@ -279,12 +286,6 @@ def _popup_inspect_roi(sender: Union[str, int], app_data: Any, user_data: Tuple[
     roi_rx_dose = roi_metadata.get("roi_rx_dose", None)
     roi_rx_fractions = roi_metadata.get("roi_rx_fractions", None)
     roi_rx_site = roi_metadata.get("roi_rx_site", None)
-    
-    # Get necessary data from config_manager
-    tg_263_oar_names_list = conf_mgr.get_tg_263_names(ready_for_dpg=True)
-    organ_name_matching_dict = conf_mgr.get_organ_matching_dict()
-    disease_site_list = conf_mgr.get_disease_sites(ready_for_dpg=True)
-    unmatched_organ_name = conf_mgr.get_unmatched_organ_name()
     
     # Get popup parameters
     popup_width, popup_height, popup_pos = get_popup_params()
