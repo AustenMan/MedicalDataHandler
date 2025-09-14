@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from mdh_app.managers.config_manager import ConfigManager
     from mdh_app.managers.shared_state_manager import SharedStateManager
     from mdh_app.managers.data_manager import DataManager
-    from mdh_app.managers.dicom_manager import DicomManager
 
 
 logger = logging.getLogger(__name__)

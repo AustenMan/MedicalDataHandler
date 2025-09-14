@@ -37,42 +37,6 @@ def sitk_transform_physical_points_to_index(
     return np.round(indices).astype(np.int32)  # Shape: (N, 3)
 
 
-def sitk_to_array(
-    sitk_image: sitk.Image,
-    np_dtype: Optional[np.dtype] = None,
-    flip_z_axis: bool = True
-) -> np.ndarray:
-    """Converts a SimpleITK image to a NumPy array with [Y, X, Z] layout."""
-    array = sitk.GetArrayFromImage(sitk_image).transpose(1, 2, 0) # Transpose to [Y, X, Z] and flip Z axis
-    if flip_z_axis:
-        array = array[:, :, ::-1]
-    return array.astype(np_dtype) if np_dtype else array
-
-
-def array_to_sitk(
-    numpy_array: np.ndarray,
-    sitk_to_match: Optional[sitk.Image] = None,
-    copy_metadata: bool = False,
-    flip_z_axis: bool = True
-) -> sitk.Image:
-    """Converts a [Y, X, Z] NumPy array to a SimpleITK image and optionally copies metadata."""
-    if flip_z_axis:
-        numpy_array = numpy_array[:, :, ::-1]
-    
-    if numpy_array.dtype == bool:
-        numpy_array = numpy_array.astype(np.uint8)
-    
-    sitk_image = sitk.GetImageFromArray(numpy_array.transpose(2, 0, 1))
-    
-    if isinstance(sitk_to_match, sitk.Image):
-        sitk_image.CopyInformation(sitk_to_match)
-        if copy_metadata:
-            for key in sitk_to_match.GetMetaDataKeys():
-                sitk_image.SetMetaData(key, sitk_to_match.GetMetaData(key))
-    
-    return sitk_image
-
-
 def sitk_resample_to_reference(
     input_img: sitk.Image,
     reference_img: sitk.Image,
@@ -264,32 +228,4 @@ def log_image_metadata(image: sitk.Image) -> None:
     for key in image.GetMetaDataKeys():
         logger.info(f"{key}: {image.GetMetaData(key)}")
     logger.info(f"Spacing: {image.GetSpacing()}, Origin: {image.GetOrigin()}, Direction: {image.GetDirection()}, Size: {image.GetSize()}")
-
-
-def copy_structure_without_sitk_images(obj: Any) -> Any:
-    """Recursively removes SimpleITK.Image objects from nested structures, replacing them with None."""
-    if isinstance(obj, dict):
-        return {k: copy_structure_without_sitk_images(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [copy_structure_without_sitk_images(v) for v in obj]
-    elif isinstance(obj, tuple):
-        return tuple(copy_structure_without_sitk_images(v) for v in obj)
-    elif isinstance(obj, set):
-        return {copy_structure_without_sitk_images(v) for v in obj}
-    elif isinstance(obj, sitk.Image):
-        return None
-    return obj
-
-
-def reduce_sitk_size(sitk_image: sitk.Image) -> sitk.Image:
-    """Crops an image to the smallest bounding box containing all non-zero voxels."""
-    array = sitk.GetArrayFromImage(sitk_image).transpose(2, 1, 0).astype(bool)
-    non_zero = np.nonzero(array)
-    bounds_min = [np.min(ax) for ax in non_zero]
-    bounds_max = [np.max(ax) for ax in non_zero]
-    return sitk_image[
-        bounds_min[0]:bounds_max[0]+1,
-        bounds_min[1]:bounds_max[1]+1,
-        bounds_min[2]:bounds_max[2]+1
-    ]
 

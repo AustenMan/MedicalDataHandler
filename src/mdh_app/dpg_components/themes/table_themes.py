@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 import logging
-from typing import Dict, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 
 import dearpygui.dearpygui as dpg
@@ -10,6 +10,10 @@ import dearpygui.dearpygui as dpg
 
 if TYPE_CHECKING:
     pass
+
+
+logger = logging.getLogger(__name__)
+
 
 def get_table_cell_spacing_theme(x: int, y: int) -> int:
     """

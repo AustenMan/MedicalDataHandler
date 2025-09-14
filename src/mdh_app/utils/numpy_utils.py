@@ -23,49 +23,40 @@ def numpy_roi_mask_generation(
     geometric_type: str
 ) -> None:
     """Generate 3D ROI mask from matrix points (credit for initial inspiration: github.com/brianmanderson)."""
+    # All points should have same z for this condition
     if geometric_type != "OPEN_NONPLANAR":
-        slice = int(matrix_points[0, 2])  # All points should have same z. Otherwise iterate through slices (matrix_points[:, 2])
+        slice = int(matrix_points[0, 2])  
         points = np.ascontiguousarray(matrix_points[:, :2])
         cv2.fillPoly(mask[slice], [points], 1)
+    
+    # Points may not all be on same z-slice for this condition
     else:
-        # Compute total points needed
-        segments = []
+        # Draw 3D lines between consecutive points
         for i in range(1, len(matrix_points)):
-            # Skip segments where no change in z occurs
-            if matrix_points[i, 2] == matrix_points[i-1, 2]:
-                continue
-            n_points = int(abs(matrix_points[i-1, 2] - matrix_points[i, 2])) + 1
-            segments.append((i, n_points))
-        
-        if not segments:
-            return
-        
-        # Pre-allocate array
-        total_points = sum(n for _, n in segments)
-        all_points = np.empty((total_points, 3), dtype=int)
-        
-        idx = 0
-        for i, n_points in segments:
-            # Vectorized interpolation
-            for j in range(3):
-                all_points[idx:idx+n_points, j] = np.linspace(
-                    matrix_points[i, j],
-                    matrix_points[i-1, j],
-                    n_points,
-                    dtype=int
-                )
-            idx += n_points
-        
-        # Reorder columns to match mask indexing ([z, row, col])
-        all_points = all_points[:, [2, 1, 0]]
-        
-        # Clip to mask bounds
-        all_points[:, 0] = np.clip(all_points[:, 0], 0, mask.shape[0]-1)  # z
-        all_points[:, 1] = np.clip(all_points[:, 1], 0, mask.shape[1]-1)  # row  
-        all_points[:, 2] = np.clip(all_points[:, 2], 0, mask.shape[2]-1)  # col
-        
-        # Update the mask
-        mask[all_points[:, 0], all_points[:, 1], all_points[:, 2]] = True
+            p1 = matrix_points[i-1]  # Previous point as (x, y, z)
+            p2 = matrix_points[i]  # Current point as (x, y, z)
+
+            # Simple 2D line on same z-slice
+            if p1[2] == p2[2]:
+                z = int(p1[2])
+                if 0 <= z < mask.shape[0]:
+                    cv2.line(mask[z], (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), 1)
+                continue  # Move to next segment
+            
+            # Number of interpolation points
+            n_points = int(abs(p2[2] - p1[2])) + 1
+            
+            # Interpolate between points
+            x_coords = np.linspace(p1[0], p2[0], n_points, dtype=int)
+            y_coords = np.linspace(p1[1], p2[1], n_points, dtype=int)
+            z_coords = np.linspace(p1[2], p2[2], n_points, dtype=int)
+            
+            # Clip in-place to match mask bounds
+            np.clip(z_coords, 0, mask.shape[0]-1, out=z_coords)
+            np.clip(y_coords, 0, mask.shape[1]-1, out=y_coords)
+            np.clip(x_coords, 0, mask.shape[2]-1, out=x_coords)
+            
+            mask[z_coords, y_coords, x_coords] = 1
 
 
 def create_HU_to_RED_map(

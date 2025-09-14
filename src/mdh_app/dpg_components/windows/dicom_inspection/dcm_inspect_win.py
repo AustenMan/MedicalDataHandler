@@ -17,14 +17,13 @@ from mdh_app.utils.dpg_utils import safe_delete, get_popup_params, add_dicom_dat
 
 
 if TYPE_CHECKING:
-    from pydicom import Dataset
     from mdh_app.managers.shared_state_manager import SharedStateManager
 
 
 logger = logging.getLogger(__name__)
 
 
-def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_data: Union[str, Dataset]) -> None:
+def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_data: str) -> None:
     """
     Create and display a popup with detailed DICOM file information.
 
@@ -42,15 +41,10 @@ def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_d
     safe_delete(tag_inspect_dcm)
     
     # Get the DICOM dataset
-    dicom_dataset = None
-    dicom_path = None
-    if isinstance(user_data, str):
-        dicom_path = user_data
-        dicom_dataset = read_dcm_file(dicom_path)
-    elif isinstance(user_data, Dataset):
-        dicom_dataset = user_data
-    if not isinstance(dicom_dataset, Dataset):
-        logger.error(f"Failed to fetch DICOM dataset for inspection! Received: {type(dicom_dataset)}")
+    dicom_path = user_data
+    dicom_dataset = read_dcm_file(dicom_path)
+    if dicom_dataset is None:
+        logger.error("Failed to fetch DICOM dataset for inspection!")
         return
     
     tag_hidden_theme = get_hidden_button_theme()

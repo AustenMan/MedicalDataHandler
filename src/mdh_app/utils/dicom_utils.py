@@ -2,14 +2,11 @@ from __future__ import annotations
 
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, Optional, Union
 
 
 import pydicom
 from pydicom.datadict import keyword_for_tag
-
-
-from mdh_app.utils.general_utils import safe_type_conversion
 
 
 if TYPE_CHECKING:
@@ -206,47 +203,6 @@ def read_dcm_file(
     except Exception as e:
         logger.error(f"Failed to read file '{file_path}'.", exc_info=True)
         return None
-
-
-def dcm_value_conversion(
-    value_list: Any, 
-    value_type: Optional[type] = str
-) -> Optional[Union[Any, List[Any]]]:
-    """Convert DICOM values safely to specified type."""
-    if not value_list:
-        return None
-
-    if not isinstance(value_list, list):
-        return safe_type_conversion(value_list, value_type) if value_type is not None else value_list
-
-    if len(value_list) == 1:
-        return safe_type_conversion(value_list[0], value_type) if value_type is not None else value_list[0]
-
-    return [safe_type_conversion(x, value_type) for x in value_list] if value_type is not None else value_list
-
-
-def get_dict_tag_values(
-    last_dict: Dict[str, Any], 
-    tag: Optional[str] = None
-) -> Any:
-    """Retrieve and convert DICOM tag values from dictionary."""
-    tag_dict: Any = last_dict if tag is None else last_dict.get(tag, {})
-    if not isinstance(tag_dict, dict):
-        return tag_dict
-
-    tag_vr: Optional[str] = tag_dict.get("vr")
-    if tag_vr == "SQ":
-        return tag_dict.get("Value", [])
-    elif tag_vr in {"DS", "FL", "FD"}:
-        return dcm_value_conversion(tag_dict.get("Value"), float)
-    elif tag_vr in {"IS", "SL", "SS", "SV", "UL", "US", "UV"}:
-        return dcm_value_conversion(tag_dict.get("Value"), int)
-    elif tag_vr in {"AE", "AS", "CS", "DA", "DT", "LO", "LT", "SH", "ST", "TM", "UC", "UI", "UR", "UT"}:
-        return dcm_value_conversion(tag_dict.get("Value"), str)
-    elif tag_vr == "PN":
-        return dcm_value_conversion(tag_dict.get("Value"), None)
-    else: # Can also check these tag_vr : ["AT", "OB", "OD", "OF", "OL", "OV", "OW", "UN"]
-        return tag_dict.get("Value")
 
 
 def get_ds_tag_value(

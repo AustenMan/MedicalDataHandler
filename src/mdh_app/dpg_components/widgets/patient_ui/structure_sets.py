@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import TYPE_CHECKING, Tuple, Any, Union, List
+from typing import TYPE_CHECKING, Union, List
 from functools import partial
 
 
@@ -41,6 +41,7 @@ def add_structure_sets_to_menu() -> None:
     
     with dpg.tree_node(parent="mw_right", label="Structure Sets", default_open=True):
         for rts_sopiuid in rts_sopiuids:
+            file_path = data_mgr.get_rtstruct_filepath_by_uid(rts_sopiuid)
             modality = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "Modality", "RT Structure Set")
             ss_label = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "StructureSetLabel", "N/A")
             ss_name = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "StructureSetName", "N/A")
@@ -76,7 +77,7 @@ def add_structure_sets_to_menu() -> None:
                         width=size_dict["button_width"],
                         height=size_dict["button_height"],
                         callback=create_popup_dicom_inspection,
-                        user_data=rts_sopiuid
+                        user_data=file_path
                     )
                     with dpg.tooltip(parent=tag_button):
                         dpg.add_text(

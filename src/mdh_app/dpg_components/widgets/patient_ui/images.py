@@ -32,38 +32,38 @@ def add_images_to_menu() -> None:
     
     with dpg.tree_node(parent="mw_right", label="Images", default_open=True):
         for image_siuid in image_siuids:
-            modality = data_mgr.get_image_metadata_by_series_uid(image_siuid, "Modality", "Image")
-            series_description = data_mgr.get_image_metadata_by_series_uid(image_siuid, "SeriesDescription", "N/A")
-            study_description = data_mgr.get_image_metadata_by_series_uid(image_siuid, "StudyDescription", "N/A")
-            date = data_mgr.get_image_metadata_by_series_uid(image_siuid, "SeriesDate", "N/A")
-            time = data_mgr.get_image_metadata_by_series_uid(image_siuid, "SeriesTime", "")
-            approval_status = data_mgr.get_image_metadata_by_series_uid(image_siuid, "ApprovalStatus", "N/A")
-            review_date = data_mgr.get_image_metadata_by_series_uid(image_siuid, "ReviewDate", "N/A")
-            review_time = data_mgr.get_image_metadata_by_series_uid(image_siuid, "ReviewTime", "")
-            reviewer_name = data_mgr.get_image_metadata_by_series_uid(image_siuid, "ReviewerName", "N/A")
+            modality = data_mgr.get_image_metadata_by_series_uid_and_key(image_siuid, "Modality", "Image")
+            series_description = data_mgr.get_image_metadata_by_series_uid_and_key(image_siuid, "SeriesDescription", "N/A")
+            study_description = data_mgr.get_image_metadata_by_series_uid_and_key(image_siuid, "StudyDescription", "N/A")
+            date = data_mgr.get_image_metadata_by_series_uid_and_key(image_siuid, "SeriesDate", "N/A")
+            time = data_mgr.get_image_metadata_by_series_uid_and_key(image_siuid, "SeriesTime", "")
+            approval_status = data_mgr.get_image_metadata_by_series_uid_and_key(image_siuid, "ApprovalStatus", "N/A")
+            review_date = data_mgr.get_image_metadata_by_series_uid_and_key(image_siuid, "ReviewDate", "N/A")
+            review_time = data_mgr.get_image_metadata_by_series_uid_and_key(image_siuid, "ReviewTime", "")
+            reviewer_name = data_mgr.get_image_metadata_by_series_uid_and_key(image_siuid, "ReviewerName", "N/A")
 
+            image_btn_label = series_description or study_description or modality
+            image_btn_label = f"{modality} - {image_btn_label}" if image_btn_label else modality
+            image_text = (
+                f"Series Date and Time: {date} {time}\n"
+                f"Approval Status: {approval_status}\n"
+                f"Review Date and Time: {review_date} {review_time}\n"
+                f"Reviewer Name: {reviewer_name}"
+            )
+            
             with dpg.group(horizontal=True):
                 dpg.add_checkbox(default_value=False, callback=update_cbox_callback, user_data=("image", image_siuid))
                 with dpg.tooltip(dpg.last_item()):
                     dpg.add_text("Display image", wrap=size_dict["tooltip_width"])
                 
-                any_description = series_description if series_description else study_description
                 tag_button = dpg.add_button(
-                    label=f"{modality} - {any_description}" if any_description else modality,
+                    label=image_btn_label,
                     width=size_dict["button_width"],
                     callback=_popup_inspect_image,
                     user_data=image_siuid
                 )
                 with dpg.tooltip(parent=tag_button):
-                    dpg.add_text(
-                        (
-                            f"Series Date and Time: {date} {time}\n" +
-                            f"Approval Status: {approval_status}\n" +
-                            f"Review Date and Time: {review_date} {review_time}\n" +
-                            f"Reviewer Name: {reviewer_name}"
-                        ),
-                        wrap=size_dict["tooltip_width"]
-                    )
+                    dpg.add_text(image_text, wrap=size_dict["tooltip_width"])
                 dpg.bind_item_theme(item=tag_button, theme=get_colored_button_theme((90, 110, 70)))
         
         dpg.add_spacer(height=size_dict["spacer_height"])
@@ -128,3 +128,4 @@ def _popup_inspect_image(sender: Union[str, int], app_data: Any, user_data: str)
                             width=size_dict["button_width"],
                             readonly=True
                         )
+        dpg.add_spacer(height=size_dict["spacer_height"])

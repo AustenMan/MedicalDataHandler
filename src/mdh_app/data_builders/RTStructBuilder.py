@@ -12,7 +12,6 @@ from mdh_app.utils.dicom_utils import read_dcm_file, get_first_ref_series_uid
 
 if TYPE_CHECKING:
     from pydicom import Dataset
-    from mdh_app.managers.config_manager import ConfigManager
     from mdh_app.managers.shared_state_manager import SharedStateManager
     
 

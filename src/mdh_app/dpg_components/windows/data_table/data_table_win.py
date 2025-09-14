@@ -22,7 +22,6 @@ from mdh_app.dpg_components.windows.patient_object.pt_obj_window import create_w
 from mdh_app.utils.dpg_utils import get_popup_params, safe_delete
 
 
-
 if TYPE_CHECKING:
     from mdh_app.database.models import Patient
     from mdh_app.managers.dicom_manager import DicomManager

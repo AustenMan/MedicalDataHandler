@@ -53,6 +53,7 @@ def get_colored_button_theme(
                 dpg.add_theme_color(dpg.mvThemeCol_Text, color_text, category=dpg.mvThemeCat_Core)
     return generic_button_theme
 
+
 def get_hidden_button_theme(
     color_text: Optional[Union[Tuple[int, int, int], List[int]]] = None
 ) -> int:

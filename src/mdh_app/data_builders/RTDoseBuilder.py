@@ -2,8 +2,7 @@ from __future__ import annotations
 
 
 import logging
-from os.path import exists
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 
 import SimpleITK as sitk

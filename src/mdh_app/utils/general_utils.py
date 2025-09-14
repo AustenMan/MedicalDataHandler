@@ -6,7 +6,6 @@ import json
 import random
 import string
 import logging
-import weakref
 import traceback
 import tempfile
 import functools
@@ -68,36 +67,6 @@ def chunked_iterable(iterable: Iterable[Any], size: int) -> Iterator[List[Any]]:
         if not chunk:
             break
         yield chunk
-
-
-def weakref_nested_structure(structure: Any) -> Any:
-    """Recursively replace items in a nested structure with weak references when applicable.
-    
-    Args:
-        structure: The input structure (dict, list, tuple, or other objects).
-
-    Returns:
-        The structure with objects replaced by weak references when applicable.
-    """
-    if isinstance(structure, dict):
-        # If it's a dictionary, apply weakref recursively to each value
-        return {key: weakref_nested_structure(value) for key, value in structure.items()}
-    
-    elif isinstance(structure, list):
-        # If it's a list, apply weakref recursively to each item
-        return [weakref_nested_structure(item) for item in structure]
-    
-    elif isinstance(structure, tuple):
-        # If it's a tuple, apply weakref recursively to each item (and return a tuple)
-        return tuple(weakref_nested_structure(item) for item in structure)
-    
-    # Check if the object supports weak references
-    elif hasattr(structure, '__weakref__'):
-        # If it's an object that can be weak-referenced, create a weakref
-        return weakref.ref(structure)
-    
-    # For other types (such as int, float, str), return the object itself
-    return structure
 
 
 def atomic_save(
@@ -268,19 +237,6 @@ def get_flat_list(
     if len(flat_list) == 1 and return_without_list_if_one_item:
         return flat_list[0]
     return flat_list
-
-
-def any_exist_in_nested_dict(d: Any) -> bool:
-    """Return True if any non-None value exists in a nested structure (dict or list)."""
-    if isinstance(d, dict):
-        # Recursively check each value in the dictionary
-        return any(any_exist_in_nested_dict(v) for v in d.values())
-    elif isinstance(d, list):
-        # Recursively check each item in the list
-        return any(any_exist_in_nested_dict(item) for item in d)
-    else:
-        # If the value is not a dict or list, just check if it's not None
-        return d is not None
 
 
 def safe_type_conversion(value: Any, req_type: type, uppercase: bool = False, lowercase: bool = False) -> Any:

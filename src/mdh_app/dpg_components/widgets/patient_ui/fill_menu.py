@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Dict, Any, List
 
 
 import dearpygui.dearpygui as dpg
-import SimpleITK as sitk
 
 
 from mdh_app.database.db_utils import update_patient_accessed_at

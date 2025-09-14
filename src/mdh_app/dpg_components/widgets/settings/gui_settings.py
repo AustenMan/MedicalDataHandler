@@ -8,14 +8,14 @@ from typing import Any, Dict, List, Tuple, Union, Callable, TYPE_CHECKING
 import dearpygui.dearpygui as dpg
 
 
-if TYPE_CHECKING:
-    from mdh_app.managers.config_manager import ConfigManager
-
-
 from mdh_app.dpg_components.core.utils import get_tag, get_user_data
 from mdh_app.dpg_components.rendering.texture_manager import request_texture_update
 from mdh_app.dpg_components.widgets.settings.settings_utils import _reset_setting_callback, _get_screen_limits
 from mdh_app.utils.dpg_utils import safe_delete, verify_input_directory
+
+
+if TYPE_CHECKING:
+    from mdh_app.managers.config_manager import ConfigManager
 
 
 logger = logging.getLogger(__name__)

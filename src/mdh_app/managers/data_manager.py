@@ -5,9 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union, Optional, Set
 import gc
 import json
-import random
 from os.path import exists
-from collections import OrderedDict
 from copy import deepcopy
 
 
@@ -18,7 +16,6 @@ import SimpleITK as sitk
 
 from mdh_app.data_builders.ImageBuilder import construct_image
 from mdh_app.data_builders.RTStructBuilder import extract_rtstruct_and_roi_datasets
-from mdh_app.data_builders.RTPlanBuilder import RTPlanBuilder
 from mdh_app.data_builders.RTDoseBuilder import construct_dose
 from mdh_app.utils.dicom_utils import (
     read_dcm_file, get_first_ref_beam_number, get_first_num_fxns_planned, 
@@ -113,57 +110,6 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
     return mask_sitk
 
 
-class LRUBytesCache:
-    """LRU cache with a hard byte budget."""
-    __slots__ = ("_store", "_bytes", "max_bytes")
-
-    def __init__(self, max_bytes: int) -> None:
-        self._store: OrderedDict[Any, np.ndarray] = OrderedDict()
-        self._bytes: int = 0
-        self.max_bytes = max_bytes
-
-    @staticmethod
-    def _nbytes(arr: Optional[np.ndarray]) -> int:
-        return 0 if arr is None else int(arr.nbytes)
-
-    def _evict(self) -> None:
-        while self._bytes > self.max_bytes and self._store:
-            k, arr = self._store.popitem(last=False)
-            self._bytes -= self._nbytes(arr)
-
-    def get(self, key: Any) -> Optional[np.ndarray]:
-        if key not in self._store:
-            return None
-        arr = self._store.pop(key)
-        self._store[key] = arr  # move to MRU
-        return arr
-
-    def put(self, key: Any, arr: Optional[np.ndarray]) -> None:
-        if arr is None:
-            return
-        if key in self._store:
-            prev = self._store.pop(key)
-            self._bytes -= self._nbytes(prev)
-        self._store[key] = arr
-        self._bytes += self._nbytes(arr)
-        self._evict()
-
-    def pop(self, key: Any) -> None:
-        if key in self._store:
-            arr = self._store.pop(key)
-            self._bytes -= self._nbytes(arr)
-
-    def clear(self) -> None:
-        self._store.clear()
-        self._bytes = 0
-
-    def keys(self) -> List[Any]:
-        return list(self._store.keys())
-
-    def __len__(self) -> int:
-        return len(self._store)
-
-
 class DataManager:
     """Manages RT data loading and processing using SimpleITK."""
 
@@ -201,40 +147,44 @@ class DataManager:
     def initialize_data(self) -> None:
         """Initialize data structures and cache."""
         self.images: Dict[str, sitk.Image] = {}
+        self.image_fpaths: Dict[str, List[str]] = {}
         self.images_params: Dict[str, Dict[str, Any]] = {}
         self.rtstruct_datasets: Dict[str, Dataset] = {}
+        self.rtstruct_fpaths: Dict[str, str] = {}
         self.rtstruct_roi_metadata: Dict[str, Dict[int, Dict[str, Any]]] = {}
         self.rtstruct_roi_ds_dicts: Dict[str, Dict[int, Dict[str, Dataset]]] = {}
         self.rois: Dict[Tuple[str, int], sitk.Image] = {}
         self.rtplan_datasets: Dict[str, Dataset] = {}
+        self.rtplan_fpaths: Dict[str, str] = {}
         self.rtdoses: Dict[str, sitk.Image] = {}
+        self.rtdose_fpaths: Dict[str, str] = {}
         self._patient_objectives_dict: Dict[str, Any] = {}
         self.initialize_texture_cache()
-    
-    def clear_data(self) -> None:
-        """Clear all loaded data and trigger garbage collection."""
-        self.images.clear()
-        self.images_params.clear()
-        self.rtstruct_datasets.clear()
-        self.rtstruct_roi_metadata.clear()
-        self.rtstruct_roi_ds_dicts.clear()
-        self.rois.clear()
-        self.rtplan_datasets.clear()
-        self.rtdoses.clear()
-        self._patient_objectives_dict.clear()
-        self._clear_cache()
-        gc.collect()
     
     def initialize_texture_cache(self) -> None:
         """Initialize temporary texture cache."""
         self._cached_sitk_reference: Optional[sitk.Image] = None
         self._cached_texture_param_dict: Dict[str, Any] = {}
         self._cached_sitk_objects: Dict[Union[str, Tuple[str, int]], sitk.Image] = {}
-        self_cached_dose_sum: Optional[sitk.Image] = None
-        
-        # Byte budget: pull from config if available, default to 6 GiB
-        # max_bytes = int(getattr(self.conf_mgr, "get_cache_max_bytes", 6 * 1024 * 1024 * 1024))
-        # self._npy_cache = LRUBytesCache(max_bytes=max_bytes)
+        self._cached_dose_sum: Optional[sitk.Image] = None
+    
+    def clear_data(self) -> None:
+        """Clear all loaded data and trigger garbage collection."""
+        self.images.clear()
+        self.image_fpaths.clear()
+        self.images_params.clear()
+        self.rtstruct_datasets.clear()
+        self.rtstruct_fpaths.clear()
+        self.rtstruct_roi_metadata.clear()
+        self.rtstruct_roi_ds_dicts.clear()
+        self.rois.clear()
+        self.rtplan_datasets.clear()
+        self.rtplan_fpaths.clear()
+        self.rtdoses.clear()
+        self.rtdose_fpaths.clear()
+        self._patient_objectives_dict.clear()
+        self._clear_cache()
+        gc.collect()
     
     def _clear_cache(self) -> None:
         """Clear all cached temporary data."""
@@ -365,6 +315,9 @@ class DataManager:
     ### Image Data Methods ###
     def load_images(self, img_data: Dict[str, List[File]]) -> Dict[str, Any]:
         """Load IMAGEs and update internal data dictionary."""
+        if not img_data:
+            return
+        
         for series_instance_uid, files in img_data.items():
             if self.ss_mgr.cleanup_event.is_set() or self.ss_mgr.shutdown_event.is_set():
                 return
@@ -391,8 +344,9 @@ class DataManager:
                 logger.error(f"Mismatch in SeriesInstanceUID for IMAGE files '{file_paths}': metadata has '{series_instance_uid}' but DICOM has '{validate_series_uid}'. Skipping.")
                 continue
             
-            # Add to dictionary
+            # Add to dictionaries
             self.images[series_instance_uid] = sitk_image
+            self.image_fpaths[series_instance_uid] = file_paths
         
         self.images_params = {
             k: {
@@ -410,7 +364,11 @@ class DataManager:
         """Return list of available image SeriesInstanceUIDs."""
         return list(self.images.keys())
     
-    def get_image_metadata_by_series_uid(self, series_uid: str, metadata_key: Optional[str] = None, default: Any = None) -> Any:
+    def get_image_filepaths_by_series_uid(self, series_uid: str) -> List[str]:
+        """Get file paths for image using SeriesInstanceUID."""
+        return self.image_fpaths.get(series_uid, [])
+    
+    def get_image_metadata_by_series_uid_and_key(self, series_uid: str, metadata_key: Optional[str] = None, default: Any = None) -> Any:
         """Get metadata from image using SeriesInstanceUID.
         
         Args:
@@ -454,6 +412,9 @@ class DataManager:
     ### RTSTRUCT Data Methods ###
     def load_rtstructs(self, rtstruct_files: List[File]) -> None:
         """Load RTSTRUCTs and update internal data dictionary."""
+        if not rtstruct_files:
+            return
+        
         if not self.images:
             logger.error("No IMAGE data loaded; cannot load RTSTRUCT data without corresponding IMAGE.")
             return
@@ -505,8 +466,9 @@ class DataManager:
                 logger.error(f"Mismatch in SOPInstanceUID for RTSTRUCT file '{file_path}': metadata has '{sop_instance_uid}' but DICOM has '{validate_sopiuid}'. Skipping.")
                 continue
             
-            # Add to dictionary
+            # Add to dictionaries
             self.rtstruct_datasets[sop_instance_uid] = rtstruct_ds
+            self.rtstruct_fpaths[sop_instance_uid] = file_path
             self.rtstruct_roi_ds_dicts[sop_instance_uid] = roi_ds_dict
             
             # Add metadata for each ROI
@@ -538,7 +500,7 @@ class DataManager:
     ### RTSTRUCT ROI Data Methods ###
     def load_rtstruct_goals(self, patient_mrn: str) -> None:
         """Load and apply RTSTRUCT goals from JSON file."""
-        if not self.rtstruct_datasets:
+        if not patient_mrn or not self.rtstruct_datasets:
             return
 
         if not patient_mrn:
@@ -720,6 +682,10 @@ class DataManager:
                 return deepcopy(value) if return_deepcopy else value
         
         return default
+    
+    def get_rtstruct_filepath_by_uid(self, struct_uid: str) -> Optional[str]:
+        """Get file path for RTSTRUCT using SOPInstanceUID."""
+        return self.rtstruct_fpaths.get(struct_uid, None)
     
     def init_roi_gui_metadata_by_uid(self, struct_uid: str, roi_number: int) -> None:
         """
@@ -975,6 +941,9 @@ class DataManager:
     ### RTPLAN Data Methods ###
     def load_rtplans(self, rtplan_files: List[File]) -> None:
         """Load RTPLANs and update internal data dictionary."""
+        if not rtplan_files:
+            return
+        
         for rtplan_file in rtplan_files:
             if self.ss_mgr.cleanup_event.is_set() or self.ss_mgr.shutdown_event.is_set():
                 return
@@ -1002,13 +971,223 @@ class DataManager:
                 logger.error(f"Mismatch in SOPInstanceUID for RTPLAN file '{file_path}': metadata has '{sop_instance_uid}' but DICOM has '{validate_sop_instance_uid}'. Skipping.")
                 continue
             
-            # Add to dictionary
+            # Add to dictionaries
             self.rtplan_datasets[sop_instance_uid] = rtplan_ds
+            self.rtplan_fpaths[sop_instance_uid] = file_path
             logger.info(f"Loaded {modality} with SOPInstanceUID '{sop_instance_uid}'.")
+    
+    def get_rtplan_uids(self) -> List[str]:
+        """Return list of available RTPLAN SOPInstanceUIDs."""
+        return list(self.rtplan_datasets.keys())
+
+    def get_rtplan_ds_value_by_uid(self, rtplan_uid: str, metadata_key: str, default: Any = None, return_deepcopy: bool = True) -> Any:
+        """
+        Get data from an RTPLAN DICOM dataset using SOPInstanceUID.
+
+        Args:
+            rtplan_uid: RTPLAN SOPInstanceUID.
+            metadata_key: The metadata key to retrieve from the RTPLAN dataset.
+            default: Default value if key doesn't exist.
+            return_deepcopy: Whether to return a deepcopy of the value (default: True).
+
+        Returns:
+            The metadata value or default.
+        """
+        # Check RTPLAN existence
+        if rtplan_uid not in self.rtplan_datasets:
+            return default
+
+        # Get the RTPLAN dataset
+        rtplan_ds = self.rtplan_datasets[rtplan_uid]
+        value = rtplan_ds.get(metadata_key, default)
+        if value is not default:
+            return deepcopy(value) if return_deepcopy else value
+        return default
+    
+    def get_rtplan_filepath_by_uid(self, rtplan_uid: str) -> Optional[str]:
+        """Get file path for RTPLAN using SOPInstanceUID."""
+        return self.rtplan_fpaths.get(rtplan_uid, None)
+    
+    def get_rtplan_ds_beam_summary_by_uid(self, rtplan_uid: str, return_deepcopy: bool = True) -> List[Dict[str, Any]]:
+        """
+        Get a summary of beams from an RTPLAN DICOM dataset using SOPInstanceUID.
+
+        Args:
+            rtplan_uid: RTPLAN SOPInstanceUID.
+            return_deepcopy: Whether to return a deepcopy of the list (default: True).
+
+        Returns:
+            A list of dictionaries summarizing each beam.
+        """
+        # Check RTPLAN existence
+        if rtplan_uid not in self.rtplan_datasets:
+            return []
+
+        # Get the RTPLAN dataset
+        rtplan_ds = self.rtplan_datasets[rtplan_uid]
+        
+        # Get per-beam dose/meterset from FractionGroupSequence
+        beams_doses_metersets = {}
+        for fraction_grp_ds in rtplan_ds.get("FractionGroupSequence", []):
+            for ref_beam_ds in fraction_grp_ds.get("ReferencedBeamSequence", []):
+                ref_beam_number = ref_beam_ds.get("ReferencedBeamNumber", None)
+                if ref_beam_number is None:
+                    continue
+                beam_dose = ref_beam_ds.get("BeamDose", None)
+                beam_meterset = ref_beam_ds.get("BeamMeterset", None)
+                if beam_dose is None and beam_meterset is None:
+                    continue
+                beams_doses_metersets[ref_beam_number] = {
+                    "BeamDose": beam_dose,
+                    "BeamMeterset": beam_meterset,
+                }
+        
+        # Summarize per-beam info with TreatmentDeliveryType == "TREATMENT"
+        beam_summaries = []
+        
+        for beam_ds in rtplan_ds.get("BeamSequence", []):
+            beam_number = beam_ds.get("BeamNumber", None)
+            if beam_number is None:
+                continue
+            
+            treatment_delivery_type = beam_ds.get("TreatmentDeliveryType", "").strip().upper()
+            if treatment_delivery_type != "TREATMENT":
+                continue
+            
+            beam_dose_meterset = beams_doses_metersets.get(beam_number, {})
+            if not beam_dose_meterset:
+                continue
+            
+            beam_dose = beam_dose_meterset.get("BeamDose", None)
+            beam_meterset = beam_dose_meterset.get("BeamMeterset", None)
+            
+            treatment_machine_name = beam_ds.get("TreatmentMachineName", "")
+            primary_dosimeter_unit = beam_ds.get("PrimaryDosimeterUnit", "")
+            source_axis_distance = beam_ds.get("SourceAxisDistance", None)
+            beam_name = beam_ds.get("BeamName", "")
+            beam_description = beam_ds.get("BeamDescription", "")
+            beam_type = beam_ds.get("BeamType", "") # STATIC or DYNAMIC
+            radiation_type = beam_ds.get("RadiationType", "")  # PHOTON, ELECTRON, PROTON, NEUTRON
+            num_wedges = beam_ds.get("NumberOfWedges", 0)
+            num_compensators = beam_ds.get("NumberOfCompensators", 0)
+            num_boli = beam_ds.get("NumberOfBoli", 0)
+            num_blocks = beam_ds.get("NumberOfBlocks", 0)
+            num_control_points = beam_ds.get("NumberOfControlPoints", 0)
+            
+            fluence_mode = ""
+            fluence_mode_id = ""
+            for pfm_ds in beam_ds.get("PrimaryFluenceModeSequence", []):
+                fluence_mode = pfm_ds.get("FluenceMode", "")
+                fluence_mode_id = pfm_ds.get("FluenceModeID", "")
+            
+            energies = set()
+            dose_rates = set()
+            gantry_angles = set()
+            collimator_angles = set()
+            couch_angles = set()
+            isocenters = set()
+            for cp_ds in beam_ds.get("ControlPointSequence", []):
+                energy = cp_ds.get("NominalBeamEnergy", None)
+                if energy is not None:
+                    energies.add(energy)
+                dose_rate = cp_ds.get("DoseRateSet", None)
+                if dose_rate is not None:
+                    dose_rates.add(dose_rate)
+                gantry_angle = cp_ds.get("GantryAngle", None)
+                if gantry_angle is not None:
+                    gantry_angles.add(gantry_angle)
+                collimator_angle = cp_ds.get("BeamLimitingDeviceAngle", None)
+                if collimator_angle is not None:
+                    collimator_angles.add(collimator_angle)
+                couch_angle = cp_ds.get("PatientSupportAngle", None)
+                if couch_angle is not None:
+                    couch_angles.add(couch_angle)
+                isocenter = cp_ds.get("IsocenterPosition", None)
+                if isocenter is not None:
+                    isocenters.add(tuple(isocenter))
+
+            beam_info = {
+                "BeamNumber": beam_number,
+                "TreatmentDeliveryType": treatment_delivery_type,
+                "BeamDose": beam_dose,
+                "BeamMeterset": beam_meterset,
+                
+                "TreatmentMachineName": treatment_machine_name,
+                "PrimaryDosimeterUnit": primary_dosimeter_unit,
+                "SourceAxisDistance": source_axis_distance,
+                "BeamName": beam_name,
+                "BeamDescription": beam_description,
+                "BeamType": beam_type,
+                "RadiationType": radiation_type,
+                "NumberOfWedges": num_wedges,
+                "NumberOfCompensators": num_compensators,
+                "NumberOfBoli": num_boli,
+                "NumberOfBlocks": num_blocks,
+                "NumberOfControlPoints": num_control_points,
+                
+                "FluenceMode": fluence_mode,
+                "FluenceModeID": fluence_mode_id,
+                
+                "Unique Energies": sorted(energies),
+                "Unique Dose Rates": sorted(dose_rates),
+                "Unique Gantry Angles": sorted(gantry_angles),
+                "Unique Collimator Angles": sorted(collimator_angles),
+                "Unique Couch Angles": sorted(couch_angles),
+                "Number Of Unique Isocenters": len(isocenters),
+            }
+            beam_summaries.append(beam_info)
+        
+        return deepcopy(beam_summaries) if return_deepcopy else beam_summaries
+    
+    def get_rtplan_ds_overall_beam_summary_by_uid(self, rtplan_uid: str, beam_summaries: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+        """
+        Get an overall summary of beams from an RTPLAN DICOM dataset using SOPInstanceUID.
+
+        Args:
+            rtplan_uid: RTPLAN SOPInstanceUID.
+
+        Returns:
+            A dictionary summarizing overall beam info, or None if RTPLAN not found.
+        """
+        # Get beam summaries if not provided
+        if beam_summaries is None: 
+            beam_summaries = self.get_rtplan_ds_beam_summary_by_uid(rtplan_uid)
+        
+        # If no beam summaries found, return empty dict
+        if not beam_summaries: 
+            return {}
+        
+        # Aggregate overall info
+        primary_dosimeter_units = set(beam.get("PrimaryDosimeterUnit", "") for beam in beam_summaries if beam.get("PrimaryDosimeterUnit", ""))
+        primary_dosimeter_units = f"({', '.join(primary_dosimeter_units)})" if primary_dosimeter_units else "(N/A)"
+        return {
+            "Number of Treatment Beams": len(beam_summaries),
+            "Total Beam Dose (Gy)": sum(beam.get("BeamDose", 0) for beam in beam_summaries if isinstance(beam.get("BeamDose", None), (int, float))),
+            f"Total Beam Meterset {primary_dosimeter_units}": sum(beam.get("BeamMeterset", 0) for beam in beam_summaries if isinstance(beam.get("BeamMeterset", None), (int, float))),
+            "Unique Treatment Machines": sorted(set(beam.get("TreatmentMachineName", "") for beam in beam_summaries if beam.get("TreatmentMachineName", ""))),
+            "Unique Source-Axis Distances (mm)": sorted(set(beam.get("SourceAxisDistance", 0) for beam in beam_summaries if isinstance(beam.get("SourceAxisDistance", None), (int, float)) and beam.get("SourceAxisDistance", 0) > 0)),
+            "Unique Beam Types": sorted(set(beam.get("BeamType", "") for beam in beam_summaries if beam.get("BeamType", ""))),
+            "Unique Beam Energies": sorted(set(val for beam in beam_summaries for val in beam.get("Unique Energies", []))),
+            "Unique Radiation Types": sorted(set(beam.get("RadiationType", "") for beam in beam_summaries if beam.get("RadiationType", ""))),
+            "Number of Beams with Wedges": sum(beam.get("NumberOfWedges", 0) > 0 for beam in beam_summaries if isinstance(beam.get("NumberOfWedges", None), int)),
+            "Number of Beams with Compensators": sum(beam.get("NumberOfCompensators", 0) > 0 for beam in beam_summaries if isinstance(beam.get("NumberOfCompensators", None), int)),
+            "Number of Beams with Bolus": sum(beam.get("NumberOfBoli", 0) > 0 for beam in beam_summaries if isinstance(beam.get("NumberOfBoli", None), int)),
+            "Number of Beams with Blocks": sum(beam.get("NumberOfBlocks", 0) > 0 for beam in beam_summaries if isinstance(beam.get("NumberOfBlocks", None), int)),
+            "Total Number of Control Points": sum(beam.get("NumberOfControlPoints", 0) for beam in beam_summaries if isinstance(beam.get("NumberOfControlPoints", None), int)),
+            "Unique Fluence Modes": sorted(set(beam.get("FluenceMode", "") for beam in beam_summaries if beam.get("FluenceMode", ""))),
+            "Unique Fluence Mode IDs": sorted(set(beam.get("FluenceModeID", "") for beam in beam_summaries if beam.get("FluenceModeID", ""))),
+            "Unique Gantry Angles": sorted(set(val for beam in beam_summaries for val in beam.get("Unique Gantry Angles", []))),
+            "Unique Collimator Angles": sorted(set(val for beam in beam_summaries for val in beam.get("Unique Collimator Angles", []))),
+            "Unique Couch Angles": sorted(set(val for beam in beam_summaries for val in beam.get("Unique Couch Angles", []))),
+            "Number Of Unique Isocenters": sum(beam.get("Number Of Unique Isocenters", 0) for beam in beam_summaries if isinstance(beam.get("Number Of Unique Isocenters", None), int))
+        }
     
     ### RTDOSE Data Methods ###
     def load_rtdoses(self, rtdose_data: Dict[str, List[File]]) -> None:
         """Load RTDOSEs and update internal data dictionary."""
+        if not rtdose_data:
+            return
+        
         for dose_type, dose_files in rtdose_data.items():
             for dose_file in dose_files:
                 if self.ss_mgr.cleanup_event.is_set() or self.ss_mgr.shutdown_event.is_set():
@@ -1050,9 +1229,102 @@ class DataManager:
                         if beam_number is not None:
                             sitk_dose.SetMetaData("ReferencedRTPlanBeamNumber", str(beam_number))
                 
-                # Add the dose to the dictionary
+                # Add the dose to the dictionaries
                 self.rtdoses[sop_instance_uid] = sitk_dose
+                self.rtdose_fpaths[sop_instance_uid] = file_path
     
+    def get_rtdose_metadata_by_uid_and_key(self, rtdose_uid: str, metadata_key: str, default: Any = None, return_deepcopy: bool = True) -> Any:
+        """
+        Get data from an RTDOSE SimpleITK image using SOPInstanceUID.
+
+        Args:
+            rtdose_uid: RTDOSE SOPInstanceUID.
+            metadata_key: The metadata key to retrieve from the RTDOSE SimpleITK image.
+            default: Default value if key doesn't exist.
+            return_deepcopy: Whether to return a deepcopy of the value (default: True).
+
+        Returns:
+            The metadata value or default.
+        """
+        # Check RTDOSE existence
+        if rtdose_uid not in self.rtdoses:
+            return default
+
+        # Get the RTDOSE SimpleITK image
+        sitk_dose = self.rtdoses[rtdose_uid]
+        if not isinstance(sitk_dose, sitk.Image):
+            logger.error(f"RT Dose with UID {rtdose_uid} is not a valid SITK Image.")
+            return default
+        
+        # Get the metadata value
+        if not sitk_dose.HasMetaDataKey(metadata_key):
+            return default
+        
+        value = sitk_dose.GetMetaData(metadata_key)
+        return deepcopy(value) if return_deepcopy else value
+    
+    def get_rtdose_metadata_dict_by_uid(self, rtdose_uid: str, return_deepcopy: bool = True) -> Dict[str, str]:
+        """
+        Get all metadata from an RTDOSE SimpleITK image using SOPInstanceUID.
+
+        Args:
+            rtdose_uid: RTDOSE SOPInstanceUID.
+            return_deepcopy: Whether to return a deepcopy of the dict (default: True).
+
+        Returns:
+            The metadata dict or empty dict if RTDOSE not found.
+        """
+        # Check RTDOSE existence
+        if rtdose_uid not in self.rtdoses:
+            return {}
+
+        # Get the RTDOSE SimpleITK image
+        sitk_dose = self.rtdoses[rtdose_uid]
+        if not isinstance(sitk_dose, sitk.Image):
+            logger.error(f"RT Dose with UID {rtdose_uid} is not a valid SITK Image.")
+            return {}
+        
+        # Get all metadata keys and values
+        metadata_dict = {key: sitk_dose.GetMetaData(key) for key in sitk_dose.GetMetaDataKeys()}
+        return deepcopy(metadata_dict) if return_deepcopy else metadata_dict
+    
+    def get_rtdose_filepath_by_uid(self, rtdose_uid: str) -> Optional[str]:
+        """Get file path for RTDOSE using SOPInstanceUID."""
+        return self.rtdose_fpaths.get(rtdose_uid, None)
+    
+    def set_rtdose_metadata_by_uid_and_key(self, rtdose_uid: str, metadata_key: str, metadata_value: str) -> bool:
+        """
+        Set metadata in an RTDOSE SimpleITK image using SOPInstanceUID.
+
+        Args:
+            rtdose_uid: RTDOSE SOPInstanceUID.
+            metadata_key: The metadata key to set in the RTDOSE SimpleITK image.
+            metadata_value: The value to set for the metadata key.
+
+        Returns:
+            True if the metadata was set successfully, False otherwise.
+        """
+        # Check RTDOSE existence
+        if rtdose_uid not in self.rtdoses:
+            logger.error(f"Cannot set metadata for RTDOSE with UID '{rtdose_uid}': RTDOSE not found.")
+            return False
+
+        # Get the RTDOSE SimpleITK image
+        sitk_dose = self.rtdoses[rtdose_uid]
+        if not isinstance(sitk_dose, sitk.Image):
+            logger.error(f"RT Dose with UID {rtdose_uid} is not a valid SITK Image.")
+            return False
+        
+        # Set the metadata key/value
+        try:
+            sitk_dose.SetMetaData(metadata_key, str(metadata_value))
+            logger.info(f"Set metadata key '{metadata_key}' for RTDOSE with UID '{rtdose_uid}' to '{metadata_value}'.")
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to set metadata key '{metadata_key}' for RTDOSE with UID '{rtdose_uid}': {exc}")
+            return False
+    
+    ### RTPLAN/RTDOSE Mapping Methods ###
     def get_rtp_rtd_mappings(self) -> Dict[str, Union[List[str], Dict[str, List[str]]]]:
         """
         Returns dict with:
@@ -1324,7 +1596,7 @@ class DataManager:
             # Add crosshairs to the base layer
             self._draw_slice_crosshairs(
                 base_layer, 
-                texture_params["show_crosshairs"], 
+                texture_params.get("show_crosshairs", False), 
                 view_type, 
                 texture_params["xyz_slices"], 
                 texture_params["xyz_ranges"]

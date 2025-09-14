@@ -8,11 +8,11 @@ from typing import Any, Set, List, Tuple, Union, TYPE_CHECKING
 import dearpygui.dearpygui as dpg
 
 
+from mdh_app.dpg_components.core.utils import get_user_data
+
+
 if TYPE_CHECKING:
     from mdh_app.managers.config_manager import ConfigManager
-
-
-from mdh_app.dpg_components.core.utils import get_user_data
 
 
 logger = logging.getLogger(__name__)
