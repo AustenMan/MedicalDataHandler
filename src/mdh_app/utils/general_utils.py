@@ -114,10 +114,40 @@ def atomic_save(
             except Exception:
                 pass
         if error_message:
-            logger.exception(error_message)
+            logger.exception(error_message, exc_info=True, stack_info=True)
         else:
-            logger.exception(f"Failed to save file '{filepath}'.")
+            logger.exception(f"Failed to save file '{filepath}'.", exc_info=True, stack_info=True)
         return False
+
+
+def sanitize_path_component(component: str, max_length: int = 255) -> str:
+    """
+    Remove invalid chars and trim component only if exceeds filesystem limits.
+    Windows: 255 chars per component, Linux: 255 bytes (UTF-8).
+    """
+    # Remove invalid characters for Windows/Linux
+    # Windows forbidden: < > : " | ? * \ / plus control chars 0-31
+    invalid_chars = '<>:"|?*\\/\x00-\x1f'
+    cleaned = ''.join(c for c in component if c not in invalid_chars and ord(c) > 31)
+    
+    # Only trim if still too long after cleaning
+    if len(cleaned.encode('utf-8')) <= max_length:
+        return cleaned
+    
+    # Keep extension if present
+    name, ext = os.path.splitext(cleaned)
+    ext_bytes = len(ext.encode('utf-8'))
+    
+    # Binary search for max valid length
+    left, right = 0, len(name)
+    while left < right:
+        mid = (left + right + 1) // 2
+        if len(name[:mid].encode('utf-8')) + ext_bytes <= max_length:
+            left = mid
+        else:
+            right = mid - 1
+    
+    return name[:left] + ext
 
 
 def get_source_dir() -> str:
@@ -278,57 +308,76 @@ def validate_directory(path_str: str) -> Tuple[bool, Optional[str], str]:
         return False, None, "No directory provided."
 
     path = Path(path_str.strip())
+    
+    # Check for invalid characters in path components
     for part in path.parts:
-        # Skip the drive letter check on Windows
-        if os.name == 'nt' and re.match(r'^[A-Za-z]:\\?$', part):
+        # Skip drive letter on Windows (e.g., "C:" or "C:\")
+        if os.name == 'nt' and re.match(r'^[A-Za-z]:$', part):
             continue
-        invalid_chars = r'[<>:"/\\|?*\x00-\x1F]' if os.name == 'nt' else r'[<>:"|?*\x00-\x1F]'
+        # Skip root slash on Unix
+        if part in ('/', '\\'):
+            continue
+        
+        invalid_chars = r'[<>:"|?*\x00-\x1F]'  # Same for both OS now
         if re.search(invalid_chars, part):
-            return False, None, f"Invalid characters in path: {path_str}"
+            return False, None, f"Invalid characters in path component: {part}"
 
     if not path.is_absolute():
         return False, None, f"Path is not absolute: {path_str}"
 
+    # Find nearest existing parent
     existing_path = path
     while not existing_path.exists() and existing_path != existing_path.parent:
         existing_path = existing_path.parent
 
     if not existing_path.exists():
-        return False, None, f"Path does not exist: {path_str}"
+        return False, None, f"No valid parent directory exists: {path_str}"
 
     if not os.access(existing_path, os.W_OK):
-        return False, None, f"Path is not writable: {path_str}"
+        return False, None, f"Path is not writable: {existing_path}"
 
-    abs_path = os.path.abspath(path)
+    abs_path = str(path.resolve())
     return True, abs_path, f"Valid directory: {abs_path}"
 
 
 def validate_filename(filename_str: str) -> str:
-    """
-    Clean a filename by removing any directory parts, invalid characters,
-    and known file extensions. Returns an empty string if the filename is empty.
-    """
+    """Clean filename: remove paths, extensions, invalid chars. Max 255 bytes."""
     if not filename_str:
         return ""
-
-    filename = os.path.basename(filename_str.strip()).strip()
-    known_extensions = {
-        '.txt', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.png', '.jpg', '.jpeg',
-        '.gif', '.bmp', '.tiff', '.csv', '.json', '.xml', '.html', '.htm', '.zip',
-        '.tar', '.gz', '.rar', '.7z', '.exe', '.dll', '.py', '.java', '.c', '.cpp',
-        '.js', '.css', '.md', '.ini', '.log', '.mov', '.mp4', '.mp3', '.wav', ".dcm",
-        ".nii", ".nii.gz", ".npy", ".npz", ".mat", ".mha", ".mhd", ".stl", ".obj",
-    }
-    root, ext = os.path.splitext(filename)
-    if ext.lower() in known_extensions:
-        filename = root
-
-    if not filename.strip():
+    
+    filename = os.path.basename(filename_str.strip())
+    
+    # Handle multi-part extensions
+    for ext in ['.nii.gz', '.tar.gz']:  # Check these first
+        if filename.lower().endswith(ext):
+            filename = filename[:-len(ext)]
+            break
+    else:
+        # Single extension check
+        known_extensions = {
+            '.txt', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.png', '.jpg', '.jpeg',
+            '.gif', '.bmp', '.tiff', '.csv', '.json', '.xml', '.html', '.htm', '.zip',
+            '.tar', '.gz', '.rar', '.7z', '.exe', '.dll', '.py', '.java', '.c', '.cpp',
+            '.js', '.css', '.md', '.ini', '.log', '.mov', '.mp4', '.mp3', '.wav', ".dcm",
+            ".nii", ".npy", ".npz", ".nrrd", ".mat", ".mha", ".mhd", ".stl", ".obj",
+        }
+        
+        root, ext = os.path.splitext(filename)
+        if ext.lower() in known_extensions:
+            filename = root
+    
+    if not filename:
         return ""
 
-    invalid_chars = r'[<>:"/\\|?*\x00-\x1F]' if os.name == 'nt' else r'[<>:"|?*\x00-\x1F]'
-    filename = re.sub(invalid_chars, "", filename)
-    return filename[:255]
+    # Remove invalid chars
+    invalid = r'[<>:"/\\|?*\x00-\x1F]' if os.name == 'nt' else r'[<>:"/\\|?*\x00-\x1F]'
+    filename = re.sub(invalid, "", filename)
+    
+    # Limit to 255 bytes
+    while len(filename.encode('utf-8')) > 255:
+        filename = filename[:-1]
+    
+    return filename
 
 
 def regex_find_dose_and_fractions(roi_name: str) -> Dict[str, Optional[Union[float, int]]]:

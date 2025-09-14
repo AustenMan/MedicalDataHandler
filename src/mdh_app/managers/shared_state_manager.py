@@ -90,7 +90,7 @@ class SharedStateManager:
                 if not self.cleanup_event.is_set():
                     func(*args, **kwargs)
             except Exception as e:
-                logger.exception(f"Failed to perform '{get_callable_name(func)}'.")
+                logger.exception(f"Failed to perform '{get_callable_name(func)}'.", exc_info=True, stack_info=True)
             finally:
                 self.action_event.clear()
                 self._action_queue.task_done()
@@ -117,12 +117,12 @@ class SharedStateManager:
             try:
                 func(*args, **kwargs)
             except Exception as e:
-                logger.exception(f"Failed to render the texture using '{get_callable_name(func)}'.")
+                logger.exception(f"Failed to render the texture using '{get_callable_name(func)}'.", exc_info=True, stack_info=True)
     
     def submit_action(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
         """Submit action for execution."""
         if self.shutdown_event.is_set():
-            logger.info(f"'{get_callable_name(func)}' was not performed because program is shutting down.")
+            logger.info(f"Skipped '{get_callable_name(func)}' - shutting down")
         else:
             try:
                 busy = self.action_event.is_set()
@@ -130,12 +130,12 @@ class SharedStateManager:
                 if busy:
                     logger.info(f"'{get_callable_name(func)}' was successfully queued up next (another action is in progress).")
             except queue.Full:
-                logger.info(f"'{get_callable_name(func)}' was not performed because an action is already in progress; try again afterwards.")
+                logger.info(f"Skipped '{get_callable_name(func)}' - action in progress")
     
     def submit_texture_update(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
         """Submit texture update with priority handling (reset=0, initialize=1, update=2)."""
         if self.shutdown_event.is_set():
-            logger.info(f"'{get_callable_name(func)}' was not performed because program shutdown in progress.")
+            logger.info(f"Skipped '{get_callable_name(func)}' - shutdown in progress")
             return
 
         action_type = kwargs.get("texture_action_type", "update")
@@ -147,14 +147,14 @@ class SharedStateManager:
     def submit_executor_action(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Optional[concurrent.futures.Future]:
         """Submit action to executor pool."""
         if self.shutdown_event.is_set():
-            logger.info(f"Executor '{get_callable_name(func)}' was not performed because program is shutting down.")
+            logger.info(f"Skipped executor '{get_callable_name(func)}' - shutting down")
         elif self._executor is None:
-            logger.info("Executor action was not performed because the executor does not exist. It must be started first.")
+            logger.info("Executor not initialized")
         else:
             try:
                 return self._executor.submit(func, *args, **kwargs)
             except Exception as e:
-                logger.exception(f"Submission failed for executor '{get_callable_name(func)}'.")
+                logger.exception(f"Submission failed for executor '{get_callable_name(func)}'.", exc_info=True, stack_info=True)
         return None
     
     def startup_executor(self, use_process_pool: bool = False, max_workers: Optional[int] = None) -> None:

@@ -2,20 +2,16 @@ from __future__ import annotations
 
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Union
-from os.path import join
-from json import dump, dumps, loads
-
+from typing import TYPE_CHECKING, Any, Dict, List, Union
+from os import makedirs
+from os.path import join, dirname
 
 import dearpygui.dearpygui as dpg
-import SimpleITK as sitk
 
 
 from mdh_app.database.db_utils import update_patient_processed_at
 from mdh_app.dpg_components.core.utils import get_tag, get_user_data
-from mdh_app.utils.general_utils import validate_filename, atomic_save
-from mdh_app.utils.numpy_utils import create_HU_to_RED_map
-from mdh_app.utils.sitk_utils import sitk_to_array, array_to_sitk, sitk_resample_to_reference
+from mdh_app.utils.general_utils import validate_filename, sanitize_path_component
 
 
 if TYPE_CHECKING:
@@ -44,7 +40,7 @@ def _execute_saving(sender: Union[str, int], app_data: Any, user_data: Any) -> N
     conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
     
     if not dpg.does_item_exist(tag_ptinfo_button):
-        logger.error("No patient information found. Cannot save. Please load a patient before saving data.")
+        logger.error("No patient data - load patient first")
         return
     
     active_pt: Patient = dpg.get_item_user_data(tag_ptinfo_button)
@@ -60,31 +56,30 @@ def _execute_saving(sender: Union[str, int], app_data: Any, user_data: Any) -> N
     if not dpg.does_item_exist(tag_save_window):
         return
     
-    logger.info("Starting save action...")
+    logger.info("Saving data")
     
-    save_data_dict = dpg.get_item_user_data(tag_save_window)
+    save_selections_dict = dpg.get_item_user_data(tag_save_window)
     
     patient_mrn, patient_name = active_pt.mrn, active_pt.name
     update_patient_processed_at(active_pt)
     
-    # TODO: Save to a folder for Study?
-    base_save_path = conf_mgr.get_nifti_data_save_dir([patient_mrn, patient_name])
+    base_save_path = conf_mgr.get_dir_in_saved_data_dir([patient_mrn])
     if base_save_path is None:
-        logger.error(f"Failed to create save directory for {patient_mrn}, {patient_name}. Cancelling save.")
+        logger.error(f"Failed to create save directory for {patient_mrn}. Cancelling save.")
         return
     
-    _process_image_saving(sender, save_data_dict, base_save_path)
-    _process_roi_saving(sender, save_data_dict, base_save_path)
-    _process_plan_saving(sender, save_data_dict, base_save_path)
-    _process_dose_saving(sender, save_data_dict, base_save_path)
+    _process_image_saving(sender, save_selections_dict, base_save_path)
+    _process_roi_saving(sender, save_selections_dict, base_save_path)
+    _process_plan_saving(sender, save_selections_dict, base_save_path)
+    _process_dose_saving(sender, save_selections_dict, base_save_path)
     
-    if sender == save_data_dict["execute_bulk_save_tag"]:
+    if sender == save_selections_dict["execute_bulk_save_tag"]:
         logger.info("Save action is complete.")
         if dpg.does_item_exist(tag_save_window):
             dpg.hide_item(tag_save_window)
 
 
-def _process_image_saving(sender: Union[str, int], save_data_dict: Dict[str, Any], base_save_path: str) -> None:
+def _process_image_saving(sender: Union[str, int], save_selections_dict: Dict[str, Any], base_save_path: str) -> None:
     """
     Process and save images according to user settings.
 
@@ -93,26 +88,25 @@ def _process_image_saving(sender: Union[str, int], save_data_dict: Dict[str, Any
     
     Args:
         sender: The UI element tag that triggered the save.
-        save_data_dict: Dictionary containing save settings and image data.
+        save_selections_dict: Dictionary containing save settings and image data.
         base_save_path: Base directory path for saving images.
     """
-    keep_custom_params = dpg.get_value(save_data_dict["main_checkboxes"]["keep_custom_params"])
-    save_in_bulk = sender == save_data_dict["execute_bulk_save_tag"]
+    keep_custom_params = dpg.get_value(save_selections_dict["main_checkboxes"]["keep_custom_params"])
+    save_in_bulk = sender == save_selections_dict["execute_bulk_save_tag"]
     data_mgr: DataManager = get_user_data(td_key="data_manager")
-    conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
     
-    convert_ct_hu_to_red = dpg.get_value(save_data_dict["main_checkboxes"]["convert_ct_hu_to_red"])
-    override_image_with_roi_RED = dpg.get_value(save_data_dict["main_checkboxes"]["override_image_with_roi_RED"])
+    convert_ct_hu_to_red = dpg.get_value(save_selections_dict["main_checkboxes"]["convert_ct_hu_to_red"])
+    override_image_with_roi_RED = dpg.get_value(save_selections_dict["main_checkboxes"]["override_image_with_roi_RED"])
     roi_overrides = (
         [
-            (roi_dict["data"], dpg.get_value(roi_dict["roi_phys_prop_tag"]))
-            for roi_dict in save_data_dict["rois"]
+            (roi_dict["data_key"], dpg.get_value(roi_dict["roi_phys_prop_tag"]))
+            for roi_dict in save_selections_dict["rois"]
             if dpg.get_value(roi_dict["roi_phys_prop_tag"]) >= 0.0
         ]
         if override_image_with_roi_RED else []
     )
     
-    for image_dict in save_data_dict["images"]:
+    for image_dict in save_selections_dict["images"]:
         if save_in_bulk and not dpg.get_value(image_dict["bulksave_tag"]):
             continue
         elif not save_in_bulk and sender != image_dict["save_tag"]:
@@ -130,73 +124,44 @@ def _process_image_saving(sender: Union[str, int], save_data_dict: Dict[str, Any
             )
             continue
         
-        save_path = join(base_save_path, validated_filename + ".nii")
+        study_dir = sanitize_path_component(image_dict.get("study_instance_uid", "UNKNOWN"))
+        modality = image_dict.get("modality", "IMAGE")
+        series_instance_uid = image_dict.get("series_instance_uid") # never missing
+        series_dir = sanitize_path_component(f"{modality.upper().strip()}.{series_instance_uid}")
+        save_path = join(base_save_path, study_dir, series_dir, validated_filename + ".nrrd")
+        makedirs(dirname(save_path), exist_ok=True)
         
-        image_sitk_ref = image_dict["data"]
-        image_sitk = image_sitk_ref()
-        if image_sitk is None:
-            logger.error(f"No SITK image found for {image_dict['modality']} image. Skipping save.")
-            continue
-        
-        modality = image_dict["modality"]
-        if modality.upper().strip() == "CT" and convert_ct_hu_to_red:
-            data_array = sitk_to_array(image_sitk)
-            data_array = create_HU_to_RED_map(
-                hu_values=conf_mgr.get_ct_HU_map_vals(), 
-                red_values=conf_mgr.get_ct_RED_map_vals()
-            )(data_array) # Convert HU to RED
-            
-            if roi_overrides:
-                for roi_sitk_ref, roi_red in roi_overrides:
-                    if roi_sitk_ref() is None or roi_red < 0.0:
-                        continue
-                    roi_array = sitk_to_array(roi_sitk_ref(), bool)
-                    data_array[roi_array] = roi_red
-            
-            new_image_sitk = array_to_sitk(data_array, image_sitk, copy_metadata=True)
-        else:
-            new_image_sitk = image_sitk
-        
-        if keep_custom_params:
-            new_image_sitk = data_mgr._resample_sitk_to_cached_reference(new_image_sitk)
-        
-        try:
-            sitk.WriteImage(new_image_sitk, save_path)
-            logger.info(f"SITK Image saved to: {save_path}")
-        except Exception as e:
-            logger.exception(f"Failed to save SITK Image to: {save_path}.")
+        data_mgr.save_image(
+            series_uid=series_instance_uid,
+            roi_overrides=roi_overrides,
+            output_path=save_path,
+            convert_ct_hu_to_red=convert_ct_hu_to_red,
+            use_cached_data=keep_custom_params
+        )
 
 
-def _process_roi_saving(sender: Union[str, int], save_data_dict: Dict[str, Any], base_save_path: str) -> None:
+def _process_roi_saving(sender: Union[str, int], save_selections_dict: Dict[str, Any], base_save_path: str) -> None:
     """
     Process and save Regions of Interest (ROIs) based on user settings.
 
-    ROIs with the same validated filename are merged (via summing their binary masks) and saved as one image.
+    ROIs with the same validated filename are merged and saved as one image.
     
     Args:
         sender: The UI element tag that triggered the save.
-        save_data_dict: Dictionary containing save settings and ROI data.
+        save_selections_dict: Dictionary containing save settings and ROI data.
         base_save_path: Base directory path for saving ROIs.
     """
-    keep_custom_params = dpg.get_value(save_data_dict["main_checkboxes"]["keep_custom_params"])
-    save_in_bulk = sender == save_data_dict["execute_bulk_save_tag"]
+    keep_custom_params = dpg.get_value(save_selections_dict["main_checkboxes"]["keep_custom_params"])
+    save_in_bulk = sender == save_selections_dict["execute_bulk_save_tag"]
     data_mgr: DataManager = get_user_data(td_key="data_manager")
     
     # Initialize a dictionary to collect ROIs with the same filenames
-    roi_files_dict: Dict[str, Any] = {}
-    for roi_dict in save_data_dict["rois"]:
+    rois_to_save: Dict[str, List[int]] = {}
+    for roi_dict in save_selections_dict["rois"]:
         if save_in_bulk and not dpg.get_value(roi_dict["bulksave_tag"]):
             continue
         elif not save_in_bulk and sender != roi_dict["save_tag"]:
             continue
-        
-        roi_sitk_ref = roi_dict["data"]
-        roi_sitk = roi_sitk_ref()
-        if roi_sitk is None:
-            continue
-        
-        if keep_custom_params:
-            roi_sitk = data_mgr._resample_sitk_to_cached_reference(roi_sitk)
         
         # Build the filename for the ROI and the save path
         save_filename = dpg.get_value(roi_dict["filename_tag"])
@@ -209,49 +174,40 @@ def _process_roi_saving(sender: Union[str, int], save_data_dict: Dict[str, Any],
                 )
             )
             continue
-        save_path = join(base_save_path, validated_filename + ".nii")
         
-        # Collect roi_sitk images for each validated filename
-        if save_path not in roi_files_dict:
-            roi_files_dict[save_path] = roi_sitk
-        else:
-            existing_roi_sitk = roi_files_dict[save_path]
-            
-            curr_roi_goals = loads(existing_roi_sitk.GetMetaData("roi_goals"))
-            new_roi_goals = loads(data_sitk.GetMetaData("roi_goals"))
-            new_roi_goals.update(curr_roi_goals)
-            
-            existing_roi_array = sitk_to_array(existing_roi_sitk, bool)
-            roi_array = sitk_to_array(roi_sitk, bool)
-            
-            new_roi_array = existing_roi_array + roi_array
-            new_roi_sitk = array_to_sitk(new_roi_array, existing_roi_sitk, copy_metadata=True)
-            
-            new_roi_sitk.SetMetaData("roi_goals", dumps(new_roi_goals))
-            
-            roi_files_dict[save_path] = new_roi_sitk
+        study_dir = sanitize_path_component(roi_dict.get("study_instance_uid", "UNKNOWN"))
+        modality = roi_dict.get("modality", "RTSTRUCT")
+        sop_instance_uid = roi_dict.get("sop_instance_uid") # never missing
+        sop_dir = sanitize_path_component(f"{modality.upper().strip()}.{sop_instance_uid}")
+        save_path = join(base_save_path, study_dir, sop_dir, validated_filename + ".nrrd")
+        makedirs(dirname(save_path), exist_ok=True)
+        
+        rtp_sopiuid, roi_number = roi_dict["data_key"]
+        rois_to_save.setdefault(save_path, []).append((rtp_sopiuid, roi_number))
     
     # After collecting, combine and save the ROIs with the same filenames
-    for save_path, data_sitk in roi_files_dict.items():
-        try:
-            sitk.WriteImage(data_sitk, save_path)
-            logger.info(f"SITK ROI saved to: {save_path}")
-        except Exception as e:
-            logger.exception(f"Failed to write SITK ROI to {save_path}.")
+    for save_path, roi_keys in rois_to_save.items():
+        data_mgr.save_roi(
+            struct_uid=roi_keys[0][0],
+            roi_numbers=[roi_key[1] for roi_key in roi_keys],
+            output_path=save_path,
+            use_cached_data=keep_custom_params
+        )
 
 
-def _process_plan_saving(sender: Union[str, int], save_data_dict: Dict[str, Any], base_save_path: str) -> None:
+def _process_plan_saving(sender: Union[str, int], save_selections_dict: Dict[str, Any], base_save_path: str) -> None:
     """
     Process and save RT Plan data based on user settings.
     
     Args:
         sender: The UI element tag triggering the save.
-        save_data_dict: Dictionary containing save settings and RT Plan data.
+        save_selections_dict: Dictionary containing save settings and RT Plan data.
         base_save_path: Base directory path for saving RT Plans.
     """
-    save_in_bulk = sender == save_data_dict["execute_bulk_save_tag"]
+    data_mgr: DataManager = get_user_data(td_key="data_manager")
+    save_in_bulk = sender == save_selections_dict["execute_bulk_save_tag"]
     
-    for plan_dict in save_data_dict["plans"]:
+    for plan_dict in save_selections_dict["plans"]:
         if save_in_bulk and not dpg.get_value(plan_dict["bulksave_tag"]):
             continue
         elif not save_in_bulk and sender != plan_dict["save_tag"]:
@@ -267,18 +223,21 @@ def _process_plan_saving(sender: Union[str, int], save_data_dict: Dict[str, Any]
                 )
             )
             continue
-        save_path = join(base_save_path, validated_filename + ".json")
         
-        rtplan_dict = plan_dict["data"]
-        atomic_save(
-            filepath=save_path, 
-            write_func=lambda file: dump(rtplan_dict, file),
-            success_message=f"RT Plan saved to: {save_path}",
-            error_message=f"Failed to save RT Plan to {save_path}."
+        study_dir = sanitize_path_component(plan_dict.get("study_instance_uid", "UNKNOWN"))
+        modality = plan_dict.get("modality", "RTPLAN")
+        sop_instance_uid = plan_dict.get("sop_instance_uid") # never missing
+        sop_dir = sanitize_path_component(f"{modality.upper().strip()}.{sop_instance_uid}")
+        save_path = join(base_save_path, study_dir, sop_dir, validated_filename + ".json")
+        makedirs(dirname(save_path), exist_ok=True)
+        
+        data_mgr.save_plan(
+            plan_uid=plan_dict["data_key"],
+            output_path=save_path
         )
 
 
-def _process_dose_saving(sender: Union[str, int], save_data_dict: Dict[str, Any], base_save_path: str) -> None:
+def _process_dose_saving(sender: Union[str, int], save_selections_dict: Dict[str, Any], base_save_path: str) -> None:
     """
     Process and save RT Dose data based on user settings.
 
@@ -286,51 +245,56 @@ def _process_dose_saving(sender: Union[str, int], save_data_dict: Dict[str, Any]
     
     Args:
         sender: The UI element tag triggering the save.
-        save_data_dict: Dictionary containing save settings and RT Dose data.
+        save_selections_dict: Dictionary containing save settings and RT Dose data.
         base_save_path: Base directory path for saving RT Doses.
     """
-    keep_custom_params = dpg.get_value(save_data_dict["main_checkboxes"]["keep_custom_params"])
-    save_in_bulk = sender == save_data_dict["execute_bulk_save_tag"]
+    keep_custom_params = dpg.get_value(save_selections_dict["main_checkboxes"]["keep_custom_params"])
+    save_in_bulk = sender == save_selections_dict["execute_bulk_save_tag"]
     data_mgr: DataManager = get_user_data(td_key="data_manager")
     
-    dosesum_name = dpg.get_value(save_data_dict["main_checkboxes"]["dosesum_name_tag"])
-    
-    dose_sum_list: List[Any] = [
-        data_mgr._resample_sitk_to_cached_reference(dose_dict["data"]())
-        if keep_custom_params else dose_dict["data"]()
-        for dose_dict in save_data_dict["doses"]
-        if dose_dict["data"]() is not None and dpg.get_value(dose_dict["dosesum_checkbox_tag"])
+    # Handle dose sum if multiple selected
+    dose_sum_list = [
+        dose_dict["data_key"] 
+        for dose_dict in save_selections_dict["doses"] 
+        if dpg.get_value(dose_dict["dosesum_checkbox_tag"])
     ]
     
-    if len(dose_sum_list) > 1 and (
-        save_in_bulk or any(
+    if len(dose_sum_list) > 1:
+        # Check if sum was triggered
+        sum_triggered = save_in_bulk or any(
             sender == dose_dict["save_tag"] and dpg.get_value(dose_dict["dosesum_checkbox_tag"])
-            for dose_dict in save_data_dict["doses"]
+            for dose_dict in save_selections_dict["doses"]
         )
-    ):
-        save_filename = dosesum_name
-        validated_filename = validate_filename(save_filename)
-        if validated_filename:
-            save_path = join(base_save_path, validated_filename + ".nii")
+        
+        # If sum is triggered, save the sum and skip individual saves
+        if sum_triggered:
+            dosesum_name = dpg.get_value(save_selections_dict["main_checkboxes"]["dosesum_name_tag"])
+            validated_filename = validate_filename(dosesum_name)
             
-            dose_sum_array = sitk_to_array(dose_sum_list[0])
-            for dose_sitk in dose_sum_list[1:]:
-                dose_sum_array += sitk_to_array(sitk_resample_to_reference(dose_sitk, dose_sum_list[0]))
-            dose_sum_sitk = array_to_sitk(dose_sum_array, dose_sum_list[0], copy_metadata=True)
-            dose_sum_sitk.SetMetaData("DoseSummationType", "MULTI_PLAN")
-            try:
-                sitk.WriteImage(dose_sum_sitk, save_path)
-            except Exception as e:
-                logger.exception(f"Failed to write combined RT Dose to {save_path}.")
-        else:
-            logger.error(
-                msg=(
-                    f"No filename specified for RT Dose Sum. Received: {save_filename}, "
-                    f"which was cleaned to: {validated_filename}. Skipping save."
+            if not validated_filename:
+                logger.error(f"Invalid dose sum filename: '{dosesum_name}'. Skipping sum.")
+            else:
+                # Get all unique paths to save the dose sum at
+                paths = set()
+                for dose_dict in save_selections_dict["doses"]:
+                    if dose_dict["data_key"] in dose_sum_list:  # Only for summed doses
+                        study_dir = sanitize_path_component(dose_dict.get("study_instance_uid", "UNKNOWN"))
+                        modality = dose_dict.get("modality", "RTDOSE")
+                        sop_instance_uid = dose_dict.get("sop_instance_uid")
+                        sop_dir = sanitize_path_component(f"{modality.upper().strip()}.{sop_instance_uid}")
+                        path = join(base_save_path, study_dir, sop_dir, validated_filename + ".nrrd")
+                        makedirs(dirname(path), exist_ok=True)
+                        paths.add(path)
+                paths = list(paths)
+                
+                # Save the dose sum to all paths
+                data_mgr.save_dose(
+                    dose_uids=dose_sum_list,
+                    output_paths=paths,
+                    use_cached_data=keep_custom_params
                 )
-            )
     
-    for dose_dict in save_data_dict["doses"]:
+    for dose_dict in save_selections_dict["doses"]:
         if save_in_bulk and not dpg.get_value(dose_dict["bulksave_tag"]):
             continue
         elif not save_in_bulk and sender != dose_dict["save_tag"]:
@@ -338,6 +302,7 @@ def _process_dose_saving(sender: Union[str, int], save_data_dict: Dict[str, Any]
         
         save_filename = dpg.get_value(dose_dict["filename_tag"])
         validated_filename = validate_filename(save_filename)
+        
         if not validated_filename:
             logger.error(
                 msg=(
@@ -346,28 +311,19 @@ def _process_dose_saving(sender: Union[str, int], save_data_dict: Dict[str, Any]
                 )
             )
             continue
-        save_path = join(base_save_path, validated_filename + ".nii")
         
-        dose_sitk_ref: Callable[[], Any] = dose_dict["data"]
-        dose_sitk = dose_sitk_ref()
-        if dose_sitk is None:
-            continue
+        study_dir = sanitize_path_component(dose_dict.get("study_instance_uid", "UNKNOWN"))
+        modality = dose_dict.get("modality", "RTDOSE")
+        sop_instance_uid = dose_dict.get("sop_instance_uid") # never missing
+        sop_dir = sanitize_path_component(f"{modality.upper().strip()}.{sop_instance_uid}")
+        save_path = join(base_save_path, study_dir, sop_dir, validated_filename + ".nrrd")
+        makedirs(dirname(save_path), exist_ok=True)
         
-        if keep_custom_params:
-            dose_sitk = data_mgr._resample_sitk_to_cached_reference(dose_sitk)
-        
-        num_dose_fxns = dpg.get_value(dose_dict["num_dose_fxns_tag"])
-        num_plan_fxns = dpg.get_value(dose_dict["num_plan_fxns_tag"])
-        if num_dose_fxns and num_plan_fxns and num_dose_fxns > 0 and num_plan_fxns > 0 and num_dose_fxns != num_plan_fxns:
-            scaling_ratio = num_plan_fxns / num_dose_fxns
-            dose_array = sitk_to_array(dose_sitk) * scaling_ratio
-            new_dose_sitk = array_to_sitk(dose_array, dose_sitk, copy_metadata=True)
-        else:
-            new_dose_sitk = dose_sitk
-        
-        try:
-            sitk.WriteImage(new_dose_sitk, save_path)
-            logger.info(f"SITK RT Dose saved to: {save_path}")
-        except Exception as e:
-            logger.exception(f"Failed to write SITK RT Dose to {save_path}.")
+        data_mgr.save_dose(
+            dose_uids=dose_dict["data_key"],
+            output_paths=save_path,
+            use_cached_data=keep_custom_params
+        )
+
+
 

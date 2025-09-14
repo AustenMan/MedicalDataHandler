@@ -42,16 +42,16 @@ def add_structure_sets_to_menu() -> None:
     with dpg.tree_node(parent="mw_right", label="Structure Sets", default_open=True):
         for rts_sopiuid in rts_sopiuids:
             file_path = data_mgr.get_rtstruct_filepath_by_uid(rts_sopiuid)
-            modality = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "Modality", "RT Structure Set")
-            ss_label = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "StructureSetLabel", "N/A")
-            ss_name = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "StructureSetName", "N/A")
-            ss_description = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "SeriesDescription", "N/A")
-            date = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "StructureSetDate", "N/A")
-            time = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "StructureSetTime", "")
-            approval_status = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "ApprovalStatus", "N/A")
-            review_date = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "ReviewDate", "N/A")
-            review_time = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "ReviewTime", "")
-            reviewer_name = data_mgr.get_rtstruct_ds_value_by_uid(rts_sopiuid, "ReviewerName", "N/A")
+            modality = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "Modality", "RT Structure Set")
+            ss_label = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetLabel", "N/A")
+            ss_name = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetName", "N/A")
+            ss_description = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "SeriesDescription", "N/A")
+            date = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetDate", "N/A")
+            time = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetTime", "")
+            approval_status = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "ApprovalStatus", "N/A")
+            review_date = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "ReviewDate", "N/A")
+            review_time = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "ReviewTime", "")
+            reviewer_name = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "ReviewerName", "N/A")
             roi_numbers: List[int] = data_mgr.get_rtstruct_roi_numbers_by_uid(rts_sopiuid, sort_by_name=True)
             
             any_label = ss_label if ss_label else (ss_name if ss_name else ss_description)
@@ -108,6 +108,7 @@ def _add_roi_button(
 ) -> None:
     """ Add buttons for an ROI in an RT Structure Set. """
     data_mgr: DataManager = get_user_data("data_manager")
+    tag_save_dict = get_user_data("save_button")
     size_dict = get_user_data(td_key="size_dict")
     clr_btn_width = round(dpg.get_text_size("CLR")[0] * 1.1)
 
@@ -136,15 +137,18 @@ def _add_roi_button(
             dpg.add_text(default_value="Removes the ROI from display until data is reloaded.", wrap=size_dict["tooltip_width"])
         
         # Button to inspect ROI
-        tag_roi_tooltip = dpg.generate_uuid()
         tag_roi_button = dpg.add_button(
             label="-MISSING-", 
             width=size_dict["button_width"], 
             callback=_popup_inspect_roi, 
-            user_data=(rts_sopiuid, roi_number, tag_roi_tooltip)
+            user_data=(rts_sopiuid, roi_number)
         )
+        with dpg.tooltip(parent=tag_roi_button):
+            dpg.add_text(default_value="Inspect ROI details", tag=f"{tag_roi_button}_tooltiptext", wrap=size_dict["tooltip_width"])
         dpg.bind_item_theme(item=tag_roi_button, theme=get_colored_button_theme((90, 110, 70)))
         update_roi_tooltip(tag_roi_button) # Set initial tooltip
+    
+    tag_save_dict[("roi", rts_sopiuid, roi_number)] = tag_roi_button
 
 
 

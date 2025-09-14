@@ -2,9 +2,9 @@ from __future__ import annotations
 
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union, Optional, Set, Literal
 import gc
-import json
+from json import load, dump, dumps
 from os.path import exists
 from copy import deepcopy
 
@@ -24,10 +24,13 @@ from mdh_app.utils.dicom_utils import (
 from mdh_app.utils.general_utils import (
     get_json_list, struct_name_priority_key, regex_find_dose_and_fractions,
     clean_dicom_string, find_reformatted_mask_name, find_disease_site,
-    validate_rgb_color,
+    validate_rgb_color, atomic_save
 )
-from mdh_app.utils.numpy_utils import numpy_roi_mask_generation
-from mdh_app.utils.sitk_utils import sitk_resample_to_reference, resample_sitk_data_with_params, get_orientation_labels
+from mdh_app.utils.numpy_utils import numpy_roi_mask_generation, create_HU_to_RED_map
+from mdh_app.utils.sitk_utils import (
+    sitk_resample_to_reference, resample_sitk_data_with_params, get_orientation_labels, 
+    copy_all_metadata
+)
 
 
 if TYPE_CHECKING:
@@ -141,6 +144,11 @@ class DataManager:
             a_min=0.0, a_max=1.0
         )
         self._num_dose_colors = len(self._dose_colors)
+        
+        self.HU_to_RED_map = create_HU_to_RED_map(
+            hu_values=conf_mgr.get_ct_HU_map_vals(), 
+            red_values=conf_mgr.get_ct_RED_map_vals()
+        )
         
         self.initialize_data()
     
@@ -307,11 +315,28 @@ class DataManager:
         # Review from here
         self._clear_cache()
         if not self.is_any_data_loaded:
-            logger.error("No data was loaded. Please try again.")
+            logger.error("No data loaded")
             return
         self.load_rtstruct_goals(patient.mrn)
-        logger.info("Finished loading selected SITK data.")
+        logger.info("Loaded SITK data")
     
+    ### Internal Data Retrieval Methods ###
+    def _get_data(self, data_type: Literal["image", "roi", "dose"], key: Union[str, Tuple[str, int]], use_cached: bool = False) -> Optional[sitk.Image]:
+        """Retrieve SITK image by type and key, optionally using cached version."""
+        if use_cached:
+            cache_key = (data_type,) + ((key,) if isinstance(key, str) else key)
+            if cache_key not in self._cached_sitk_objects:
+                self.update_cached_data(True, cache_key)
+            return self._cached_sitk_objects.get(cache_key, None)
+        
+        if data_type == "image":
+            return self.images.get(key, None)
+        elif data_type == "roi":
+            return self.rois.get(key, None)
+        elif data_type == "dose":
+            return self.rtdoses.get(key, None)
+        return None
+
     ### Image Data Methods ###
     def load_images(self, img_data: Dict[str, List[File]]) -> Dict[str, Any]:
         """Load IMAGEs and update internal data dictionary."""
@@ -330,7 +355,7 @@ class DataManager:
             # Get info for files
             file_paths = [f.path for f in files]
             modality = (files[0].file_metadata.modality or "").strip().upper()
-            logger.info(f"Reading {modality} with SeriesInstanceUID '{series_instance_uid}' from files: [{file_paths[0]}, ...]")
+            logger.debug(f"Loading {modality} series {series_instance_uid} from {len(file_paths)} files")
             
             # Construct image
             sitk_image = construct_image(file_paths, self.ss_mgr, series_instance_uid)
@@ -403,7 +428,7 @@ class DataManager:
         try:
             keys = list(sitk_obj.GetMetaDataKeys())
         except Exception as exc:
-            logger.error(f"Failed to enumerate metadata keys for series {series_uid}: {exc}")
+            logger.error(f"Failed to enumerate metadata keys for series {series_uid}.", exc_info=True, stack_info=True)
             return default
 
         return {k: sitk_obj.GetMetaData(k) for k in keys}
@@ -452,7 +477,7 @@ class DataManager:
             image_params = self.images_params[matched_ref_series_uid]
 
             # Extract RTSTRUCT and ROI datasets
-            logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
+            logger.debug(f"Loading {modality} {sop_instance_uid}: {file_path}")
             result = extract_rtstruct_and_roi_datasets(file_path, image_params, self.ss_mgr)
             if result is None:
                 logger.error(f"Failed to extract RTSTRUCT data from file '{file_path}'.")
@@ -479,7 +504,7 @@ class DataManager:
         """Return list of available RTSTRUCT SOPInstanceUIDs."""
         return list(self.rtstruct_datasets.keys())
     
-    def get_rtstruct_ds_value_by_uid(self, struct_uid: str, metadata_key: str, default: Any = None, return_deepcopy: bool = True) -> Any:
+    def get_rtstruct_ds_value_by_uid_and_key(self, struct_uid: str, metadata_key: str, default: Any = None, return_deepcopy: bool = True) -> Any:
         """Get metadata from RTSTRUCT using SOPInstanceUID.
         
         Args:
@@ -513,7 +538,7 @@ class DataManager:
             return
 
         with open(objectives_fpath, 'rt') as file:
-            patient_objectives = json.load(file).get(patient_mrn, {})
+            patient_objectives = load(file).get(patient_mrn, {})
         if not patient_objectives:
             logger.error(f"No objectives found for patient MRN '{patient_mrn}' in the JSON file.")
             return
@@ -527,7 +552,7 @@ class DataManager:
             ss_label = (rtstruct_ds.get("StructureSetLabel", "") or "").strip()
             if not ss_label:
                 continue
-            logger.info(f"Checking objectives for RTSTRUCT with label: {ss_label} ...")
+            logger.info(f"Checking objectives for RTSTRUCT: {ss_label}")
             structure_set_objectives = self._patient_objectives_dict.get("StructureSetId", {}).get(ss_label, {})
             if structure_set_objectives:
                 matched_objectives.setdefault(ss_sopi, {}).update(structure_set_objectives)
@@ -537,7 +562,7 @@ class DataManager:
             rtp_label = (rtplan_ds.get("RTPlanLabel", "") or "").strip()
             if not rtp_label:
                 continue
-            logger.info(f"Checking objectives for RTPLAN with label: {rtp_label} ...")
+            logger.info(f"Checking objectives for RTPLAN: {rtp_label}")
             
             plan_objectives = self._patient_objectives_dict.get("PlanId", {}).get(rtp_label, {})
             if not plan_objectives:
@@ -952,7 +977,7 @@ class DataManager:
             file_path = rtplan_file.path
             modality = (rtplan_file.file_metadata.modality or "").strip().upper()
             sop_instance_uid = (rtplan_file.file_metadata.sop_instance_uid or "").strip()
-            logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
+            logger.debug(f"Loading {modality} {sop_instance_uid}: {file_path}")
             
             # Skip if already loaded
             if sop_instance_uid in self.rtplan_datasets:
@@ -999,7 +1024,12 @@ class DataManager:
 
         # Get the RTPLAN dataset
         rtplan_ds = self.rtplan_datasets[rtplan_uid]
-        value = rtplan_ds.get(metadata_key, default)
+        
+        if metadata_key == "NumberOfFractionsPlanned":
+            value = get_first_num_fxns_planned(rtplan_ds) or default
+        else:
+            value = rtplan_ds.get(metadata_key, default)
+        
         if value is not default:
             return deepcopy(value) if return_deepcopy else value
         return default
@@ -1198,7 +1228,7 @@ class DataManager:
                 modality = (dose_file.file_metadata.modality or "").strip().upper()
                 sop_instance_uid = (dose_file.file_metadata.sop_instance_uid or "").strip()
                 dose_summation_type = (dose_file.file_metadata.dose_summation_type or "").strip().upper()
-                logger.info(f"Reading {modality} with SOPInstanceUID '{sop_instance_uid}' from file '{file_path}'.")
+                logger.debug(f"Loading {modality} {sop_instance_uid}: {file_path}")
                 
                 # Skip if already loaded
                 if sop_instance_uid in self.rtdoses:
@@ -1321,7 +1351,7 @@ class DataManager:
             logger.info(f"Set metadata key '{metadata_key}' for RTDOSE with UID '{rtdose_uid}' to '{metadata_value}'.")
             return True
         except Exception as exc:
-            logger.error(f"Failed to set metadata key '{metadata_key}' for RTDOSE with UID '{rtdose_uid}': {exc}")
+            logger.error(f"Failed to set metadata key '{metadata_key}' for RTDOSE with UID '{rtdose_uid}'.", exc_info=True, stack_info=True)
             return False
     
     ### RTPLAN/RTDOSE Mapping Methods ###
@@ -1347,7 +1377,7 @@ class DataManager:
                     continue
                 ref_plan = str(sitk_dose.GetMetaData("ReferencedRTPlanSOPInstanceUID")).strip()
             except Exception as exc:
-                logger.error(f"Failed reading ReferencedRTPlanSOPInstanceUID for dose {dose_uid}: {exc}")
+                logger.error(f"Failed reading ReferencedRTPlanSOPInstanceUID for dose {dose_uid}.", exc_info=True, stack_info=True)
                 unmapped_doses.append(dose_uid)
                 continue
 
@@ -1627,7 +1657,7 @@ class DataManager:
             # Resize to the desired image dimensions and flatten to a 1D texture
             return base_layer.ravel()
         except Exception as e:
-            logger.exception(f"Failed to generate a texture.")
+            logger.exception("Failed to generate a texture.", exc_info=True, stack_info=True)
             return np.zeros(texture_RGB_size, dtype=np.float32)
     
     def _check_for_texture_param_changes(
@@ -1846,20 +1876,18 @@ class DataManager:
         Returns:
             A 2-D NumPy array of corresponding RGB values (each in [0, 1]).
         """
-        if not isinstance(value_array, np.ndarray) or value_array.ndim != 2:
-            raise ValueError(f"Expected a 2-D NumPy array; received type {type(value_array)} with shape {value_array.shape if isinstance(value_array, np.ndarray) else 'N/A'}.")
-        if np.min(value_array) < 0 or np.max(value_array) > 1:
-            raise ValueError(f"Values must be normalized to [0,1] (min: {np.min(value_array)}, max: {np.max(value_array)}).")
-
         # Compute interpolated RGB values
         color_idx = value_array * (self._num_dose_colors - 1)
         lower_idx = color_idx.astype(np.int32) # Floor index
         upper_idx = np.minimum(lower_idx + 1, self._num_dose_colors - 1) # Ceil index
         blend_factor = (color_idx - lower_idx)[..., None] # Fractional part for blending
 
+        # Linear interpolation between lower and upper colors
         rgb = self._dose_colors[lower_idx] * (1 - blend_factor) + self._dose_colors[upper_idx] * blend_factor
-        
+
+        # Clip RGB values to [0, 1]
         np.clip(rgb, 0.0, 1.0, out=rgb)
+        
         return rgb
       
     def _draw_slice_crosshairs(
@@ -2127,4 +2155,218 @@ class DataManager:
         """
         return len(self._cached_sitk_objects)
     
+    ### Save Methods ###
+    def save_image(self, series_uid: str, roi_overrides: List[Tuple[Tuple[str, int], float]], output_path: str, convert_ct_hu_to_red: bool = False, use_cached_data: bool = False) -> None:
+        """ Save image with optional HU→RED conversion and ROI overrides for CT. """
+        try:
+            ct_image: Optional[sitk.Image] = self._get_data("image", series_uid, use_cached=use_cached_data)
+            if ct_image is None:
+                logger.error(f"No CT image found for series UID: {series_uid}")
+                return
 
+            modality = str(self.get_image_metadata_by_series_uid_and_key(series_uid, "Modality", "")).strip().upper()
+            if modality != "CT" or not convert_ct_hu_to_red:
+                if roi_overrides:
+                    logger.warning("An image is saving, but note that ROI overrides were ignored - only applied with HU→RED conversion")
+                # Save the original image without modification
+                sitk.WriteImage(ct_image, output_path)
+                logger.info(f"An image was saved to: {output_path}")
+                return
+            
+            # Get the CT image as a NumPy array
+            ct_array = sitk.GetArrayFromImage(ct_image).astype(np.float32)
+            
+            # Convert HU to RED
+            ct_red_array: np.ndarray = self.HU_to_RED_map(ct_array)
+
+            # Apply ROI overrides
+            for roi_key, red_value in roi_overrides:
+                roi_image: Optional[sitk.Image] = self._get_data("roi", roi_key, use_cached=use_cached_data)
+                if roi_image is None:
+                    logger.warning(f"ROI not found for override: {roi_key}. Skipping this override.")
+                    continue
+                
+                roi_array = sitk.GetArrayFromImage(roi_image) > 0  # Binary mask
+                ct_red_array[roi_array] = red_value
+            
+            # Create a new SITK image from the RED array and copy metadata
+            ct_red_image = sitk.GetImageFromArray(ct_red_array)
+            ct_red_image.CopyInformation(ct_image)  # Copy origin, spacing, direction
+            copy_all_metadata(src=self.images.get(series_uid), dst=ct_red_image, copy_spatial=False)  # Copy all metadata from original
+            
+            # Set filepath metadata
+            ct_filepaths = self.get_image_filepaths_by_series_uid(series_uid)
+            ct_red_image.SetMetaData("dcm_filepaths", dumps(ct_filepaths))
+            
+            # Save the modified CT image
+            sitk.WriteImage(ct_red_image, output_path)
+            logger.info(f"CT image converted to units of RED and saved to: {output_path}")
+        except Exception as e:
+            logger.exception(f"Failed to save image for series UID '{series_uid}' to: {output_path}", exc_info=True, stack_info=True)
+
+    def save_roi(self, struct_uid: str, roi_numbers: Union[int, List[int]], output_path: str, use_cached_data: bool = False) -> None:
+        """ Save ROI(s) as binary mask. Multiple ROI numbers will be merged. """
+        roi_numbers = [roi_numbers] if isinstance(roi_numbers, int) else roi_numbers
+        try:
+            # Collect all ROI masks
+            roi_arrays = []
+            reference_roi = None
+            
+            for roi_num in roi_numbers:
+                roi_image = self._get_data("roi", (struct_uid, roi_num), use_cached=use_cached_data)
+                if roi_image is None:
+                    logger.warning(f"ROI {roi_num} not found in RTSTRUCT {struct_uid}, skipping saving it")
+                    continue
+                
+                if reference_roi is None:
+                    reference_roi = roi_image  # Keep first as reference for metadata/spacing
+                
+                roi_array = sitk.GetArrayFromImage(roi_image) > 0  # Binary mask
+                roi_arrays.append(roi_array)
+            
+            if not roi_arrays:
+                logger.error(f"No valid ROIs found for RTSTRUCT {struct_uid} with numbers {roi_numbers}")
+                return
+            
+            # Merge masks
+            merged_mask = np.logical_or.reduce(roi_arrays).astype(np.uint8)
+            
+            # Create new image from merged mask
+            merged_roi = sitk.GetImageFromArray(merged_mask)
+            merged_roi.CopyInformation(reference_roi)
+            
+            # Set RTSTRUCT metadata
+            merged_roi.SetMetaData("SOPInstanceUID", str(struct_uid))
+            merged_roi.SetMetaData("dcm_filepath", str(self.get_rtstruct_filepath_by_uid(struct_uid)))
+            merged_roi.SetMetaData("StructureSetLabel", str(self.get_rtstruct_ds_value_by_uid_and_key(struct_uid, "StructureSetLabel", "N/A")))
+            merged_roi.SetMetaData("StructureSetName", str(self.get_rtstruct_ds_value_by_uid_and_key(struct_uid, "StructureSetName", "N/A")))
+            merged_roi.SetMetaData("StructureSetDate", str(self.get_rtstruct_ds_value_by_uid_and_key(struct_uid, "StructureSetDate", "N/A")))
+            merged_roi.SetMetaData("StructureSetTime", str(self.get_rtstruct_ds_value_by_uid_and_key(struct_uid, "StructureSetTime", "N/A")))
+            
+            # Add the GUI ROI metadata and save
+            if len(roi_numbers) == 1:
+                roi_number = roi_numbers[0]
+                merged_roi.SetMetaData("ROINumber", str(roi_number))
+                for key, value in self.rtstruct_roi_metadata.get(struct_uid, {}).get(roi_number, {}).items():
+                    if isinstance(value, (str, int, float)):
+                        merged_roi.SetMetaData(str(key), str(value))
+                    else:
+                        merged_roi.SetMetaData(str(key), dumps(value))
+                
+                sitk.WriteImage(merged_roi, output_path)
+                logger.info(f"ROI number {roi_number} from RTSTRUCT '{struct_uid}' saved to: {output_path}")
+            
+            # For multiple ROIs, store lists of values and save
+            else:
+                merged_roi.SetMetaData("ROINumbers", dumps(roi_numbers))
+                collected_keyvals = {}
+                for roi_num in roi_numbers:
+                    for key, value in self.rtstruct_roi_metadata.get(struct_uid, {}).get(roi_num, {}).items():
+                        if key not in collected_keyvals:
+                            collected_keyvals[key] = []
+                        collected_keyvals[key].append(value)
+                for key, value in collected_keyvals.items():
+                    merged_roi.SetMetaData(str(key), dumps(value))
+                
+                sitk.WriteImage(merged_roi, output_path)
+                logger.info(f"ROIs numbers {roi_numbers} from RTSTRUCT '{struct_uid}' merged and saved to: {output_path}")
+            
+        except Exception as e:
+            logger.exception(f"Failed to save ROI image for RTSTRUCT {struct_uid} with numbers {roi_numbers} to: {output_path}", exc_info=True, stack_info=True)
+    
+    def save_plan(self, plan_uid: str, output_path: str) -> None:
+        """ Save RTPLAN as a JSON file. """
+        try:
+            plan_ds = self.rtplan_datasets.get(plan_uid)
+            if plan_ds is None:
+                logger.error(f"No RTPLAN found for SOP Instance UID: {plan_uid}")
+                return
+            
+            plan_json = plan_ds.to_json_dict(suppress_invalid_tags=True)
+            plan_json["dcm_filepath"] = self.get_rtplan_filepath_by_uid(plan_uid)
+            
+            atomic_save(
+                filepath=output_path,
+                write_func=lambda fp: dump(plan_json, fp),
+                success_message=f"RTPLAN '{plan_uid}' saved to: {output_path}",
+                error_message=f"Failed to save RTPLAN '{plan_uid}' to: {output_path}"
+            )
+        except Exception as e:
+            logger.exception(f"Failed to save RTPLAN '{plan_uid}' to: {output_path}", exc_info=True, stack_info=True)
+
+    def save_dose(self, dose_uids: Union[str, List[str]], output_paths: Union[str, List[str]], use_cached_data: bool = False) -> None:
+        """ Save RTDOSE as NRRD file. Multiple UIDs will be merged by summation. """
+        dose_uids = [dose_uids] if isinstance(dose_uids, str) else dose_uids
+        output_paths = [output_paths] if isinstance(output_paths, str) else output_paths
+        try:
+            # Collect all dose arrays
+            dose_arrays = []
+            reference_dose = None
+            
+            for uid in dose_uids:
+                dose_image = self._get_data("dose", uid, use_cached=use_cached_data)
+                if dose_image is None:
+                    logger.warning(f"RTDOSE not found for UID {uid}, skipping saving it")
+                    continue
+                
+                if reference_dose is None:
+                    reference_dose = dose_image  # Keep first as reference for metadata/spacing
+                
+                dose_array = sitk.GetArrayFromImage(dose_image).astype(np.float32)
+                dose_arrays.append(dose_array)
+            
+            if not dose_arrays:
+                logger.error(f"No valid RTDOSE found for UIDs: {dose_uids}")
+                return
+            
+            # Merge doses by summation
+            merged_dose_array = np.sum(dose_arrays, axis=0)
+            
+            # Get total fxns
+            planned_fxns = [self.get_rtdose_metadata_by_uid_and_key(uid, "NumberOfFractionsPlanned", "N/A") for uid in dose_uids]
+            total_planned_fxns = sum(int(fx) for fx in planned_fxns if fx.isdigit())
+            dose_fxns = [self.get_rtdose_metadata_by_uid_and_key(uid, "NumberOfFractions", "N/A") for uid in dose_uids]
+            total_fxns = sum(int(fx) for fx in dose_fxns if fx.isdigit())
+            all_ref_rtplans = [self.get_rtdose_metadata_by_uid_and_key(uid, "ReferencedRTPlanSOPInstanceUID", "") for uid in dose_uids]
+            all_ref_beam_num = [self.get_rtdose_metadata_by_uid_and_key(uid, "ReferencedRTPlanBeamNumber", "N/A") for uid in dose_uids]
+            
+            # Scale dose if total planned fxns differ from total fxns
+            scaling_ratio = total_planned_fxns / total_fxns if (total_fxns > 0 and total_planned_fxns > 0 and total_planned_fxns != total_fxns) else 1.0
+            if scaling_ratio != 1.0:
+                merged_dose_array *= scaling_ratio
+                logger.info(f"Scaling merged dose by ratio {scaling_ratio:.4f} (Total Planned Fxns: {total_planned_fxns}, Total Fxns: {total_fxns})")
+            
+            # Create new image from merged dose
+            merged_dose = sitk.GetImageFromArray(merged_dose_array)
+            merged_dose.CopyInformation(reference_dose)
+
+            # Set RTDOSE metadata and save
+            merged_dose.SetMetaData("SOPInstanceUID", str(dose_uids[0]))
+            merged_dose.SetMetaData("DoseType", str(self.get_rtdose_metadata_by_uid_and_key(dose_uids[0], "DoseType", "N/A")))
+            merged_dose.SetMetaData("DoseUnits", str(self.get_rtdose_metadata_by_uid_and_key(dose_uids[0], "DoseUnits", "N/A")))
+            merged_dose.SetMetaData("DoseScalingRatio", str(scaling_ratio))  # Always store scaling ratio
+            if len(dose_uids) == 1:
+                merged_dose.SetMetaData("dcm_filepath", str(self.get_rtdose_filepath_by_uid(dose_uids[0])))
+                merged_dose.SetMetaData("DoseSummationType", str(self.get_rtdose_metadata_by_uid_and_key(dose_uids[0], "DoseSummationType", "N/A")))
+                merged_dose.SetMetaData("NumberOfFractionsPlanned", str(planned_fxns[0]))
+                merged_dose.SetMetaData("NumberOfFractions", str(dose_fxns[0]))
+                merged_dose.SetMetaData("ReferencedRTPlanSOPInstanceUID", str(all_ref_rtplans[0]))
+                merged_dose.SetMetaData("ReferencedRTPlanBeamNumber", str(all_ref_beam_num[0]))
+                
+                for path in output_paths:
+                    sitk.WriteImage(merged_dose, path)
+                    logger.info(f"RTDOSE '{dose_uids[0]}' saved to: {path}")
+            else:
+                merged_dose.SetMetaData("dcm_filepaths", dumps([self.get_rtdose_filepath_by_uid(uid) for uid in dose_uids]))
+                merged_dose.SetMetaData("DoseSummationType", "CustomDoseSum")
+                merged_dose.SetMetaData("NumberOfFractionsPlanned", str(total_planned_fxns))
+                merged_dose.SetMetaData("NumberOfFractions", str(total_fxns))
+                merged_dose.SetMetaData("ReferencedRTPlanSOPInstanceUIDs", dumps(all_ref_rtplans))
+                merged_dose.SetMetaData("ReferencedRTPlanBeamNumbers", dumps(all_ref_beam_num))
+                
+                for output_path in output_paths:
+                    sitk.WriteImage(merged_dose, output_path)
+                    logger.info(f"RTDOSE {', '.join(dose_uids)} merged and saved to: {output_path}")
+        
+        except Exception as e:
+            logger.exception(f"Failed to save RTDOSE '{dose_uids}' to: {output_paths}", exc_info=True, stack_info=True)

@@ -28,6 +28,7 @@ def add_images_to_menu() -> None:
     if not image_siuids:
         return
     
+    tag_save_dict = get_user_data("save_button")
     size_dict = get_user_data(td_key="size_dict")
     
     with dpg.tree_node(parent="mw_right", label="Images", default_open=True):
@@ -63,8 +64,10 @@ def add_images_to_menu() -> None:
                     user_data=image_siuid
                 )
                 with dpg.tooltip(parent=tag_button):
-                    dpg.add_text(image_text, wrap=size_dict["tooltip_width"])
+                    dpg.add_text(image_text, tag=f"{tag_button}_tooltiptext", wrap=size_dict["tooltip_width"])
                 dpg.bind_item_theme(item=tag_button, theme=get_colored_button_theme((90, 110, 70)))
+            
+            tag_save_dict[("image", image_siuid)] = tag_button
         
         dpg.add_spacer(height=size_dict["spacer_height"])
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Union, Any, Dict
 from functools import partial
-from json import loads
 
 import dearpygui.dearpygui as dpg
 
@@ -60,10 +59,17 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
     
     tag_hidden_theme = get_hidden_button_theme()
     save_settings_dict = conf_mgr.get_save_settings_dict()
-    unmatched_organ_name = conf_mgr.get_unmatched_organ_name()
-    data_dict = dpg.get_item_user_data(tag_save_button)
     
-    save_data_dict: Dict[str, Any] = {"main_checkboxes": {}, "images": [], "rois": [], "plans": [], "doses": []}
+    # Data to show in the save window
+    save_data_dict = dpg.get_item_user_data(tag_save_button)
+    save_images_dict = {k: v for k, v in save_data_dict.items() if k[0] == "image" and dpg.does_item_exist(v)}  # Key is ("image", SeriesInstanceUID), value is button tag
+    save_rois_dict = {k: v for k, v in save_data_dict.items() if k[0] == "roi" and dpg.does_item_exist(v)}  # Key is ("roi", SOPInstanceUID, ROINumber), value is button tag
+    save_rtplans_dict = {k: v for k, v in save_data_dict.items() if k[0] == "rtplan" and dpg.does_item_exist(v)}  # Key is ("rtplan", SOPInstanceUID), value is button tag
+    save_rtdoses_dict = {k: v for k, v in save_data_dict.items() if k[0] == "rtdose" and dpg.does_item_exist(v)}  # Key is ("rtdose", SOPInstanceUID), value is button tag
+    
+    # Tracks save selections made by the user in the save window
+    save_selections_dict: Dict[str, Any] = {"main_checkboxes": {}, "images": [], "rois": [], "plans": [], "doses": []}
+    
     with dpg.window(
         tag=tag_save_window, 
         label="Save Data", 
@@ -73,7 +79,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
         no_open_over_existing_popup=False, 
         on_close=lambda: dpg.hide_item(tag_save_window),
         horizontal_scrollbar=True, 
-        user_data=save_data_dict, 
+        user_data=save_selections_dict, 
     ):
         add_custom_button(
             label="Carefully review the save options below.", 
@@ -86,7 +92,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             theme_tag=tag_hidden_theme, 
             add_spacer_after=True
         )
-        save_data_dict["main_checkboxes"]["keep_custom_params"] = add_custom_checkbox(
+        save_selections_dict["main_checkboxes"]["keep_custom_params"] = add_custom_checkbox(
             default_value=save_settings_dict["keep_custom_params"], 
             checkbox_label="Save with your current custom data viewing parameters", 
             add_spacer_after=True,
@@ -103,13 +109,13 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             add_separator_before=True, 
             add_spacer_after=True,
         )
-        save_data_dict["main_checkboxes"]["convert_ct_hu_to_red"] = add_custom_checkbox(
+        save_selections_dict["main_checkboxes"]["convert_ct_hu_to_red"] = add_custom_checkbox(
             default_value=save_settings_dict["convert_ct_hu_to_red"],
             checkbox_label="Map CT Hounsfield Units to Relative Electron Densities",
             add_spacer_after=True,
             tooltip_text="If selected, CT Hounsfield Units will be converted to Relative Electron Densities using a conversion table.",
         )
-        save_data_dict["main_checkboxes"]["override_image_with_roi_RED"] = add_custom_checkbox(
+        save_selections_dict["main_checkboxes"]["override_image_with_roi_RED"] = add_custom_checkbox(
             default_value=save_settings_dict["override_image_with_roi_RED"],
             checkbox_label="Override image(s) with ROI R.E.D. values",
             add_spacer_after=True,
@@ -144,51 +150,42 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             dpg.add_table_column(label="Bulk Save", init_width_or_weight=round(dpg.get_text_size("Bulk Save")[0] * 1.05))
             dpg.add_table_column(label="Save Item", init_width_or_weight=round(dpg.get_text_size("Save Item")[0] * 1.05))
             dpg.add_table_column(label="Filename", width_stretch=True)
-            for key, value in data_dict.items():
-                if key[0] != "image":
-                    continue
+            for ((_, img_siuid), img_button_tag) in save_images_dict.items():
+                img_siuid = str(img_siuid)
+                modality = str(data_mgr.get_image_metadata_by_series_uid_and_key(img_siuid, "Modality", "UNKNOWN"))
+                series_date = str(data_mgr.get_image_metadata_by_series_uid_and_key(img_siuid, "SeriesDate", ""))
+                study_date = str(data_mgr.get_image_metadata_by_series_uid_and_key(img_siuid, "StudyDate", ""))
+                study_instance_uid = str(data_mgr.get_image_metadata_by_series_uid_and_key(img_siuid, "StudyInstanceUID", "UNKNOWN"))
+                file_date = series_date or study_date or "19000101"
                 
-                if value() is None:
-                    continue
-                
-                image_modality = key[1].upper()
-                series_instance_uid = key[2]
-                
-                file_date = (
-                    value().GetMetaData("SeriesDate") 
-                    if value().HasMetaDataKey("SeriesDate") 
-                    else value().GetMetaData("StudyDate") 
-                    if value().HasMetaDataKey("StudyDate") 
-                    else None
-                ) or "19000101"
+                img_label = dpg.get_item_label(img_button_tag)
+                tooltip_text_tag = f"{img_button_tag}_tooltiptext"
+                img_text = dpg.get_value(tooltip_text_tag) if dpg.does_item_exist(tooltip_text_tag) else f"Image Modality: {modality}\nFile Date: {file_date}\nSeries Instance UID: {img_siuid}"
                 
                 default_filename = (
-                    f"IMAGE_{str(image_modality).replace(' ', '-').replace('_', '-')}_"
-                    f"{str(file_date).replace(' ', '-').replace('_', '-')}_"
-                    f"{str(series_instance_uid).replace(' ', '-').replace('_', '-')}"
+                    f"IMAGE_{modality.replace(' ', '-').replace('_', '-')}_"
+                    f"{file_date.replace(' ', '-').replace('_', '-')}_"
+                    f"{img_siuid.replace(' ', '-').replace('_', '-')}"
                 )
                 
                 with dpg.table_row():
-                    add_custom_button(
-                        label=image_modality,
-                        height=button_height,
-                        tooltip_text=(
-                            f"Image Modality: {image_modality}\nFile Date: {file_date}\n"
-                            f"Series Instance UID: {series_instance_uid}\nSize: {value().GetSize()}\n"
-                            f"Spacing: {value().GetSpacing()}\nDirection: {value().GetDirection()}\nOrigin: {value().GetOrigin()}"
-                        ),
-                    )
-                    bulksave_tag = add_custom_checkbox(
-                        default_value=True,
-                        tooltip_text="Include this item in the bulk save list.",
-                    )
+                    add_custom_button(label=img_label, height=button_height, tooltip_text=img_text)
+                    bulksave_tag = add_custom_checkbox(default_value=True, tooltip_text="Include this item in the bulk save list.")
                     save_tag = add_custom_button(
                         label="Save", 
                         callback=lambda s, a, u: ss_mgr.submit_action(partial(_execute_saving, s, a, u)),
                         height=button_height)
                     filename_tag = dpg.add_input_text(default_value=default_filename, width=size_dict["table_w"])
-                save_data_dict["images"].append(
-                    {"data": value, "modality": image_modality, "filename_tag": filename_tag, "bulksave_tag": bulksave_tag, "save_tag": save_tag}
+                save_selections_dict["images"].append(
+                    {
+                        "data_key": img_siuid, 
+                        "study_instance_uid": study_instance_uid, 
+                        "modality": modality, 
+                        "series_instance_uid": img_siuid,
+                        "filename_tag": filename_tag, 
+                        "bulksave_tag": bulksave_tag, 
+                        "save_tag": save_tag
+                    }
                 )
         
         # ROIs
@@ -225,70 +222,52 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             dpg.add_table_column(label="Goals", init_width_or_weight=round(dpg.get_text_size("Goals")[0] * 1.25))
             dpg.add_table_column(label="Rel. Elec. Dens.", init_width_or_weight=round(dpg.get_text_size("00.000")[0] * 2))
             dpg.add_table_column(label="Filename", width_stretch=True)
-            for key, value in data_dict.items():
-                if key[0] != "rtstruct":
-                    continue
-                if value() is None:
-                    continue
+            for ((_, rts_sopiuid, roi_number), roi_button_tag) in save_rois_dict.items():
+                rts_sopiuid = str(rts_sopiuid)
                 
-                roi_number = value().GetMetaData("roi_number")
-                roi_name = value().GetMetaData("current_roi_name")
-                roi_matched = roi_name != unmatched_organ_name
-                if not roi_matched:
-                    roi_name = value().GetMetaData("original_roi_name")
+                roi_metadata = data_mgr.get_roi_gui_metadata_by_uid(rts_sopiuid, roi_number)
+                roi_use_templated_name = roi_metadata.get("use_template_name", False)
+                roi_name = roi_metadata.get("ROITemplateName", "") if roi_use_templated_name else roi_metadata.get("ROIName", "")
+                rt_roi_interpreted_type = roi_metadata.get("RTROIInterpretedType", "")
+                roi_physical_property_value = roi_metadata.get("ROIPhysicalPropertyValue", -1.0)  # Relative Electron Density value, -1.0 if not set
+                roi_goals = roi_metadata.get("roi_goals", {})
                 
-                rt_roi_interpreted_type = value().GetMetaData("rt_roi_interpreted_type")
-                roi_goals = value().GetMetaData("roi_goals")
-                roi_goals = loads(roi_goals) if roi_goals else {}
-                
-                roi_physical_properties = value().GetMetaData("roi_physical_properties")
-                roi_physical_properties = loads(roi_physical_properties) if roi_physical_properties else []
-                roi_physical_properties = roi_physical_properties[0] if roi_physical_properties else {}
-                roi_physical_property = str(roi_physical_properties.get("roi_physical_property", ""))
-                roi_physical_property_value = roi_physical_properties.get("roi_physical_property_value")
                 if "bolus" in roi_name.lower() and roi_physical_property_value is None:
                     roi_physical_property_value = 1.0
-                if (
-                    (roi_physical_property and roi_physical_property.lower() != "rel_elec_density") or 
-                    not isinstance(roi_physical_property_value, (float, int)) or 
-                    0.0 > roi_physical_property_value > 15.0
-                ):
+                elif not isinstance(roi_physical_property_value, (float, int)) or not (0.0 < roi_physical_property_value < 15.0):
                     roi_physical_property_value = -1.0
                 
-                structure_set_dict = data_mgr.get_modality_data("rtstruct")[key[1]]
-                StructureSetLabel = structure_set_dict.get("StructureSetLabel")
-                StructureSetName = structure_set_dict.get("StructureSetName")
-                StructureSetDate = structure_set_dict.get("StructureSetDate")
-                StructureSetTime = structure_set_dict.get("StructureSetTime")
-                ReferencedSeriesInstanceUID = structure_set_dict.get("ReferencedSeriesInstanceUID")
+                structure_set_label = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetLabel", "")
+                structure_set_name = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, " StructureSetName", "")
+                structure_set_date = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetDate", "")
+                structure_set_time = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetTime", "")
+                study_instance_uid = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StudyInstanceUID", "UNKNOWN")
+                modality = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "Modality", "RTSTRUCT")
+
+                roi_label = dpg.get_item_label(roi_button_tag)
+                tooltip_text_tag = f"{roi_button_tag}_tooltiptext"
+                roi_text = dpg.get_value(tooltip_text_tag) if dpg.does_item_exist(tooltip_text_tag) else (
+                    f"ROI Number: {roi_number}\nROI Name: {roi_name}\nROI Type: {rt_roi_interpreted_type}\n"
+                    f"Structure Set Label: {structure_set_label}\nStructure Set Name: {structure_set_name}\nStructure Set Date: {structure_set_date}\nStructure Set Time: {structure_set_time}\n"
+                )
                 
                 default_filename = f"ROI_{roi_name}"
                 row_tag = dpg.generate_uuid()
                 with dpg.table_row(tag=row_tag):
-                    add_custom_button(
-                        label=f"{roi_number}. {roi_name}",
-                        height=button_height,
-                        tooltip_text=(
-                            f"ROI Number: {roi_number}\nROI Name: {roi_name}\nROI Type: {rt_roi_interpreted_type}\n"
-                            f"Size: {value().GetSize()}\nSpacing: {value().GetSpacing()}\nDirection: {value().GetDirection()}\n"
-                            f"Origin: {value().GetOrigin()}\nStructure Set Label: {StructureSetLabel}\nStructure Set Name: {StructureSetName}\n"
-                            f"Structure Set Date: {StructureSetDate}\nStructure Set Time: {StructureSetTime}\nReferenced Series Instance UID: {ReferencedSeriesInstanceUID}"
-                        )
-                    )
-                    bulksave_tag = add_custom_checkbox(
-                        default_value=roi_matched,
-                        tooltip_text="Include this ROI in the bulk save list."
-                    )
+                    add_custom_button(label=roi_label, height=button_height, tooltip_text=roi_text)
+                    bulksave_tag = add_custom_checkbox(default_value=True, tooltip_text="Include this ROI in the bulk save list.")
                     save_tag = add_custom_button(
                         label="Save", 
                         callback=lambda s, a, u: ss_mgr.submit_action(partial(_execute_saving, s, a, u)),
                         height=button_height
                     )
+                    
                     if roi_goals:
                         goals_tag = add_custom_button(label="Goals", height=button_height, tooltip_text=f"ROI Goals: {roi_goals}")
                     else:
                         goals_tag = None
                         dpg.add_text("N/A")
+                    
                     roi_phys_prop_tag = dpg.add_input_float(
                         default_value=roi_physical_property_value if roi_physical_property_value is not None else -1.0,
                         min_value=-1.0,
@@ -301,10 +280,14 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                     )
                     with dpg.tooltip(parent=roi_phys_prop_tag):
                         dpg.add_text("Relative Electron Density value (0.0 to 15.0). Set to -1.0 to ignore.", wrap=size_dict["tooltip_width"])
+                    
                     filename_tag = dpg.add_input_text(default_value=default_filename, width=size_dict["table_w"])
                 
-                save_data_dict["rois"].append({
-                    "data": value,
+                save_selections_dict["rois"].append({
+                    "data_key": (rts_sopiuid, roi_number),
+                    "study_instance_uid": study_instance_uid,
+                    "modality": modality,
+                    "sop_instance_uid": rts_sopiuid,
                     "filename_tag": filename_tag,
                     "bulksave_tag": bulksave_tag,
                     "save_tag": save_tag,
@@ -344,39 +327,37 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             dpg.add_table_column(label="Bulk Save", init_width_or_weight=round(dpg.get_text_size("Bulk Save")[0] * 1.05))
             dpg.add_table_column(label="Save Item", init_width_or_weight=round(dpg.get_text_size("Save Item")[0] * 1.05))
             dpg.add_table_column(label="Filename", width_stretch=True)
-            for key, value in data_dict.items():
-                if key[0] != "rtplan":
-                    continue
+            for ((_, rtp_sopiuid), rtp_button_tag) in save_rtplans_dict.items():
+                rtp_sopiuid = str(rtp_sopiuid)
+                overall_beam_summary: Dict[str, Any] = data_mgr.get_rtplan_ds_overall_beam_summary_by_uid(rtp_sopiuid)
                 
-                RTPlanLabel = value.get("RTPlanLabel", "NoPlanLabel")
-                RTPlanName = value.get("RTPlanName", "NoPlanName")
-                RTPlanDate = value.get("RTPlanDate", "NoPlanDate")
-                DiseaseSite = value.get("rt_plan_disease_site", "19000101")
-                ApprovalStatus = value.get("ApprovalStatus", "NoApprovalStatus")
-                Machine = value.get("rt_plan_machine", "NoMachine")
-                Dose = value.get("target_prescription_dose_cgy", "NoDose")
-                Fxns = value.get("number_of_fractions_planned", "NoFxns")
-                SOPIUID = value.get("SOPInstanceUID", "NoSOPInstanceUID")
+                rt_plan_label = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "RTPlanLabel", "NoPlanLabel")
+                rt_plan_name = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "RTPlanName", "NoPlanName")
+                rt_plan_date = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "RTPlanDate", "NoPlanDate")
+                study_instance_uid = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "StudyInstanceUID", "UNKNOWN")
+                modality = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "Modality", "RTPLAN")
+                number_of_fractions_planned = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "NumberOfFractionsPlanned", 1)
+                machines = overall_beam_summary.get("Unique Treatment Machines", ["NoMachine"])
+                machines = [str(m).strip().title() for m in machines if str(m).strip()]
+                machines = "".join(machines) if machines else "NoMachine"
                 
                 default_filename = (
-                    f"PLAN_{str(Fxns).replace(' ', '-').replace('_', '-')}Fxns_"
-                    f"{str(RTPlanLabel).replace(' ', '-').replace('_', '-')}_"
-                    f"{str(RTPlanName).replace(' ', '-').replace('_', '-')}_"
-                    f"{str(RTPlanDate).replace(' ', '-').replace('_', '-')}_"
-                    f"{str(Machine).replace(' ', '-').replace('_', '-')}"
+                    f"PLAN_{str(number_of_fractions_planned).replace(' ', '-').replace('_', '-')}Fxns_"
+                    f"{str(rt_plan_label).replace(' ', '-').replace('_', '-')}_"
+                    f"{str(rt_plan_name).replace(' ', '-').replace('_', '-')}_"
+                    f"{str(rt_plan_date).replace(' ', '-').replace('_', '-')}_"
+                    f"{str(machines).replace(' ', '-').replace('_', '-')}"
+                )
+                
+                rtp_label = dpg.get_item_label(rtp_button_tag)
+                tooltip_text_tag = f"{rtp_button_tag}_tooltiptext"
+                rtp_text = dpg.get_value(tooltip_text_tag) if dpg.does_item_exist(tooltip_text_tag) else (
+                    f"RT Plan Label: {rt_plan_label}\nRT Plan Name: {rt_plan_name}\nRT Plan Date: {rt_plan_date}\n"
+                    f"Machine(s): {machines}\n"
                 )
                 
                 with dpg.table_row(user_data=filename_tag):
-                    add_custom_button(
-                        label=RTPlanLabel, 
-                        height=button_height,
-                        tooltip_text=(
-                            f"RT Plan Label: {RTPlanLabel}\nRT Plan Name: {RTPlanName}\n"
-                            f"RT Plan Date: {RTPlanDate}\nDisease Site: {DiseaseSite}\n"
-                            f"Approval Status: {ApprovalStatus}\nMachine: {Machine}\n"
-                            f"Dose: {Dose} cGy\nFractions: {Fxns}\nSOPIUID: {SOPIUID}"
-                        )
-                    )
+                    add_custom_button(label=rtp_label, height=button_height, tooltip_text=rtp_text)
                     bulksave_tag = add_custom_checkbox(default_value=True, tooltip_text="Add this item to the bulk save list.")
                     save_tag = add_custom_button(
                         label="Save", 
@@ -385,8 +366,11 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                     )
                     filename_tag = dpg.add_input_text(default_value=default_filename, width=size_dict["table_w"])
                 
-                save_data_dict["plans"].append({
-                    "data": value, 
+                save_selections_dict["plans"].append({
+                    "data_key": rtp_sopiuid,
+                    "study_instance_uid": study_instance_uid,
+                    "modality": modality,
+                    "sop_instance_uid": rtp_sopiuid,
                     "filename_tag": filename_tag, 
                     "bulksave_tag": bulksave_tag, 
                     "save_tag": save_tag
@@ -403,7 +387,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             with dpg.tooltip(parent=dpg.last_item()):
                 dpg.add_text("Filename for the summed dose, if any will exist (based on user selections below).", wrap=size_dict["tooltip_width"])
             dpg.add_text(f"Dose Sum Name: ")
-            save_data_dict["main_checkboxes"]["dosesum_name_tag"] = dpg.add_input_text(default_value="DOSE_PlanSum", width=size_dict["table_w"])
+            save_selections_dict["main_checkboxes"]["dosesum_name_tag"] = dpg.add_input_text(default_value="DOSE_PlanSum", width=size_dict["table_w"])
         with dpg.table(
             resizable=True, 
             reorderable=True, 
@@ -432,70 +416,53 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             dpg.add_table_column(label="# Dose Fxns", init_width_or_weight=round(dpg.get_text_size("# Dose Fxns")[0] * 1.05))
             dpg.add_table_column(label="# Plan Fxns", init_width_or_weight=round(dpg.get_text_size("# Plan Fxns")[0] * 1.05))
             dpg.add_table_column(label="Filename", width_stretch=True)
-            for key, value in data_dict.items():
-                if key[0] != "rtdose":
-                    continue
-                if value() is None:
-                    continue
+            for ((_, rtd_sopiuid), rtd_button_tag) in save_rtdoses_dict.items():
+                rtd_sopiuid = str(rtd_sopiuid)
                 
-                num_fxn_planned = value().GetMetaData("number_of_fractions_planned")
-                num_fxn_rtdose = value().GetMetaData("number_of_fractions_rtdose")
-                SOPIUID = value().GetMetaData("SOPInstanceUID")
-                referenced_rtplan_sopiuid = key[1]
-                rtplan_dict = data_mgr.get_modality_data("rtplan").get(referenced_rtplan_sopiuid, {})
+                modality = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "Modality", "RT Dose")
+                dose_summation_type = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "DoseSummationType", "")
+                date = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "ContentDate", "N/A")
+                time = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "ContentTime", "")
+                ref_rtp_sopiuid = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "ReferencedRTPlanSOPInstanceUID", "")
+                ref_beam_number = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "ReferencedRTPlanBeamNumber", "")
+                num_fxns_planned = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "NumberOfFractionsPlanned", "0")
+                num_fxns = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "NumberOfFractions", "0")
+                study_instance_uid = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "StudyInstanceUID", "UNKNOWN")
                 
-                RTPlanLabel = rtplan_dict.get("RTPlanLabel", "NoPlanLabel")
-                RTPlanName = rtplan_dict.get("RTPlanName", "NoPlanName")
-                RTPlanDate = rtplan_dict.get("RTPlanDate", "NoPlanDate")
-                DiseaseSite = rtplan_dict.get("rt_plan_disease_site", "19000101")
-                ApprovalStatus = rtplan_dict.get("ApprovalStatus", "NoApprovalStatus")
-                Machine = rtplan_dict.get("rt_plan_machine", "NoMachine")
-                Dose = rtplan_dict.get("target_prescription_dose_cgy", "NoDose")
-                Fxns = rtplan_dict.get("number_of_fractions_planned", "NoFxns")
+                rtplan_label = data_mgr.get_rtplan_ds_value_by_uid(ref_rtp_sopiuid, "RTPlanLabel", "") if ref_rtp_sopiuid else ""
+                rtplan_name = data_mgr.get_rtplan_ds_value_by_uid(ref_rtp_sopiuid, "RTPlanName", "") if ref_rtp_sopiuid else ""
+                rtplan_date = data_mgr.get_rtplan_ds_value_by_uid(ref_rtp_sopiuid, "RTPlanDate", "") if ref_rtp_sopiuid else ""
                 
-                if "composite" in key[2]:
-                    dose_type = "BeamComposite"
-                else:
-                    dose_type = value().GetMetaData("DoseSummationType").title()
-                    if "beam" in dose_type.lower():
-                        beam_num = value().GetMetaData("referenced_beam_number")
-                        if beam_num:
-                            dose_type += beam_num
+                dose_name = f"{dose_summation_type.upper()}"
+                dose_name = dose_name + ref_beam_number if "BEAM" in dose_name and ref_beam_number else dose_name
                 
-                if rtplan_dict:
+                rtd_label = dpg.get_item_label(rtd_button_tag)
+                tooltip_text_tag = f"{rtd_button_tag}_tooltiptext"
+                rtd_text = dpg.get_value(tooltip_text_tag) if dpg.does_item_exist(tooltip_text_tag) else (
+                    f"RT Dose Type: {modality}\nDose Summation Type: {dose_summation_type}\nContent Date: {date}\nContent Time: {time}\n"
+                    f"SOPInstanceUID: {rtd_sopiuid}\nReferenced RT Plan SOPIUID: {ref_rtp_sopiuid}\nReferenced RT Plan Beam Number: {ref_beam_number}\n"
+                    f"RT Plan Label: {rtplan_label}\nRT Plan Name: {rtplan_name}\nRT Plan Date: {rtplan_date}\n"
+                    f"Number of Fractions Planned: {num_fxns_planned}\nNumber of Fractions RT Dose: {num_fxns}\n"
+                )
+                
+                if ref_rtp_sopiuid:
                     default_filename = (
-                        f"DOSE_{str(dose_type).replace(' ', '-').replace('_', '-')}_"
-                        f"{str(num_fxn_planned).replace(' ', '-').replace('_', '-')}Fxns_"
-                        f"{str(RTPlanLabel).replace(' ', '-').replace('_', '-')}_"
-                        f"{str(RTPlanName).replace(' ', '-').replace('_', '-')}_"
-                        f"{str(RTPlanDate).replace(' ', '-').replace('_', '-')}_"
-                        f"{str(Machine).replace(' ', '-').replace('_', '-')}"
+                        f"DOSE_{str(dose_name).replace(' ', '-').replace('_', '-')}_" +
+                        f"{str(num_fxns_planned).replace(' ', '-').replace('_', '-')}Fxns" + 
+                        (f"_{str(rtplan_label).replace(' ', '-').replace('_', '-')}" if rtplan_label else "NoPlanLabel") +
+                        (f"_{str(rtplan_name).replace(' ', '-').replace('_', '-')}" if rtplan_name else "NoPlanName") +
+                        (f"_{str(rtplan_date).replace(' ', '-').replace('_', '-')}" if rtplan_date else "NoPlanDate")
                     )
                 else:
                     default_filename = (
-                        f"DOSE_{str(dose_type).replace(' ', '-').replace('_', '-')}_"
-                        f"{str(num_fxn_planned).replace(' ', '-').replace('_', '-')}Fxns_"
-                        f"{str(SOPIUID).replace(' ', '-').replace('_', '-')}"
+                        f"DOSE_{str(dose_name).replace(' ', '-').replace('_', '-')}_" +
+                        f"{str(num_fxns_planned).replace(' ', '-').replace('_', '-')}Fxns" + 
+                        f"_{rtd_sopiuid.replace(' ', '-').replace('_', '-')}"
                     )
                 
                 with dpg.table_row(user_data=filename_tag):
-                    add_custom_button(
-                        label=dose_type,
-                        height=button_height,
-                        tooltip_text=(
-                            f"RT Dose Type: {dose_type}\nNumber of Fractions Planned: {num_fxn_planned}\n"
-                            f"Number of Fractions RT Dose: {num_fxn_rtdose}\n"
-                            f"SOPIUID: {SOPIUID}\nReferenced RT Plan SOPIUID: {referenced_rtplan_sopiuid}\n"
-                            f"RT Plan Label: {RTPlanLabel}\nRT Plan Name: {RTPlanName}\n"
-                            f"RT Plan Date: {RTPlanDate}\nDisease Site: {DiseaseSite}\n"
-                            f"Approval Status: {ApprovalStatus}\nMachine: {Machine}\n"
-                            f"Dose: {Dose} cGy\nFractions: {Fxns}"
-                        )
-                    )
-                    bulksave_tag = add_custom_checkbox(
-                        default_value=True,
-                        tooltip_text="Include this item in the bulk save list."
-                    )
+                    add_custom_button(label=rtd_label, height=button_height, tooltip_text=rtd_text)
+                    bulksave_tag = add_custom_checkbox(default_value=True, tooltip_text="Include this item in the bulk save list.")
                     save_tag = add_custom_button(
                         label="Save", 
                         callback=lambda s, a, u: ss_mgr.submit_action(partial(_execute_saving, s, a, u)),
@@ -510,7 +477,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                     )
                     
                     num_dose_fxns_tag = dpg.add_input_int(
-                        default_value=int(num_fxn_rtdose), 
+                        default_value=int(num_fxns), 
                         min_value=0, 
                         max_value=100, 
                         min_clamped=True, 
@@ -527,7 +494,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                         )
                     
                     num_plan_fxns_tag = dpg.add_input_int(
-                        default_value=int(num_fxn_planned), 
+                        default_value=int(num_fxns_planned), 
                         min_value=0, 
                         max_value=100, 
                         min_clamped=True,
@@ -549,8 +516,11 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                         width=size_dict["table_w"]
                     )
                 
-                save_data_dict["doses"].append({
-                    "data": value, 
+                save_selections_dict["doses"].append({
+                    "data_key": rtd_sopiuid, 
+                    "study_instance_uid": study_instance_uid,
+                    "modality": modality,
+                    "sop_instance_uid": rtd_sopiuid,
                     "filename_tag": filename_tag, 
                     "bulksave_tag": bulksave_tag, 
                     "save_tag": save_tag, 
@@ -566,4 +536,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             add_separator_before=True, 
             add_spacer_after=True
         )
-        save_data_dict["execute_bulk_save_tag"] = execute_bulk_save_tag
+        save_selections_dict["execute_bulk_save_tag"] = execute_bulk_save_tag
+
+        dpg.add_spacer(height=size_dict["spacer_height"])
+    

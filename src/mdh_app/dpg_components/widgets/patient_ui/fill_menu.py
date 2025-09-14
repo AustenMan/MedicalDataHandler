@@ -13,7 +13,7 @@ from mdh_app.dpg_components.core.utils import get_tag, get_user_data, add_custom
 from mdh_app.dpg_components.themes.button_themes import get_hidden_button_theme
 from mdh_app.dpg_components.windows.save_data.save_data_win import create_save_window
 from mdh_app.dpg_components.widgets.patient_ui.images import add_images_to_menu
-from mdh_app.dpg_components.widgets.patient_ui.doses import add_doses_to_menu, _add_rtd_buttons
+from mdh_app.dpg_components.widgets.patient_ui.doses import add_doses_to_menu, _add_rtd_button
 from mdh_app.dpg_components.widgets.patient_ui.plans import add_plans_to_menu, _add_rtp_button
 from mdh_app.dpg_components.widgets.patient_ui.structure_sets import add_structure_sets_to_menu
 
@@ -78,12 +78,13 @@ def fill_right_col_ptdata(active_pt: Patient) -> None:
             readonly=True,
             hint="Patient Name"
         )
+    tag_save_dict = {}
     add_custom_button(
         label="Save Data",
         tag=tag_save_button,
         parent_tag="mw_right",
         callback=create_save_window,
-        user_data={},
+        user_data=tag_save_dict,
         add_spacer_before=True,
         add_separator_after=True,
         visible=False
@@ -120,7 +121,8 @@ def _update_rmenu_matched_rtd_rtp(rtp_rtd_mapped: Dict[str, List[str]]) -> None:
             modality_node = dpg.generate_uuid()
             with dpg.tree_node(tag=modality_node, label=f"Linked Group #{idx}", default_open=True):
                 _add_rtp_button(modality_node, rtp_sopiuid)
-                _add_rtd_buttons(modality_node, rtp_sopiuid, rtd_sopiuids)
+                for rtd_sopiuid in rtd_sopiuids:
+                    _add_rtd_button(modality_node, rtd_sopiuid)
         dpg.add_spacer(height=size_dict["spacer_height"])
 
 

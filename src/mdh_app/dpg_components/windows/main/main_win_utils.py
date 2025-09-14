@@ -55,7 +55,7 @@ def _fill_mw_settings_table() -> None:
                 tooltip_text="Toggles the application settings window."
             )
             add_custom_button(
-                label="Log", 
+                label="Event Log", 
                 parent_tag=tag_row, 
                 width=-1,
                 height=-1,

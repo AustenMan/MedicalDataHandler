@@ -126,6 +126,7 @@ class FileMetadata(Base):
     sop_instance_uid = Column(String, doc="Unique identifier for this DICOM instance")
     sop_class_uid = Column(String, doc="DICOM SOP Class UID defining object type")
     series_instance_uid = Column(String, doc="Series Instance UID grouping related images")
+    study_instance_uid = Column(String, doc="Study Instance UID grouping related series")
     
     # Radiotherapy-specific fields
     dose_summation_type = Column(String, doc="How dose distributions should be summed")

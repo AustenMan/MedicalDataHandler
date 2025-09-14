@@ -37,6 +37,7 @@ def add_doses_to_menu(rtdoses_sopiuids: List[str]) -> None:
 def _add_rtd_button(parent: Union[str, int], rtd_sopiuid: str) -> None:
     """ Add a button for an RT Dose under the given parent. """
     data_mgr: DataManager = get_user_data(td_key="data_manager")
+    tag_save_dict = get_user_data("save_button")
     size_dict = get_user_data(td_key="size_dict")
 
     modality = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "Modality", "RT Dose")
@@ -83,22 +84,23 @@ def _add_rtd_button(parent: Union[str, int], rtd_sopiuid: str) -> None:
         with dpg.tooltip(dpg.last_item()):
             dpg.add_text("Display dose", wrap=size_dict["tooltip_width"])
         
-        tag_tooltip_text = dpg.generate_uuid()
         tag_button = dpg.add_button(
             label=rtd_btn_label,
             width=size_dict["button_width"],
             callback=_popup_inspect_rtdose,
-            user_data=(rtd_sopiuid, tag_tooltip_text)
+            user_data=rtd_sopiuid,
         )
         with dpg.tooltip(parent=tag_button):
-            dpg.add_text(rtd_text, tag=tag_tooltip_text, wrap=size_dict["tooltip_width"])
+            dpg.add_text(rtd_text, tag=f"{tag_button}_tooltiptext", wrap=size_dict["tooltip_width"])
         dpg.bind_item_theme(item=tag_button, theme=get_colored_button_theme((90, 110, 70)))
+    
+    tag_save_dict[("rtdose", rtd_sopiuid)] = tag_button
 
 
 def _update_rtd_metadata_and_button_tooltip(sender: Union[str, int], app_data: Any, user_data: Tuple[str, Union[str, int], str, Any]) -> None:
     """ Update the tooltip for an RT Dose button with current metadata. """
     new_val = app_data
-    rtd_sopiuid, tag_tooltip_text, meta_key = user_data
+    rtd_sopiuid, tag_tooltiptext, meta_key = user_data
     data_mgr: DataManager = get_user_data(td_key="data_manager")
     
     # Update the metadata
@@ -106,7 +108,7 @@ def _update_rtd_metadata_and_button_tooltip(sender: Union[str, int], app_data: A
     logger.info(f"Updated metadata {meta_key} with value {new_val}.")
     
     # If the tooltip text item doesn't exist, return
-    if not dpg.does_item_exist(tag_tooltip_text):
+    if not dpg.does_item_exist(tag_tooltiptext):
         return
     
     # If the key is not one we care about for updating tooltip, return
@@ -118,7 +120,7 @@ def _update_rtd_metadata_and_button_tooltip(sender: Union[str, int], app_data: A
     num_fxns = data_mgr.get_rtdose_metadata_by_uid_and_key(rtd_sopiuid, "NumberOfFractions", "0")
 
     # Replace only those lines in the tooltip text
-    current_text = dpg.get_value(tag_tooltip_text)
+    current_text = dpg.get_value(tag_tooltiptext)
     updated_lines = []
     for line in current_text.splitlines():
         if line.startswith("Number of Fractions Planned"):
@@ -127,7 +129,7 @@ def _update_rtd_metadata_and_button_tooltip(sender: Union[str, int], app_data: A
             updated_lines.append(f"Number of Fractions (as shown in the Dose): {num_fxns if num_fxns != '0' else 'N/A'}")
         else:
             updated_lines.append(line)
-    dpg.set_value(tag_tooltip_text, "\n".join(updated_lines))
+    dpg.set_value(tag_tooltiptext, "\n".join(updated_lines))
 
 
 def _popup_inspect_rtdose(sender: Union[str, int], app_data: Any, user_data: Tuple[str, Union[str, int]]) -> None:
@@ -143,7 +145,8 @@ def _popup_inspect_rtdose(sender: Union[str, int], app_data: Any, user_data: Tup
     safe_delete(tag_inspect)
     
     button_label = dpg.get_item_label(sender)
-    rtd_sopiuid, tag_tooltip_text = user_data
+    tag_tooltiptext = f"{sender}_tooltiptext"
+    rtd_sopiuid = user_data
     
     data_mgr: DataManager = get_user_data(td_key="data_manager")
     dose_metadata = data_mgr.get_rtdose_metadata_dict_by_uid(rtd_sopiuid) or {}
@@ -208,7 +211,7 @@ def _popup_inspect_rtdose(sender: Union[str, int], app_data: Any, user_data: Tup
                             default_value=value,
                             width=size_dict["button_width"],
                             callback=_update_rtd_metadata_and_button_tooltip,
-                            user_data=(rtd_sopiuid, tag_tooltip_text, key),
+                            user_data=(rtd_sopiuid, tag_tooltiptext, key),
                             min_value=0, max_value=9999,
                             min_clamped=True, max_clamped=True
                         )

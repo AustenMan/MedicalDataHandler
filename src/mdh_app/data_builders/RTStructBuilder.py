@@ -55,7 +55,7 @@ def _validate_structure_set_info(ds: Dataset) -> bool:
             logger.error("No Referenced Series Instance UID found in RT Structure Set, so it cannot be processed.")
             return False
     except Exception:
-        logger.error("Error validating structure set information!", exc_info=True)
+        logger.exception("Failed to validate structure set information", exc_info=True, stack_info=True)
         return False
 
     return True
@@ -122,7 +122,7 @@ def _extract_roi_info(ds: Dataset, ss_mgr: SharedStateManager) -> Dict[int, Dict
         
         return roi_datasets
     except Exception as e:
-        logger.error(f"Error extracting ROI data from structure set!", exc_info=True)
+        logger.exception("Failed to extract ROI data from structure set", exc_info=True, stack_info=True)
         return {}
 
 
@@ -137,7 +137,7 @@ def extract_rtstruct_and_roi_datasets(
     Returns:
         (ds, roi_datasets) if successful, else None.
     """
-    logger.info(f"Starting RT Structure Set processing for file: '{file_path}'")
+    logger.debug(f"Processing RT Structure Set: {file_path}")
         
     # Validate inputs
     if should_exit(ss_mgr, "Processing terminated before structure set input validation."):
@@ -165,6 +165,6 @@ def extract_rtstruct_and_roi_datasets(
     if not roi_datasets:
         return None
     
-    logger.info(f"Completed RT Structure Set processing for file: '{file_path}'")
+    logger.debug(f"Completed RT Structure Set processing: {file_path}")
     return ds, roi_datasets
 

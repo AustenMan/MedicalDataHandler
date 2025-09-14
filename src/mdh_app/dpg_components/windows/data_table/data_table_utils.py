@@ -244,7 +244,7 @@ def load_patient_data(sender: Union[int, str], app_data: Any, user_data: Tuple[P
         return
     
     # Load data and update UI
-    logger.info("Starting to load selected data. Please wait...")
+    logger.info("Loading selected data")
     data_mgr: DataManager = get_user_data(td_key="data_manager")
     data_mgr.load_all_dicom_data(patient, selected_files)
     fill_right_col_ptdata(patient)

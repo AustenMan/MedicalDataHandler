@@ -9,6 +9,7 @@ class DicomTags:
     modality = Tag(0x0008, 0x0060)
     dose_summation_type = Tag(0x3004, 0x000A)
     series_instance_uid = Tag(0x0020, 0x000E)
+    study_instance_uid = Tag(0x0020, 0x000D)
     sop_class_uid = Tag(0x0008, 0x0016)
     sop_instance_uid = Tag(0x0008, 0x0018)
     referenced_sop_class_uid = Tag(0x0008, 0x1150)

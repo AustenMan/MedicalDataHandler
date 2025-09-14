@@ -76,7 +76,7 @@ def read_dicom_metadata(file_path: str) -> Dict[str, Any]:
     try:
         ds = pydicom.dcmread(file_path, stop_before_pixels=True, force=True, specific_tags=DicomTags.link_worker_tags)
     except Exception as e:
-        logger.exception(f"Failed to read DICOM file {file_path}.")
+        logger.exception(f"Failed to read DICOM file {file_path}.", exc_info=True, stack_info=True)
         return {}
 
     # Basic tags
@@ -88,6 +88,7 @@ def read_dicom_metadata(file_path: str) -> Dict[str, Any]:
     sop_class_uid       = get_ds_tag_value(ds, DicomTags.sop_class_uid)
     dose_summation_type = get_ds_tag_value(ds, DicomTags.dose_summation_type)
     series_instance_uid = get_ds_tag_value(ds, DicomTags.series_instance_uid)
+    study_instance_uid = get_ds_tag_value(ds, DicomTags.study_instance_uid)
 
     # Multi-option tags
     label       = get_first_available_tag(ds, DicomTags.label_tags, reformat_str=True)
@@ -128,6 +129,7 @@ def read_dicom_metadata(file_path: str) -> Dict[str, Any]:
         "sop_class_uid": sop_class_uid,
         "dose_summation_type": dose_summation_type,
         "series_instance_uid": series_instance_uid,
+        "study_instance_uid": study_instance_uid,
         "label": label,
         "name": name,
         "description": description,
@@ -305,7 +307,7 @@ class DicomManager():
                 if isinstance(result, list):
                     dicom_files.extend(result)
             except Exception as e:
-                logger.exception(f"Failed to scan a folder for DICOM files.")
+                logger.exception("Failed to scan a folder for DICOM files.", exc_info=True, stack_info=True)
             finally:
                 if isinstance(fu, Future) and not fu.done():
                     fu.cancel()
@@ -353,7 +355,7 @@ class DicomManager():
                         meta = fu.result()
                         inserted += self._upsert(ses, meta)
                     except Exception as e:
-                        logger.exception(f"Failed to process DICOM metadata.")
+                        logger.exception("Failed to process DICOM metadata.", exc_info=True, stack_info=True)
                     finally:
                         if isinstance(fu, Future) and not fu.done():
                             fu.cancel()
@@ -422,6 +424,7 @@ class DicomManager():
                 "sop_class_uid":                    meta.get("sop_class_uid"),
                 "dose_summation_type":              meta.get("dose_summation_type"),
                 "series_instance_uid":              meta.get("series_instance_uid"),
+                "study_instance_uid":               meta.get("study_instance_uid"),
                 "label":                            meta.get("label"),
                 "name":                             meta.get("name"),
                 "description":                      meta.get("description"),
@@ -457,11 +460,11 @@ class DicomManager():
             return 1 if updated else 0
         
         except IntegrityError as exc:
-            logger.warning(f"DB integrity error on {meta['file_path']}: {exc}")
+            logger.warning(f"DB integrity error on {meta['file_path']}", exc_info=True, stack_info=True)
             ses.rollback()
             return 0
         except Exception as e:
-            logger.exception(f"Failed to upsert metadata for {meta['file_path']}.")
+            logger.exception(f"Failed to upsert metadata for {meta['file_path']}.", exc_info=True, stack_info=True)
             ses.rollback()
             return 0
 
@@ -519,14 +522,14 @@ class DicomManager():
 
                 self.progress_callback(total, total, f"Loaded {len(results)} patients from database.")
         except Exception as e:
-            logger.exception("Failed to load patient data from database.")
+            logger.exception("Failed to load patient data from database.", exc_info=True, stack_info=True)
             return {}
 
         return results
     
     def delete_patient_from_db(self, mrn: str, name: str) -> bool:
         """Delete patient and related data using MRN and Name."""
-        logger.info(f"Attempting to delete patient: MRN={mrn}, Name={name}")
+        logger.info(f"Deleting patient: MRN={mrn}, Name={name}")
         with get_session() as ses:
             # Find patient by MRN and Name
             patient = ses.query(Patient).filter_by(mrn=mrn, name=name).one_or_none()
@@ -547,19 +550,19 @@ class DicomManager():
 
                 # Delete the Patient
                 ses.delete(patient)
-                logger.info(f"Successfully deleted patient MRN={mrn}, Name={name} and all their associated data from the database!")
+                logger.info(f"Deleted patient MRN={mrn}, Name={name}")
                 return True
             except Exception as e:
-                logger.exception(f"Failed to delete patient data!", exc_info=e, stack_info=True)
+                logger.exception("Failed to delete patient data!", exc_info=True, stack_info=True)
                 return False
     
     def purge_all_patient_data_from_db(self) -> None:
         """Delete all patient data from database (irreversible)."""
-        logger.warning("Purging ALL patient data from database…")
+        logger.warning("Purging all patient data")
         with get_session() as ses:
             # Order matters due to foreign keys
             ses.execute(delete(FileMetadataOverride))
             ses.execute(delete(FileMetadata))
             ses.execute(delete(File))
             ses.execute(delete(Patient))
-        logger.info("Successfully purged all patient data from the database!")
+        logger.info("Purged all patient data")

@@ -100,7 +100,7 @@ def get_first_ref_series_uid(ds: pydicom.Dataset) -> str:
         if not matched_ref_series_uid:
             logger.error("No Referenced Series Instance UID found in RT Structure Set.")
     except Exception as e:
-        logger.error("Error retrieving Referenced Series Instance UID.", exc_info=True)
+        logger.exception("Failed to retrieve Referenced Series Instance UID", exc_info=True, stack_info=True)
     return matched_ref_series_uid
 
 
@@ -121,7 +121,7 @@ def get_first_ref_struct_sop_uid(ds: pydicom.Dataset) -> str:
         if not matched_ref_rts_sop_uid:
             logger.error("No Referenced Structure Set SOP Instance UID found in the plan file.")
     except Exception as e:
-        logger.error("Error retrieving Referenced Structure Set SOP Instance UID.", exc_info=True)
+        logger.exception("Failed to retrieve Referenced Structure Set SOP Instance UID", exc_info=True, stack_info=True)
     return matched_ref_rts_sop_uid
 
 
@@ -142,7 +142,7 @@ def get_first_ref_plan_sop_uid(ds: pydicom.Dataset) -> str:
         if not matched_ref_rtp_sop_uid:
             logger.error("No Referenced RT Plan SOP Instance UID found in the dose file.")
     except Exception as e:
-        logger.error("Error retrieving Referenced RT Plan SOP Instance UID.", exc_info=True)
+        logger.exception("Failed to retrieve Referenced RT Plan SOP Instance UID", exc_info=True, stack_info=True)
     return matched_ref_rtp_sop_uid
 
 
@@ -164,9 +164,9 @@ def get_first_num_fxns_planned(ds: pydicom.Dataset) -> Optional[int]:
                     f"Using the first one encountered."
                 )
         if matched_num_fxns_planned is None:
-            logger.info("No Number of Fractions Planned found in RT Plan.")
+            logger.warning("Number of Fractions Planned not found in RT Plan")
     except Exception as e:
-        logger.error("Error retrieving Number of Fractions Planned.", exc_info=True)
+        logger.exception("Failed to retrieve Number of Fractions Planned", exc_info=True, stack_info=True)
     return matched_num_fxns_planned
 
 
@@ -180,7 +180,7 @@ def get_first_ref_beam_number(ds: pydicom.Dataset) -> Optional[int]:
                 except (TypeError, ValueError):
                     continue
     except Exception as e:
-        logger.error("Error retrieving Referenced Beam Number.", exc_info=True)
+        logger.exception("Failed to retrieve Referenced Beam Number", exc_info=True, stack_info=True)
     return None
 
 
@@ -201,7 +201,7 @@ def read_dcm_file(
     try:
         return pydicom.dcmread(str(file_path).strip(), **kwargs)
     except Exception as e:
-        logger.error(f"Failed to read file '{file_path}'.", exc_info=True)
+        logger.error(f"Failed to read file '{file_path}'.", exc_info=True, stack_info=True)
         return None
 
 

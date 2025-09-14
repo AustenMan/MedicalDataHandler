@@ -124,7 +124,7 @@ def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None, 
                     ss_mgr.submit_action(partial(action, sender, app_data, user_data))
                 safe_delete(get_tag("confirmation_popup"))
             except Exception as e:
-                logger.exception(f"Failed to perform cleanup!")
+                logger.exception(f"Failed to perform cleanup!", exc_info=True, stack_info=True)
         
         if skip_confirmation:
             _execute_action()

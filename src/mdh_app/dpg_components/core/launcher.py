@@ -100,7 +100,7 @@ class GUILauncher:
             self._start_render_loop()
             
         except Exception as e:
-            logger.critical(f"Failed to launch GUI!", exc_info=True)
+            logger.critical(f"Failed to launch GUI!", exc_info=True, stack_info=True)
             raise
     
     def _create_registries(self) -> None:
@@ -128,7 +128,7 @@ class GUILauncher:
             self._configure_font_registry()
             
         except Exception as e:
-            logger.exception(f"Failed to create registries!")
+            logger.critical("Failed to create registries!", exc_info=True, stack_info=True)
             raise
     
     def _create_handler_registry(self) -> None:
@@ -369,7 +369,7 @@ class GUILauncher:
             )
             
         except Exception as e:
-            logger.exception("Failed to start DearPyGUI viewport!")
+            logger.critical("Failed to start DearPyGUI viewport!", exc_info=True, stack_info=True)
             raise
     
     def _validate_viewport_parameters(
@@ -437,13 +437,13 @@ class GUILauncher:
             try:
                 dpg.render_dearpygui_frame()
             except Exception as e:
-                logger.exception(f"Failed to render GUI frame!")
+                logger.exception("Failed to render GUI frame!", exc_info=True, stack_info=True)
                 continue
             
             try:
                 refresh_logger_messages()
             except Exception as e:
-                logger.exception(f"Failed to refresh logger messages!")
+                logger.exception("Failed to refresh logger messages!", exc_info=True, stack_info=True)
 
         logger.debug("Render loop terminated")
     
@@ -675,9 +675,9 @@ def destroy_gui(shared_state_manager: SharedStateManager) -> None:
     try:
         dpg.destroy_context()
     except Exception as e:
-        logger.exception("Failed to destroy the DPG context!")
-    
+        logger.exception("Failed to destroy the DPG context!", exc_info=True, stack_info=True)
+
     try:
         shared_state_manager.shutdown_manager()
     except Exception as e:
-        logger.exception("Failed to shut down the shared state manager!")
+        logger.exception("Failed to shut down the shared state manager!", exc_info=True, stack_info=True)

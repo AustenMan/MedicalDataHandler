@@ -53,7 +53,12 @@ def sitk_resample_to_reference(
     resampler.SetSize(reference_img.GetSize())
     resampler.SetOutputOrigin(reference_img.GetOrigin())
     resampler.SetOutputDirection(reference_img.GetDirection())
-    return resampler.Execute(input_img)
+    
+    resampled: sitk.Image = resampler.Execute(input_img)
+    resampled.SetSpacing(reference_img.GetSpacing())
+    resampled.SetOrigin(reference_img.GetOrigin())
+    resampled.SetDirection(reference_img.GetDirection())
+    return resampled
 
 
 def resample_sitk_data_with_params(
@@ -62,8 +67,6 @@ def resample_sitk_data_with_params(
     set_rotation: Optional[float] = None,
     set_flip: Optional[Tuple[bool, bool, bool]] = (False, False, False),
     interpolator: int = sitk.sitkLinear,
-    numpy_output: bool = True,
-    numpy_output_dtype: np.dtype = np.float32
 ) -> Union[np.ndarray, sitk.Image]:
     """Applies resampling to a 3D SimpleITK image with optional spacing, rotation, and flipping."""
     if not isinstance(sitk_data, sitk.Image):
@@ -94,13 +97,17 @@ def resample_sitk_data_with_params(
     
     resampler = sitk.ResampleImageFilter()
     resampler.SetInterpolator(interpolator)
-    resampler.SetOutputSpacing(set_spacing if set_spacing else original_spacing)
+    resampler.SetOutputSpacing(tuple(new_spacing))
     resampler.SetSize(new_size if set_spacing else original_size)
     resampler.SetOutputDirection(tuple(new_direction))
     resampler.SetOutputOrigin(tuple(new_origin))
-    resampled = resampler.Execute(sitk_data)
     
-    return sitk_to_array(resampled, np_dtype=numpy_output_dtype) if numpy_output else resampled
+    resampled: sitk.Image = resampler.Execute(sitk_data)
+    resampled.SetSpacing(tuple(new_spacing))
+    resampled.SetOrigin(tuple(new_origin))
+    resampled.SetDirection(tuple(new_direction))
+    
+    return resampled
 
 
 def get_orientation_labels(
@@ -229,3 +236,25 @@ def log_image_metadata(image: sitk.Image) -> None:
         logger.info(f"{key}: {image.GetMetaData(key)}")
     logger.info(f"Spacing: {image.GetSpacing()}, Origin: {image.GetOrigin()}, Direction: {image.GetDirection()}, Size: {image.GetSize()}")
 
+
+def copy_all_metadata(
+    src: sitk.Image, 
+    dst: sitk.Image, 
+    copy_spatial: bool = False
+) -> sitk.Image:
+    """
+    Copy metadata from source to destination SITK image.
+    
+    Args:
+        src: Source image
+        dst: Destination image
+        copy_spatial: If True, copy spacing/origin/direction
+    """
+    if copy_spatial:
+        dst.CopyInformation(src)
+    
+    # All custom metadata keys
+    for key in src.GetMetaDataKeys():
+        dst.SetMetaData(key, src.GetMetaData(key))
+    
+    return dst

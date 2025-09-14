@@ -32,9 +32,9 @@ def update_roi_tooltip(tag_roi_button: Union[str, int]) -> None:
     if not dpg.does_item_exist(tag_roi_button):
         return
     
-    size_dict = get_user_data(td_key="size_dict")
     data_mgr: DataManager = get_user_data("data_manager")
-    rts_sopiuid, roi_number, tag_roi_tooltip = dpg.get_item_user_data(tag_roi_button)
+    rts_sopiuid, roi_number = dpg.get_item_user_data(tag_roi_button)
+    tag_roi_tooltiptext = f"{tag_roi_button}_tooltiptext"
     
     # Get ROI metadata (specific to GUI)
     roi_metadata = data_mgr.get_roi_gui_metadata_by_uid(rts_sopiuid, roi_number)
@@ -52,7 +52,6 @@ def update_roi_tooltip(tag_roi_button: Union[str, int]) -> None:
     displayed_name = roi_template_name if use_template_name else roi_name
     
     dpg.set_item_label(tag_roi_button, f"ROI #{roi_number}: {displayed_name}")
-    safe_delete(tag_roi_tooltip)
     
     # Build tooltip text
     tooltip_text = (
@@ -69,8 +68,7 @@ def update_roi_tooltip(tag_roi_button: Union[str, int]) -> None:
         tooltip_text += f"\nRx Fractions: {roi_rx_fractions or 'N/A'}"  
         tooltip_text += f"\nRx Site: {roi_rx_site or 'N/A'}"
     
-    with dpg.tooltip(tag=tag_roi_tooltip, parent=tag_roi_button):
-        dpg.add_text(tooltip_text, wrap=size_dict["tooltip_width"])
+    dpg.set_value(tag_roi_tooltiptext, tooltip_text)
 
 
 def _update_roi_meta_on_name_change(rts_sopiuid: str, roi_number: int) -> None:
@@ -225,7 +223,7 @@ def _update_roi_metadata(sender: Any, app_data: Any, user_data: Tuple[Any, str])
     data_mgr: DataManager = get_user_data("data_manager")
     new_value = app_data
     tag_roi_button, key = user_data
-    rts_sopiuid, roi_number, tag_roi_tooltip = dpg.get_item_user_data(tag_roi_button)
+    rts_sopiuid, roi_number = dpg.get_item_user_data(tag_roi_button)
     data_mgr.set_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, key, new_value)
     if key == "ROIName" or key == "ROITemplateName":
         _update_roi_meta_on_name_change(rts_sopiuid, roi_number)
@@ -246,7 +244,7 @@ def _validate_roi_goal_inputs(sender: Any, app_data: str, user_data: Tuple[Any, 
     popup_width = dpg.get_item_width(get_tag("inspect_data_popup"))
     is_valid, errors = validate_roi_goals_format(roi_goals_str)
     if is_valid:
-        rts_sopiuid, roi_number, tag_roi_tooltip = dpg.get_item_user_data(tag_roi_button)
+        rts_sopiuid, roi_number = dpg.get_item_user_data(tag_roi_button)
         data_mgr: DataManager = get_user_data("data_manager")
         data_mgr.set_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, "roi_goals", loads(roi_goals_str))
         update_roi_tooltip(tag_roi_button)
@@ -273,7 +271,7 @@ def _popup_inspect_roi(sender: Union[str, int], app_data: Any, user_data: Tuple[
     safe_delete(tag_inspect)
     
     tag_roi_button = sender
-    rts_sopiuid, roi_number, tag_roi_tooltip = user_data
+    rts_sopiuid, roi_number = user_data
     
     # Get ROI metadata (specific to GUI)
     original_roi_name = data_mgr.get_rtstruct_roi_ds_value_by_uid(rts_sopiuid, roi_number, "ROIName", unmatched_organ_name)

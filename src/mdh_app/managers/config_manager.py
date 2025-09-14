@@ -41,7 +41,7 @@ class ConfigManager:
             "source": source_dir,
             "config_files": os.path.join(project_dir, "config_files"),
             "logs": os.path.join(project_dir, "logs"),
-            "processed_nifti_data": os.path.join(project_dir, "processed_nifti_data"),
+            "processed_data": os.path.join(project_dir, "processed_data"),
             "screenshots": os.path.join(project_dir, "screenshots"),
             "assets": os.path.join(resources_dir, "assets"),
             "fonts": os.path.join(resources_dir, "fonts"),
@@ -91,7 +91,7 @@ class ConfigManager:
             with open(file_path, "r", encoding="utf-8") as file:
                 return json.load(file)
         except Exception as e:
-            logger.exception(f"Unable to load configuration file '{file_path}'.")
+            logger.exception(f"Unable to load configuration file '{file_path}'.", exc_info=True, stack_info=True)
             return None
     
     def _save_config(self, key: str, new_config: Union[dict, list]) -> bool:
@@ -281,25 +281,25 @@ class ConfigManager:
             return None
         return file_path
 
-    def get_nifti_data_dir(self) -> Optional[str]:
-        """Get NIfTI data directory path."""
-        nifti_data_dir = self.dirs.get("processed_nifti_data")
-        if nifti_data_dir is not None:
-            os.makedirs(nifti_data_dir, exist_ok=True)
-        return nifti_data_dir
+    def get_saved_data_dir(self) -> Optional[str]:
+        """Get the saved data directory path."""
+        saved_data_dir = self.dirs.get("processed_data")
+        if saved_data_dir is not None:
+            os.makedirs(saved_data_dir, exist_ok=True)
+        return saved_data_dir
 
-    def get_nifti_data_save_dir(self, folder_names: List[str]) -> Optional[str]:
-        """Get NIfTI save directory path."""
+    def get_dir_in_saved_data_dir(self, folder_names: List[str]) -> Optional[str]:
+        """Get a directory inside the saved data directory path."""
         if not folder_names or not isinstance(folder_names, list):
             logger.error(f"Folder names must be provided as a list of strings. Received: {folder_names}.")
             return None
-        nifti_data_dir = self.get_nifti_data_dir()
-        if not nifti_data_dir:
+        saved_data_dir = self.get_saved_data_dir()
+        if not saved_data_dir:
             return None
         folder_names = [str(name) for name in folder_names]
-        save_dir = os.path.join(nifti_data_dir, *folder_names)
-        os.makedirs(save_dir, exist_ok=True)
-        return save_dir
+        curr_save_dir = os.path.join(saved_data_dir, *folder_names)
+        os.makedirs(curr_save_dir, exist_ok=True)
+        return curr_save_dir
     
     def get_screenshots_dir(self) -> Optional[str]:
         """Get screenshots directory path."""

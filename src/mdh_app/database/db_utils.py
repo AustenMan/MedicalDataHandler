@@ -72,7 +72,7 @@ def update_patient_processed_at(patient: Patient, when: Optional[datetime] = Non
 
 def delete_all_data() -> bool:
     """Delete ALL data from database tables (preserves schema)."""
-    logger.info("Deleting all data from database...")
+    logger.info("Deleting database data")
     
     try:
         with get_session() as session:
@@ -91,10 +91,10 @@ def delete_all_data() -> bool:
                     logger.info(f"Deleted {count} records from {table.__tablename__}")
             
             # Context manager will commit
-            logger.info("All data deleted successfully!")
+            logger.info("All data deleted")
             return True
             
     except Exception as e:
-        logger.exception("Failed to delete all data.", exc_ingo=True, stack_info=True)
+        logger.exception("Failed to delete all data.", exc_info=True, stack_info=True)
         return False
 

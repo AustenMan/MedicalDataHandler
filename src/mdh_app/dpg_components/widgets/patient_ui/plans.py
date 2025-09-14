@@ -36,6 +36,7 @@ def add_plans_to_menu(rtplans_sopiuids: List[str]) -> None:
 def _add_rtp_button(parent: Union[str, int], rtp_sopiuid: str) -> None:
     """ Add a button for an RT Plan under the given parent. """
     data_mgr: DataManager = get_user_data(td_key="data_manager")
+    tag_save_dict = get_user_data("save_button")
     size_dict = get_user_data(td_key="size_dict")
     
     file_path = data_mgr.get_rtplan_filepath_by_uid(rtp_sopiuid)
@@ -45,6 +46,7 @@ def _add_rtp_button(parent: Union[str, int], rtp_sopiuid: str) -> None:
     description = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "RTPlanDescription", "")
     date = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "RTPlanDate", "N/A")
     time = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "RTPlanTime", "")
+    num_fxns_planned = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "NumberOfFractionsPlanned", 1)
     approval_status = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "ApprovalStatus", "N/A")
     review_date = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "ReviewDate", "N/A")
     review_time = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "ReviewTime", "")
@@ -57,6 +59,7 @@ def _add_rtp_button(parent: Union[str, int], rtp_sopiuid: str) -> None:
         f"RT Plan Name: {name}\n"
         f"RT Plan Description: {description}\n"
         f"RT Plan Date and Time: {date} {time}\n"
+        f"Number of Fractions Planned: {num_fxns_planned}\n"
         f"Approval Status: {approval_status}\n"
         f"Review Date and Time: {review_date} {review_time}\n"
         f"Reviewer Name: {reviewer_name}\n"
@@ -77,7 +80,7 @@ def _add_rtp_button(parent: Union[str, int], rtp_sopiuid: str) -> None:
             user_data=file_path,
         )
         with dpg.tooltip(parent=tag_rtp_button):
-            dpg.add_text(f"Click to view RT Plan DICOM data. Brief summary:\n" + rtp_text, wrap=size_dict["tooltip_width"])
+            dpg.add_text(f"Click to view RT Plan DICOM data. Brief summary:\n" + rtp_text, tag=f"{rtp_button_label}_tooltiptext", wrap=size_dict["tooltip_width"])
         dpg.bind_item_theme(item=tag_rtp_button, theme=get_colored_button_theme((90, 110, 70)))
         
         tag_beams_button = dpg.add_button(
@@ -89,6 +92,8 @@ def _add_rtp_button(parent: Union[str, int], rtp_sopiuid: str) -> None:
         with dpg.tooltip(tag_beams_button):
             dpg.add_text(beam_summary_text, wrap=size_dict["tooltip_width"])
         dpg.bind_item_theme(item=tag_beams_button, theme=get_colored_button_theme((70, 90, 110)))
+    
+    tag_save_dict[("rtplan", rtp_sopiuid)] = tag_rtp_button
 
 
 def _popup_beam_summary(sender: Union[str, int], app_data: Any, user_data: Tuple[str, str, List[Dict[str, Any]]]) -> None:

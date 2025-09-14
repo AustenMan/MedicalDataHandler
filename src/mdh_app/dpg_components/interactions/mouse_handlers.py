@@ -115,7 +115,7 @@ def copy_log_text() -> None:
                         logger.info(f"{prepend_text} '{child_text[:75]}...'")
                     return
     except Exception as e:
-        logger.debug(f"Failed to copy text from log window.", exc_info=True)
+        logger.debug(f"Failed to copy text from log window.", exc_info=True, stack_info=True)
 
 def _handler_MouseLeftClick(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """Toggle tooltip visibility for the hovered view."""

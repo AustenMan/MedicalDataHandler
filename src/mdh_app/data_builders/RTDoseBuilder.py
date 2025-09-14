@@ -65,7 +65,7 @@ def _validate_dose_dataset(ds: Dataset) -> bool:
             return False
         
     except Exception as e:
-        logger.error("Error validating RT Dose dataset.", exc_info=True)
+        logger.error("Error validating RT Dose dataset.", exc_info=True, stack_info=True)
         return False
     
     return True   
@@ -105,9 +105,9 @@ def construct_dose(file_path: str, ss_mgr: SharedStateManager) -> Optional[sitk.
         sitk_dose.SetMetaData("NumberOfFractionsPlanned", "0")
         sitk_dose.SetMetaData("NumberOfFractions", "0")
 
-        logger.info(f"Successfully created RT Dose image with size: {sitk_dose.GetSize()}, spacing: {sitk_dose.GetSpacing()}, origin: {sitk_dose.GetOrigin()}, direction: {sitk_dose.GetDirection()}")
+        logger.info(f"Created RT Dose image: size={sitk_dose.GetSize()}, spacing={sitk_dose.GetSpacing()}")
         return sitk_dose
     except Exception as e:
-        logger.error(f"Failed to create SimpleITK dose image: {e}")
+        logger.error("Failed to create SimpleITK dose image.", exc_info=True, stack_info=True)
         return None
 

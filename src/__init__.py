@@ -35,7 +35,7 @@ def main() -> None:
     try:
         GUILauncher(shared_state_manager).launch()
     except Exception as e:
-        logger.exception("Failed to run the GUI!")
+        logger.exception("Failed to run the GUI!", exc_info=True, stack_info=True)
     finally:
         destroy_gui(shared_state_manager)
 

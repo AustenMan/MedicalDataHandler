@@ -152,7 +152,7 @@ def construct_image(
         logger.info(f"Constructing 3D image from {len(sorted_files)} DICOM files")
         image = reader.Execute()
     except Exception as e:
-        logger.error("ImageSeriesReader failed to construct image!", exc_info=True)
+        logger.error("ImageSeriesReader failed to construct image!", exc_info=True, stack_info=True)
         return None
     
     # Ensure consistent data type
@@ -162,7 +162,7 @@ def construct_image(
     try:
         image = merge_imagereader_metadata(reader, image)
     except Exception as e:
-        logger.warning(f"Failed to merge metadata: {e}")
+        logger.exception("Failed to merge metadata.", exc_info=True, stack_info=True)
         # Continue without merged metadata
     
     logger.info(
