@@ -23,13 +23,24 @@ def numpy_roi_mask_generation(
     geometric_type: str
 ) -> None:
     """Generate 3D ROI mask from matrix points (credit for initial inspiration: github.com/brianmanderson)."""
-    # All points should have same z for this condition
+    n_pts = len(matrix_points)
+    if n_pts == 0:
+        return  # Nothing to draw
+    
+    # Handle single point ROIs
+    if len(matrix_points) == 1:
+        x, y, z = matrix_points[0]
+        if 0 <= z < mask.shape[0] and 0 <= y < mask.shape[1] and 0 <= x < mask.shape[2]:
+            mask[z, y, x] = 1
+        return
+    
+    # 2D, All points should have same z for this condition
     if geometric_type != "OPEN_NONPLANAR":
         slice = int(matrix_points[0, 2])  
         points = np.ascontiguousarray(matrix_points[:, :2])
         cv2.fillPoly(mask[slice], [points], 1)
     
-    # Points may not all be on same z-slice for this condition
+    # 3D, Points may not all be on same z-slice for this condition
     else:
         # Draw 3D lines between consecutive points
         for i in range(1, len(matrix_points)):

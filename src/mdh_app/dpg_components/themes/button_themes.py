@@ -8,7 +8,7 @@ from typing import Union, Tuple, List, Optional, TYPE_CHECKING
 import dearpygui.dearpygui as dpg
 
 
-from mdh_app.dpg_components.themes.theme_manager import _build_modern_theme_dict
+from mdh_app.dpg_components.themes.global_themes import _build_modern_theme_dict
 
 
 if TYPE_CHECKING:

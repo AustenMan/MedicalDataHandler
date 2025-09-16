@@ -89,13 +89,13 @@ def construct_dose(file_path: str, ss_mgr: SharedStateManager) -> Optional[sitk.
         reader = sitk.ImageFileReader()
         reader.SetFileName(file_path)
         reader.ReadImageInformation()
+        reader.SetOutputPixelType(sitk.sitkFloat64)
         sitk_dose = reader.Execute()
 
         dose_grid_scaling = float(ds.DoseGridScaling)
         logger.debug(f"Applying dose grid scaling factor: {dose_grid_scaling}")
-        sitk_dose = sitk.Cast(sitk_dose, sitk.sitkFloat64)
-        sitk_dose = sitk.Multiply(sitk_dose, dose_grid_scaling)
-        sitk_dose = sitk.Cast(sitk_dose, sitk.sitkFloat32)
+        sitk_dose = sitk.Multiply(sitk_dose, dose_grid_scaling)  # apply scaling in float64
+        sitk_dose = sitk.Cast(sitk_dose, sitk.sitkFloat32)  # float32 generally adequate
 
         sitk_dose = merge_imagereader_metadata(reader, sitk_dose)
 

@@ -151,6 +151,7 @@ class DataManager:
         )
         
         self.initialize_data()
+        self._update_raw_data_params()
     
     def initialize_data(self) -> None:
         """Initialize data structures and cache."""
@@ -324,19 +325,78 @@ class DataManager:
     def _get_data(self, data_type: Literal["image", "roi", "dose"], key: Union[str, Tuple[str, int]], use_cached: bool = False) -> Optional[sitk.Image]:
         """Retrieve SITK image by type and key, optionally using cached version."""
         if use_cached:
-            cache_key = (data_type,) + ((key,) if isinstance(key, str) else key)
-            if cache_key not in self._cached_sitk_objects:
-                self.update_cached_data(True, cache_key)
+            cache_key = (data_type, *key) if isinstance(key, tuple) else (data_type, key)
+            self.update_cached_data(True, cache_key)  # builds ROI and adds to cache if needed
             return self._cached_sitk_objects.get(cache_key, None)
         
         if data_type == "image":
             return self.images.get(key, None)
         elif data_type == "roi":
+            self.build_rtstruct_roi(*key)  # ensure ROI is built first
             return self.rois.get(key, None)
         elif data_type == "dose":
             return self.rtdoses.get(key, None)
         return None
 
+    def _update_raw_data_params(self) -> None:
+        """Update original image parameters based on the first loaded image."""
+        if self._cached_sitk_objects:
+            cached_img_keys = [k for k in self._cached_sitk_objects.keys() if k[0] == "image"]
+            if cached_img_keys and cached_img_keys[0][1] in self.images:
+                image = self.images[cached_img_keys[0][1]]
+                self.original_size = image.GetSize()
+                self.original_spacing = image.GetSpacing()
+                self.original_origin = image.GetOrigin()
+                self.original_direction = image.GetDirection()
+                return
+
+            cached_roi_keys = [k for k in self._cached_sitk_objects.keys() if k[0] == "roi"]
+            if cached_roi_keys and cached_roi_keys[0][1:] in self.rois:
+                roi = self.rois[cached_roi_keys[0][1:]]
+                self.original_size = roi.GetSize()
+                self.original_spacing = roi.GetSpacing()
+                self.original_origin = roi.GetOrigin()
+                self.original_direction = roi.GetDirection()
+                return
+            
+            cached_dose_keys = [k for k in self._cached_sitk_objects.keys() if k[0] == "dose"]
+            if cached_dose_keys and cached_dose_keys[0][1] in self.rtdoses:
+                dose = self.rtdoses[cached_dose_keys[0][1]]
+                self.original_size = dose.GetSize()
+                self.original_spacing = dose.GetSpacing()
+                self.original_origin = dose.GetOrigin()
+                self.original_direction = dose.GetDirection()
+                return
+            
+            logger.warning(f"Cannot update original image params, none of the cached objects are valid: {self._cached_sitk_objects.keys()}")
+            
+        elif self.images:
+            first_image = next(iter(self.images.values()))
+            self.original_size = first_image.GetSize()
+            self.original_spacing = first_image.GetSpacing()
+            self.original_origin = first_image.GetOrigin()
+            self.original_direction = first_image.GetDirection()
+        
+        elif self.rois:
+            first_roi = next(iter(self.rois.values()))
+            self.original_size = first_roi.GetSize()
+            self.original_spacing = first_roi.GetSpacing()
+            self.original_origin = first_roi.GetOrigin()
+            self.original_direction = first_roi.GetDirection()
+        
+        elif self.rtdoses:
+            first_dose = next(iter(self.rtdoses.values()))
+            self.original_size = first_dose.GetSize()
+            self.original_spacing = first_dose.GetSpacing()
+            self.original_origin = first_dose.GetOrigin()
+            self.original_direction = first_dose.GetDirection()
+        
+        else:
+            self.original_size = (600, 600, 600)
+            self.original_spacing = (3.0, 3.0, 3.0)
+            self.original_origin = (0.0, 0.0, 0.0)
+            self.original_direction = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    
     ### Image Data Methods ###
     def load_images(self, img_data: Dict[str, List[File]]) -> Dict[str, Any]:
         """Load IMAGEs and update internal data dictionary."""
@@ -760,6 +820,7 @@ class DataManager:
         
         # Try to match a TG-263 name, or a default match
         templated_roi_name = find_reformatted_mask_name(roi_name, rt_roi_interpreted_type, tg_263_oar_names_list, organ_name_matching_dict, unmatched_organ_name)
+        display_name = templated_roi_name
         
         # Defaults
         roi_rx_dose = None
@@ -769,6 +830,7 @@ class DataManager:
         # If PTV, try to extract data
         if rt_roi_interpreted_type == "PTV" or templated_roi_name.upper().startswith("PTV"):
             orig_dose_fx_dict = regex_find_dose_and_fractions(roi_name)
+            logger.info(f"Extracted dose/fractions for PTV '{roi_name}': {orig_dose_fx_dict}")
             roi_rx_dose = orig_dose_fx_dict.get("dose", None)
             roi_rx_fractions = orig_dose_fx_dict.get("fractions", None)
             
@@ -785,20 +847,26 @@ class DataManager:
             # Try to find disease site from plan or structure names
             roi_rx_site = find_disease_site(plan_label, plan_name, [roi_name, templated_roi_name])
 
+            display_name += f"_{roi_rx_site}" if roi_rx_site is not None else "_NoSite"
+            display_name += f"_{roi_rx_dose}" if roi_rx_dose is not None and roi_rx_dose > 0 else "_NoDose"
+            display_name += f"_{roi_rx_fractions}" if roi_rx_fractions is not None and roi_rx_fractions > 0 else "_NoFxn"
+
         if struct_uid not in self.rtstruct_roi_metadata:
             self.rtstruct_roi_metadata[struct_uid] = {}
         
         self.rtstruct_roi_metadata[struct_uid][roi_number] = {
             "ROIName": roi_name,
-            "ROITemplateName": templated_roi_name,
             "ROIDisplayColor": roi_display_color,
             "RTROIInterpretedType": rt_roi_interpreted_type,
             "ROIPhysicalPropertyValue": roi_phys_prop_value,
+            "display_name": display_name,
+            "base_template_name": templated_roi_name,
+            "is_template_based": True,
+            "custom_suffix": "",
             "roi_goals": {},
             "roi_rx_dose": roi_rx_dose,
             "roi_rx_fractions": roi_rx_fractions,
             "roi_rx_site": roi_rx_site,
-            "use_template_name": True,
             "disabled": False,
         }
     
@@ -900,19 +968,26 @@ class DataManager:
     
     def get_roi_center_of_mass_by_uid(self, struct_uid: str, roi_number: int) -> Optional[Tuple[int, int, int]]:
         """ Return center of mass for an ROI. Returns center of mass as (x, y, z) tuple or None if no data. """
-        if (struct_uid, roi_number) not in self.rois:
-            self.build_rtstruct_roi(struct_uid, roi_number)
-            if (struct_uid, roi_number) not in self.rois:
-                return None
-        
-        sitk_roi: sitk.Image = self.rois[(struct_uid, roi_number)]
+        self.update_cached_data(True, ("roi", struct_uid, roi_number))  # ensure ROI is built and cached
+        sitk_roi: sitk.Image = self._cached_sitk_objects.get(("roi", struct_uid, roi_number), self.rois.get((struct_uid, roi_number), None))
+        if sitk_roi is None:
+            logger.error(f"ROI {roi_number} in RTSTRUCT {struct_uid} could not be created; cannot compute center of mass.")
+            return None
         
         stats = sitk.LabelShapeStatisticsImageFilter()
         stats.Execute(sitk_roi)
         
         if not stats.HasLabel(1):
-            logger.error(f"ROI {roi_number} in RTSTRUCT {struct_uid} has no voxels in its mask; cannot compute center of mass.")
-            return None
+            view = sitk.GetArrayViewFromImage(sitk_roi)
+            coords = np.argwhere(view > 0)
+            if coords.size == 0:  # No points
+                logger.error(f"ROI {roi_number} in RTSTRUCT {struct_uid} has no voxels in its mask; cannot compute center of mass.")
+                return None
+            elif coords.shape[0] == 1:  # Single point
+                return tuple(coords[0][::-1])  # (x, y, z)
+            else:  # Multiple points - return rounded mean
+                mean_idx = np.rint(coords.mean(axis=0)).astype(int)
+                return tuple(mean_idx[::-1])  # (x, y, z)
         
         # GetCentroid returns (x, y, z) in physical coordinates
         centroid_phys = stats.GetCentroid(1)
@@ -924,19 +999,27 @@ class DataManager:
     
     def get_roi_extent_ranges_by_uid(self, struct_uid: str, roi_number: int) -> Optional[Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]]]:
         """Return (x_range, y_range, z_range) index extents of an ROI."""
-        if (struct_uid, roi_number) not in self.rois:
-            self.build_rtstruct_roi(struct_uid, roi_number)
-            if (struct_uid, roi_number) not in self.rois:
-                return None
-
-        sitk_roi: sitk.Image = self.rois[(struct_uid, roi_number)]
-
+        self.update_cached_data(True, ("roi", struct_uid, roi_number))  # ensure ROI is built and cached
+        sitk_roi: sitk.Image = self._cached_sitk_objects.get(("roi", struct_uid, roi_number), self.rois.get((struct_uid, roi_number), None))
+        if sitk_roi is None:
+            logger.error(f"ROI {roi_number} in RTSTRUCT {struct_uid} could not be created; cannot compute center of mass.")
+            return None
+        
         stats = sitk.LabelShapeStatisticsImageFilter()
         stats.Execute(sitk_roi)
 
         if not stats.HasLabel(1):
-            logger.error(f"ROI {roi_number} in RTSTRUCT {struct_uid} has no voxels in its mask; cannot find its extent.")
-            return None
+            view = sitk.GetArrayViewFromImage(sitk_roi)
+            coords = np.argwhere(view > 0)
+            if coords.size == 0:  # No points
+                logger.error(f"ROI {roi_number} in RTSTRUCT {struct_uid} has no voxels in its mask; cannot compute extent ranges.")
+                return None
+            elif coords.shape[0] == 1:  # Single point
+                return ((coords[0][2], coords[0][2]), (coords[0][1], coords[0][1]), (coords[0][0], coords[0][0]))  # (x_range, y_range, z_range)
+            else:  # Multiple points - return min/max
+                x_min, y_min, z_min = coords.min(axis=0)
+                x_max, y_max, z_max = coords.max(axis=0)
+                return ((x_max, x_min), (y_max, y_min), (z_max, z_min))
 
         # BoundingBox -> (x_min, y_min, z_min, size_x, size_y, size_z)
         bb = stats.GetBoundingBox(1)
@@ -1169,7 +1252,7 @@ class DataManager:
         
         return deepcopy(beam_summaries) if return_deepcopy else beam_summaries
     
-    def get_rtplan_ds_overall_beam_summary_by_uid(self, rtplan_uid: str, beam_summaries: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    def get_rtplan_ds_overall_beam_summary_by_uid(self, rtplan_uid: str, beam_summaries: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Get an overall summary of beams from an RTPLAN DICOM dataset using SOPInstanceUID.
 
@@ -1404,38 +1487,25 @@ class DataManager:
         }
     
     ### Cached SITK Methods ###
-    def get_image_reference_param(self, param: str) -> Optional[Any]:
-        """
-        Retrieve a specified parameter from the cached SimpleITK reference image.
-
-        Args:
-            param: Parameter to retrieve. Options: 'origin', 'spacing', 'direction', 'size',
-                   'original_spacing', 'original_size', 'original_direction'.
-
-        Returns:
-            The parameter value or None if invalid or unavailable.
-        """
-        valid_params = {"origin", "spacing", "direction", "size", "original_spacing", "original_size", "original_direction"}
-        if param not in valid_params:
-            logger.error(f"Unsupported parameter '{param}'. Expected one of: {valid_params}.")
-            return None
+    def get_raw_data_params(self) -> Dict[str, Any]:
+        self._update_raw_data_params()
+        return {
+            "size": self.original_size,
+            "spacing": self.original_spacing,
+            "direction": self.original_direction,
+            "origin": self.original_origin,
+        }
+    
+    def get_current_data_params(self) -> Dict[str, Any]:
+        
         if self._cached_sitk_reference is None:
-            return None
-        if param == "origin":
-            return self._cached_sitk_reference.GetOrigin()
-        if param == "spacing":
-            return self._cached_sitk_reference.GetSpacing()
-        if param == "direction":
-            return self._cached_sitk_reference.GetDirection()
-        if param == "size":
-            return self._cached_sitk_reference.GetSize()
-        if param == "original_spacing":
-            return tuple(map(float, self._cached_sitk_reference.GetMetaData("original_spacing").strip('[]()').split(', ')))
-        if param == "original_size":
-            return tuple(map(int, self._cached_sitk_reference.GetMetaData("original_size").strip('[]()').split(', ')))
-        if param == "original_direction":
-            return tuple(map(float, self._cached_sitk_reference.GetMetaData("original_direction").strip('[]()').split(', ')))
-        return None
+            return self.get_raw_data_params()
+        return {
+            "size": self._cached_sitk_reference.GetSize(),
+            "spacing": self._cached_sitk_reference.GetSpacing(),
+            "direction": self._cached_sitk_reference.GetDirection(),
+            "origin": self._cached_sitk_reference.GetOrigin(),
+        }
     
     def _initialize_cached_sitk_reference(self, sitk_data: sitk.Image) -> sitk.Image:
         """
@@ -1454,9 +1524,6 @@ class DataManager:
             provided `sitk_data` unchanged.
         """
         if self._cached_sitk_reference is None:
-            original_voxel_spacing = sitk_data.GetSpacing()
-            original_size = sitk_data.GetSize()
-            original_direction = sitk_data.GetDirection()
             voxel_spacing = self._cached_texture_param_dict.get("voxel_spacing", sitk_data.GetSpacing())
             rotation = self._cached_texture_param_dict.get("rotation", None)
             flips = self._cached_texture_param_dict.get("flips", None)
@@ -1466,12 +1533,7 @@ class DataManager:
                 set_rotation=rotation,
                 set_flip=flips,
                 interpolator=sitk.sitkLinear,
-                numpy_output=False,
-                numpy_output_dtype=None
             )
-            self._cached_sitk_reference.SetMetaData("original_spacing", str(original_voxel_spacing))
-            self._cached_sitk_reference.SetMetaData("original_size", str(original_size))
-            self._cached_sitk_reference.SetMetaData("original_direction", str(original_direction))
             return self._cached_sitk_reference
         return sitk_data
     
@@ -1517,6 +1579,7 @@ class DataManager:
                 del self._cached_sitk_objects[display_keys]
                 if not self._cached_sitk_objects:
                     self._cached_sitk_reference = None
+            self._update_dose_sum_cache()
             return
         
         # Check if already loaded
@@ -1712,6 +1775,56 @@ class DataManager:
         base_layer[overlay_indices] *= inv_alpha
         base_layer[overlay_indices] += overlay[overlay_indices] * alpha_ratio
     
+    def _get_valid_slicer_and_dest(self, slicer: Tuple[Union[slice, int], ...], data_shape: Tuple[int, ...]) -> Tuple[Tuple, Tuple[slice, ...]]:
+        """
+        Convert a slicer that may extend beyond data bounds into a valid slicer and destination slices.
+        
+        Args:
+            slicer: Original slicer that may have negative indices or exceed bounds
+            data_shape: Shape of the data being sliced
+        
+        Returns:
+            Tuple of (valid_slicer, dest_slices) where:
+            - valid_slicer: Slicer clipped to valid data bounds
+            - dest_slices: Where to place the data in the destination array
+        """
+        assert len([s for s in slicer if isinstance(s, slice)]) == 2, f"Slicer must have two slice objects, but got: {slicer}"
+        
+        valid_slicer = []
+        dest_slices = []
+        
+        for s, dim_size in zip(slicer, data_shape):
+            if isinstance(s, slice):
+                start = s.start if s.start is not None else 0
+                stop = s.stop if s.stop is not None else dim_size
+                
+                # Clip to valid range
+                valid_start = max(0, start)
+                valid_stop = min(dim_size, stop)
+                
+                if valid_stop <= valid_start:  # no data along this axis
+                    return None, None
+                
+                # Calculate destination position
+                dest_start = max(0, -start) if start < 0 else 0
+                dest_stop = dest_start + (valid_stop - valid_start)
+                
+                valid_slicer.append(slice(valid_start, valid_stop))
+                dest_slices.append(slice(dest_start, dest_stop))
+            else:
+                # Single index
+                if 0 <= s < dim_size:
+                    valid_slicer.append(s)
+                    # Single index doesn't need a destination slice
+                else:
+                    # Index out of bounds
+                    return None, None
+        
+        # Use destination slices for 2D placement
+        dest_2d = tuple(dest_slices[:2])
+        
+        return tuple(valid_slicer), dest_2d
+    
     def _blend_images_RGB(
         self,
         base_layer: np.ndarray,
@@ -1748,17 +1861,22 @@ class DataManager:
         for sitk_image in sitk_images:
             # Convert the needed slice to numpy
             view = sitk.GetArrayViewFromImage(sitk_image)
-            image_slice = view[slicer].astype(np.float32)  # 2D slice
+            
+            valid_slicer, dest_2d = self._get_valid_slicer_and_dest(slicer, view.shape)
+            if valid_slicer is None:
+                continue  # Skip if slice is out of bounds
+            
+            image_slice = view[valid_slicer].astype(np.float32)  # 2D slice
             
             np.clip(image_slice, lower_bound, upper_bound, out=image_slice)
             image_slice -= lower_bound
             image_slice *= scale_factor
             
             # Add to RGB channels
-            composite_image[:, :, 0] += image_slice
-            composite_image[:, :, 1] += image_slice
-            composite_image[:, :, 2] += image_slice
-        
+            composite_image[dest_2d[0], dest_2d[1], 0] += image_slice
+            composite_image[dest_2d[0], dest_2d[1], 1] += image_slice
+            composite_image[dest_2d[0], dest_2d[1], 2] += image_slice
+
         composite_image /= len(sitk_images) # Average of images
 
         self._blend_layers(base_layer, composite_image, alpha)
@@ -1796,17 +1914,28 @@ class DataManager:
         for roi_keys in roi_keys_list:
             roi_sitk = self._cached_sitk_objects[roi_keys]
             roi_view = sitk.GetArrayViewFromImage(roi_sitk)
-            if not np.any(roi_view[slicer]):
+            
+            valid_slicer, dest_2d = self._get_valid_slicer_and_dest(slicer, roi_view.shape)
+            if valid_slicer is None:
+                continue  # Skip if slice is out of bounds
+            
+            roi_slice = roi_view[valid_slicer]
+            if not np.any(roi_slice):
                 continue
             
             struct_uid, roi_number = roi_keys[1], roi_keys[2]
             roi_display_color = self.rtstruct_roi_metadata.get(struct_uid, {}).get(roi_number, {}).get("ROIDisplayColor", (0, 255, 0))
             
-            roi_contour_input = np.ascontiguousarray(roi_view[slicer], dtype=np.uint8)
+            # Get offset from dest_2d
+            y_offset = dest_2d[0].start if dest_2d[0].start else 0  # 'y' w.r.t. texture, not anatomy
+            x_offset = dest_2d[1].start if dest_2d[1].start else 0  # 'x' w.r.t. texture, not anatomy
+            
+            roi_contour_input = np.ascontiguousarray(roi_slice, dtype=np.uint8)
             contours, _ = cv2.findContours(
                 image=roi_contour_input,
                 mode=cv2.RETR_EXTERNAL,
-                method=cv2.CHAIN_APPROX_SIMPLE
+                method=cv2.CHAIN_APPROX_SIMPLE,
+                offset=(x_offset, y_offset)  # Note: (x, y) order for OpenCV
             )
             cv2.drawContours(
                 image=composite_masks_RGB,
@@ -1815,7 +1944,7 @@ class DataManager:
                 color=roi_display_color,
                 thickness=contour_thickness
             )
-        
+            
         composite_masks_RGB = composite_masks_RGB.astype(np.float32)
         self._blend_layers(base_layer, composite_masks_RGB, alpha)
     
@@ -1852,17 +1981,32 @@ class DataManager:
         max_thresh = max_threshold_p / 100
         
         total_dose_view = sitk.GetArrayViewFromImage(self._cached_dose_sum)
-        total_dose_slice = total_dose_view[slicer]
         
+        valid_slicer, dest_2d = self._get_valid_slicer_and_dest(slicer, total_dose_view.shape)
+        if valid_slicer is None:
+            return  # Skip if slice is out of bounds
+        
+        total_dose_slice = total_dose_view[valid_slicer]
         dose_mask = (total_dose_slice > min_thresh) & (total_dose_slice < max_thresh)
         if not np.any(dose_mask):
             return  # No dose in range to display
 
-        # Create a color map for the dose data, only fill where dose_mask is True
-        cmap_data = np.zeros((*total_dose_slice.shape, 3), dtype=np.float32)
-        cmap_data[dose_mask] = self._dosewash_colormap(total_dose_slice[dose_mask])
-        cmap_data *= 255.0  # Scale to [0, 255] for blending
-
+        # Create a color map for the base layer size
+        cmap_data = np.zeros((*base_layer.shape[:2], 3), dtype=np.float32)
+        
+        # Apply colormap only to the valid dose region at the correct position
+        dose_colors = self._dosewash_colormap(total_dose_slice[dose_mask]) * 255.0  # Scale to [0, 255] for blending
+        
+        # Get indices where dose_mask is True
+        y_indices, x_indices = np.where(dose_mask)
+        
+        # Offset indices to destination position
+        y_offset = dest_2d[0].start if dest_2d[0].start else 0  # 'y' w.r.t. texture, not anatomy
+        x_offset = dest_2d[1].start if dest_2d[1].start else 0  # 'x' w.r.t. texture, not anatomy
+        
+        # Place colors directly at offset positions
+        cmap_data[y_indices + y_offset, x_indices + x_offset] = dose_colors
+        
         self._blend_layers(base_layer, cmap_data, alpha)
     
     ### Texture Helper Methods ###
@@ -1913,13 +2057,11 @@ class DataManager:
         if not show_crosshairs:
             return
         
-        if not xyz_slices or not isinstance(xyz_slices, (list, tuple)) or len(xyz_slices) != 3 or not all(isinstance(s, int) for s in xyz_slices):
+        if not xyz_slices or not isinstance(xyz_slices, (list, tuple)) or len(xyz_slices) != 3:
             logger.error(f"Crosshair drawing failed: 'xyz_slices' is missing or invalid: {xyz_slices}")
             return
         
-        if not xyz_ranges or not isinstance(xyz_ranges, (list, tuple)) or len(xyz_ranges) != 3 or not all(
-            isinstance(r, (list, tuple)) and len(r) == 2 and all(isinstance(v, int) for v in r) for r in xyz_ranges
-        ):
+        if not xyz_ranges or not isinstance(xyz_ranges, (list, tuple)) or len(xyz_ranges) != 3:
             logger.error(f"Crosshair drawing failed: 'xyz_ranges' is missing or invalid: {xyz_ranges}")
             return
         
@@ -1981,7 +2123,7 @@ class DataManager:
         if h < 50 or w < 50:
             return
         
-        dicom_direction = self.get_image_reference_param("original_direction") or tuple(np.eye(3).flatten().tolist())
+        dicom_direction = self.original_direction or tuple(np.eye(3).flatten().tolist())
         rotation_angle = int(rotation) or 0
         flips = flips or [False, False, False]
         
@@ -2071,12 +2213,12 @@ class DataManager:
         cached_rtd_keys = [k for k in self._cached_sitk_objects.keys() if k[0] == "dose"]
         return [sitk_data for key in cached_rtd_keys if (sitk_data := self._cached_sitk_objects.get(key)) is not None]
     
-    def return_roi_info_list_at_slice(self, slicer: Union[slice, Tuple[Union[slice, int], ...]]) -> List[Tuple[str, str, Tuple[int, int, int]]]:
+    def return_roi_info_list_at_slice(self, slicer: Tuple[int, int, int]) -> List[Tuple[str, str, Tuple[int, int, int]]]:
         """
         Retrieve ROI information at the specified slice.
 
         Args:
-            slicer: A slice or tuple of slices defining the current view, in (z,y,x) order.
+            slicer: A tuple of (z, y, x) indices defining the current view.
 
         Returns:
             A list of tuples containing (ROI number, current ROI name, display color).
@@ -2092,50 +2234,45 @@ class DataManager:
             if roi_sitk is None:
                 continue
             
-            view = sitk.GetArrayViewFromImage(roi_sitk)
-            if not np.any(view[slicer]):
+            # Skip if slicer is out of bounds
+            if not all(0 <= idx < dim for idx, dim in zip(slicer, list(roi_sitk.GetSize())[::-1])):
                 continue
             
-            # Get ROI metadata
-            if self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "use_template_name", True):
-                display_name = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "ROITemplateName", "Unknown")
-            else:
-                display_name = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "ROIName", "Unknown")
+            view = sitk.GetArrayViewFromImage(roi_sitk)
+            if not np.any(view[slicer]):
+                continue  # Skip if no ROI data at this slice
+            
+            # Get ROI display name
+            display_name = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "display_name", "Unknown")
             
             color = self.get_roi_gui_metadata_value_by_uid_and_key(struct_uid, roi_number, "ROIDisplayColor", [255, 255, 255])
             if color:
                 result.append((str(roi_number), display_name, tuple(color)))
         return result
     
-    def return_image_value_list_at_slice(
-        self, 
-        slicer: Union[slice, Tuple[Union[slice, int], ...]]
-    ) -> List[np.ndarray]:
+    def return_image_value_list_at_slice(self,  slicer: Tuple[int, int, int]) -> List[np.ndarray]:
         """
         Retrieve image slices from active IMAGE data for the specified view.
 
         Args:
-            slicer: A slice or tuple of slices defining the current view.
+            slicer: A tuple of (z, y, x) indices defining the current view.
 
         Returns:
             A list of image slices as NumPy arrays.
         """
-        return [sitk.GetArrayViewFromImage(img)[slicer] for img in self.find_active_sitk_images()]
-    
-    def return_dose_value_list_at_slice(
-        self, 
-        slicer: Union[slice, Tuple[Union[slice, int], ...]]
-    ) -> List[np.ndarray]:
+        return [sitk.GetArrayViewFromImage(img)[slicer] for img in self.find_active_sitk_images() if all(0 <= idx < dim for idx, dim in zip(slicer, list(img.GetSize())[::-1]))]
+
+    def return_dose_value_list_at_slice(self,  slicer: Tuple[int, int, int]) -> List[np.ndarray]:
         """
         Retrieve dose slices from active RTDOSE data for the specified view.
 
         Args:
-            slicer: A slice or tuple of slices defining the current view.
+            slicer: A tuple of (z, y, x) indices defining the current view.
 
         Returns:
             A list of dose slices as NumPy arrays.
         """
-        return [sitk.GetArrayViewFromImage(dose)[slicer] for dose in self.find_active_sitk_doses()]
+        return [sitk.GetArrayViewFromImage(dose)[slicer] for dose in self.find_active_sitk_doses() if all(0 <= idx < dim for idx, dim in zip(slicer, list(dose.GetSize())[::-1]))]
         
     def return_is_any_data_active(self) -> bool:
         """
@@ -2215,7 +2352,7 @@ class DataManager:
             for roi_num in roi_numbers:
                 roi_image = self._get_data("roi", (struct_uid, roi_num), use_cached=use_cached_data)
                 if roi_image is None:
-                    logger.warning(f"ROI {roi_num} not found in RTSTRUCT {struct_uid}, skipping saving it")
+                    logger.warning(f"ROI #{roi_num} not found in RTSTRUCT {struct_uid}, skipping saving it")
                     continue
                 
                 if reference_roi is None:

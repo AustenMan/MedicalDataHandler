@@ -246,6 +246,7 @@ def add_data_view_controls(
                             min_clamped=True, 
                             max_clamped=True, 
                             on_enter=True,
+                            readonly=True,
                             width=size_dict["button_width"], 
                             callback=request_texture_update
                         )

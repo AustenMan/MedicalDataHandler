@@ -12,7 +12,7 @@ from mdh_app.managers.shared_state_manager import SharedStateManager
 from mdh_app.utils.logger_utils import start_root_logger
 
 
-logger = start_root_logger(logger_level=logging.INFO, buffer_length=300)
+logger = start_root_logger(logger_level=logging.INFO, buffer_length=500)
 
 
 def signal_handler(signum: int, frame: Any, shared_state_manager: SharedStateManager) -> None:

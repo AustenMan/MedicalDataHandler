@@ -13,8 +13,8 @@ import dearpygui.dearpygui as dpg
 from mdh_app.dpg_components.core.utils import get_user_data
 from mdh_app.dpg_components.themes.button_themes import get_colored_button_theme
 from mdh_app.dpg_components.widgets.patient_ui.rois import (
-    _popup_roi_color_picker, _update_views_roi_center,
-    _remove_roi, _popup_inspect_roi, update_roi_tooltip,
+    show_roi_color_picker, center_views_on_roi,
+    remove_roi_with_confirmation, show_roi_configuration_popup, update_roi_display_and_tooltip,
 )
 from mdh_app.dpg_components.widgets.patient_ui.pt_ui_utilities import update_cbox_callback, toggle_all_rois
 from mdh_app.dpg_components.windows.dicom_inspection.dcm_inspect_win import create_popup_dicom_inspection
@@ -43,9 +43,9 @@ def add_structure_sets_to_menu() -> None:
         for rts_sopiuid in rts_sopiuids:
             file_path = data_mgr.get_rtstruct_filepath_by_uid(rts_sopiuid)
             modality = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "Modality", "RT Structure Set")
-            ss_label = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetLabel", "N/A")
-            ss_name = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetName", "N/A")
-            ss_description = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "SeriesDescription", "N/A")
+            ss_label = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetLabel", "")
+            ss_name = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetName", "")
+            ss_description = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "SeriesDescription", "")
             date = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetDate", "N/A")
             time = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "StructureSetTime", "")
             approval_status = data_mgr.get_rtstruct_ds_value_by_uid_and_key(rts_sopiuid, "ApprovalStatus", "N/A")
@@ -82,9 +82,9 @@ def add_structure_sets_to_menu() -> None:
                     with dpg.tooltip(parent=tag_button):
                         dpg.add_text(
                             (
-                                f"Label: {ss_label}\n" +
-                                f"Name: {ss_name}\n" +
-                                f"Description: {ss_description}\n" +
+                                f"Label: {ss_label or 'N/A'}\n" +
+                                f"Name: {ss_name or 'N/A'}\n" +
+                                f"Description: {ss_description or 'N/A'}\n" +
                                 f"Date and Time: {date} {time}\n" +
                                 f"Approval Status: {approval_status}\n" +
                                 f"Review Date and Time: {review_date} {review_time}\n" +
@@ -120,19 +120,19 @@ def _add_roi_button(
             dpg.add_text("Display ROI", wrap=size_dict["tooltip_width"])
         
         # Color picker to customize ROI color
-        tag_colorbutton = dpg.add_button(width=clr_btn_width, callback=_popup_roi_color_picker, user_data=(rts_sopiuid, roi_number))
+        tag_colorbutton = dpg.add_button(width=clr_btn_width, callback=show_roi_color_picker, user_data=(rts_sopiuid, roi_number))
         with dpg.tooltip(parent=tag_colorbutton):
             dpg.add_text(default_value="Customize ROI color", wrap=size_dict["tooltip_width"])
         roi_display_color = data_mgr.get_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, "ROIDisplayColor", [random.randint(0, 255) for _ in range(3)])
         dpg.bind_item_theme(item=tag_colorbutton, theme=get_colored_button_theme(roi_display_color))
 
         # Button to center views on ROI
-        tag_ctrbutton = dpg.add_button(label="CTR", callback=_update_views_roi_center, user_data=(roi_cbox_tag, rts_sopiuid, roi_number))
+        tag_ctrbutton = dpg.add_button(label="CTR", callback=center_views_on_roi, user_data=(roi_cbox_tag, rts_sopiuid, roi_number))
         with dpg.tooltip(parent=tag_ctrbutton):
             dpg.add_text(default_value="Center views on ROI", wrap=size_dict["tooltip_width"])
 
         # Button to remove ROI from GUI
-        tag_delbutton = dpg.add_button(label="DEL", callback=_remove_roi, user_data=(tag_group_roi, roi_cbox_tag))
+        tag_delbutton = dpg.add_button(label="DEL", callback=remove_roi_with_confirmation, user_data=(tag_group_roi, roi_cbox_tag))
         with dpg.tooltip(parent=tag_delbutton):
             dpg.add_text(default_value="Removes the ROI from display until data is reloaded.", wrap=size_dict["tooltip_width"])
         
@@ -140,13 +140,13 @@ def _add_roi_button(
         tag_roi_button = dpg.add_button(
             label="-MISSING-", 
             width=size_dict["button_width"], 
-            callback=_popup_inspect_roi, 
+            callback=show_roi_configuration_popup, 
             user_data=(rts_sopiuid, roi_number)
         )
         with dpg.tooltip(parent=tag_roi_button):
             dpg.add_text(default_value="Inspect ROI details", tag=f"{tag_roi_button}_tooltiptext", wrap=size_dict["tooltip_width"])
         dpg.bind_item_theme(item=tag_roi_button, theme=get_colored_button_theme((90, 110, 70)))
-        update_roi_tooltip(tag_roi_button) # Set initial tooltip
+        update_roi_display_and_tooltip(tag_roi_button) # Set initial display and tooltip
     
     tag_save_dict[("roi", rts_sopiuid, roi_number)] = tag_roi_button
 

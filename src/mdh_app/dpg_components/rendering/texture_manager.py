@@ -2,6 +2,7 @@ from __future__ import annotations
 
 
 import logging
+import math
 from typing import Any, Dict, List, Tuple, TYPE_CHECKING
 
 
@@ -28,134 +29,208 @@ def request_texture_update(*args, **kwargs) -> None:
 
 
 def _update_textures(*args, **kwargs) -> None:
-    """ Updates the textures in the DearPyGUI interface. """
-    # Get necessary params
-    texture_action_type = kwargs.get("texture_action_type", "update")
+    """ Updates the data in the DataManager and textures in the DearPyGUI interface. """
+    # Get managers
     conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
     data_mgr: DataManager = get_user_data(td_key="data_manager")
     img_tags = get_tag("img_tags")
-    tag_show_crosshairs = img_tags["show_crosshairs"]
-    tag_show_OL = img_tags["show_orientation_labels"]
+    dpg_range_tags = (img_tags["xrange"], img_tags["yrange"], img_tags["zrange"])
     
-    # Get texture params
-    size, spacing, xyz_slices, xyz_ranges, rotation, flips = _get_core_texture_params(texture_action_type)
-    display_alphas, dose_range, contour_thickness, image_window_width, image_window_level = _get_visual_texture_params()
+    # Update viewport if any change in screen size. Returns the resulting W/H scaling factors.
+    WH_scales = update_viewport_and_popups()
+    image_length = _get_dpg_image_length(WH_scales)
     
-    # Update general display & viewport, then get image length & texture size
-    current_screen_size = (dpg.get_viewport_width(), dpg.get_viewport_height())
-    new_screen_size = conf_mgr.get_screen_size()
-    WH_ratios = update_viewport_and_popups(new_screen_size, current_screen_size)
-    image_length = _get_image_length(WH_ratios)
+    # Identify texture action type
+    texture_action_type = kwargs.get("texture_action_type", "update")
+    
+    # Get raw data params
+    data_raw_params = data_mgr.get_raw_data_params()
+    data_raw_size, data_raw_spacing = data_raw_params["size"], data_raw_params["spacing"]
+    # data_raw_physical_size = [data_raw_size[i] * data_raw_spacing[i] for i in range(len(data_raw_size))]
+    # data_raw_max_phys_size = max(data_raw_physical_size)
+    # data_raw_padding_phys = [data_raw_max_phys_size - data_raw_physical_size[i] if data_raw_max_phys_size > data_raw_physical_size[i] else 0 for i in range(3)]
+    # data_raw_padding_idxs = [round(data_raw_padding_phys[i] / data_raw_spacing[i]) for i in range(3)]
+    # data_raw_range_mins = [-data_raw_padding_idxs[i] // 2 for i in range(3)]  # min limits
+    # data_raw_range_maxs = [data_raw_size[i] - 1 + (data_raw_padding_idxs[i] - data_raw_padding_idxs[i] // 2) for i in range(3)]  # max limits
+    # data_raw_ranges = [(data_raw_range_mins[i], data_raw_range_maxs[i]) for i in range(3)]  # raw viewing range
+    
+    # Get current data params
+    data_current_params = data_mgr.get_current_data_params()
+    data_current_size, data_current_spacing = data_current_params["size"], data_current_params["spacing"]
+    # data_current_physical_size = [data_current_size[i] * data_current_spacing[i] for i in range(len(data_current_size))]
+    # data_current_max_phys_size = max(data_current_physical_size)
+    # data_current_padding_phys = [data_current_max_phys_size - data_current_physical_size[i] if data_current_max_phys_size > data_current_physical_size[i] else 0 for i in range(3)]
+    # data_current_padding_idxs = [round(data_current_padding_phys[i] / data_current_spacing[i]) for i in range(3)]
+    # data_current_range_mins = [-data_current_padding_idxs[i] // 2 for i in range(3)]  # min limits
+    # data_current_range_maxs = [data_current_size[i] - 1 + (data_current_padding_idxs[i] - data_current_padding_idxs[i] // 2) for i in range(3)]  # max limits
+    # data_current_ranges = [(data_current_range_mins[i], data_current_range_maxs[i]) for i in range(3)]  # current viewing range
+    
+    # Store previous DPG state before updates (for mapping if spacing changed)
+    prev_dpg_spacing = tuple([float(i) for i in data_current_spacing]) if texture_action_type == "update" else None
+    prev_dpg_slices = list(dpg.get_value(img_tags["viewed_slices"])[:3]) if texture_action_type == "update" and dpg.does_item_exist(img_tags["viewed_slices"]) else None
+    prev_dpg_view_indices = [dpg.get_value(tag)[:2] for tag in dpg_range_tags] if texture_action_type == "update" and all(dpg.does_item_exist(tag) for tag in dpg_range_tags) else None
+    
+    # Get new DPG spacing
+    if dpg.does_item_exist(img_tags["force_voxel_spacing_isotropic_largest"]) and dpg.get_value(img_tags["force_voxel_spacing_isotropic_largest"]):
+        dpg_spacing = [max(data_raw_spacing)] * len(data_raw_spacing)
+    elif dpg.does_item_exist(img_tags["force_voxel_spacing_isotropic_smallest"]) and dpg.get_value(img_tags["force_voxel_spacing_isotropic_smallest"]):
+        dpg_spacing = [min(data_raw_spacing)] * len(data_raw_spacing)
+    elif dpg.does_item_exist(img_tags["force_voxel_spacing_config"]) and dpg.get_value(img_tags["force_voxel_spacing_config"]):
+        dpg_spacing = conf_mgr.get_voxel_spacing()
+    elif texture_action_type == "update" and dpg.does_item_exist(img_tags["voxel_spacing"]) and dpg.get_value(img_tags["voxel_spacing"]):
+        dpg_spacing = dpg.get_value(img_tags["voxel_spacing"])[:3]
+    else:
+        dpg_spacing = data_raw_spacing
+    dpg_spacing = tuple([float(i) for i in dpg_spacing])
+    
+    # Calculate new DPG size and padding based on new spacing
+    dpg_size = [round(data_raw_size[i] * data_raw_spacing[i] / dpg_spacing[i]) for i in range(3)]
+    dpg_physical_size = [dpg_size[i] * dpg_spacing[i] for i in range(3)]
+    dpg_max_phys_size = max(dpg_physical_size)
+    dpg_padding_phys = [dpg_max_phys_size - dpg_physical_size[i] if dpg_max_phys_size > dpg_physical_size[i] else 0 for i in range(3)]
+    dpg_padding_idxs = [round(dpg_padding_phys[i] / dpg_spacing[i]) for i in range(3)]
+    dpg_range_mins = [-dpg_padding_idxs[i] // 2 for i in range(3)]
+    dpg_range_maxs = [dpg_size[i] - 1 + (dpg_padding_idxs[i] - dpg_padding_idxs[i] // 2) for i in range(3)]
+    
+    # Get the current viewing range and slices
+    if texture_action_type == "reset" or texture_action_type == "initialize":
+        dpg_ranges = [(dpg_range_mins[i], dpg_range_maxs[i]) for i in range(3)]
+        dpg_viewed_slices = [dpg_size[i] // 2 for i in range(3)]
+    elif (dpg_spacing != prev_dpg_spacing) and prev_dpg_slices and prev_dpg_view_indices:
+        # Map previous bounding box physical extents to new indices; clamp to the limits
+        prev_dpg_view_physical = [(
+            prev_dpg_view_indices[i][0] * prev_dpg_spacing[i] - 0.5 * prev_dpg_spacing[i],
+            prev_dpg_view_indices[i][1] * prev_dpg_spacing[i] + 0.5 * prev_dpg_spacing[i]
+        ) for i in range(3)]
+        dpg_ranges = [(math.floor(prev_dpg_view_physical[i][0] / dpg_spacing[i]), math.ceil(prev_dpg_view_physical[i][1] / dpg_spacing[i])) for i in range(3)]
+        
+        # Map previous physical slice positions to new indices
+        prev_dpg_slices_physical = [prev_dpg_slices[i] * prev_dpg_spacing[i] for i in range(3)]
+        dpg_viewed_slices = [(int(round(prev_dpg_slices_physical[i] / dpg_spacing[i]))) for i in range(3)]
+    else:
+        # No spacing change, keep existing values or use defaults
+        dpg_ranges = [dpg.get_value(tag)[:2] for tag in dpg_range_tags] if all(dpg.does_item_exist(tag) for tag in dpg_range_tags) else [(dpg_range_mins[i], dpg_range_maxs[i]) for i in range(3)]
+        dpg_viewed_slices = list(dpg.get_value(img_tags["viewed_slices"])[:3]) if dpg.does_item_exist(img_tags["viewed_slices"]) else [dpg_size[i] // 2 for i in range(3)]
+    
+    # DPG Range & View Adjustments
+    for i in range(len(dpg_ranges)):
+        # Ensure DPG ranges are within limits
+        dpg_ranges[i] = (max(dpg_ranges[i][0], dpg_range_mins[i]), min(dpg_ranges[i][1], dpg_range_maxs[i]))
+        
+        # Ensure viewed slices are within the current ranges
+        dpg_viewed_slices[i] = min(max(dpg_viewed_slices[i], dpg_ranges[i][0]), dpg_ranges[i][1])
+        
+        # Ensure dpg_range is at least 16 voxels per axis
+        while dpg_ranges[i][1] - dpg_ranges[i][0] < 15:
+            if dpg_ranges[i][0] > dpg_range_mins[i]:
+                dpg_ranges[i] = (dpg_ranges[i][0] - 1, dpg_ranges[i][1])
+            if dpg_ranges[i][1] < dpg_range_maxs[i]:
+                dpg_ranges[i] = (dpg_ranges[i][0], dpg_ranges[i][1] + 1)
+            if dpg_ranges[i][0] == dpg_range_mins[i] and dpg_ranges[i][1] == dpg_range_maxs[i]:
+                break
+        
+    # Ensure isotropic physical space
+    phys_extents = [(dpg_ranges[i][1] - dpg_ranges[i][0] + 1) * dpg_spacing[i] for i in range(3)]
+    max_extent = max(phys_extents)
+    for i in range(len(dpg_ranges)):
+        target_voxels = int(round(max_extent / dpg_spacing[i]))
+        current_voxels = dpg_ranges[i][1] - dpg_ranges[i][0] + 1
+        extra = target_voxels - current_voxels
+        while extra != 0:
+            if dpg_ranges[i][0] > dpg_range_mins[i]:
+                dpg_ranges[i] = (dpg_ranges[i][0] - 1, dpg_ranges[i][1])
+                extra -= 1
+            if extra == 0:
+                break
+            if dpg_ranges[i][1] < dpg_range_maxs[i]:
+                dpg_ranges[i] = (dpg_ranges[i][0], dpg_ranges[i][1] + 1)
+                extra -= 1
+            if dpg_ranges[i][0] == dpg_range_mins[i] and dpg_ranges[i][1] == dpg_range_maxs[i]:
+                break
+    
+    # Update DPG ranges items
+    for i, tag in enumerate(dpg_range_tags):
+        if dpg.does_item_exist(tag):
+            dpg.configure_item(tag, min_value=dpg_range_mins[i], max_value=dpg_range_maxs[i], default_value=(dpg_range_mins[i], dpg_range_maxs[i]), user_data=(dpg_range_mins[i], dpg_range_maxs[i]))
+            dpg.set_value(tag, dpg_ranges[i])
+
+    # Update DPG viewed slices item
+    if dpg.does_item_exist(img_tags["viewed_slices"]):
+        reset_vals = [dpg_size[i] // 2 for i in range(3)]
+        dpg.configure_item(img_tags["viewed_slices"], min_value=min(dpg_range_mins), max_value=max(dpg_range_maxs), default_value=reset_vals, user_data=reset_vals)
+        dpg.set_value(img_tags["viewed_slices"], dpg_viewed_slices)
+    
+    # Update DPG spacing item
+    if dpg.does_item_exist(img_tags["voxel_spacing"]):
+        dpg.configure_item(img_tags["voxel_spacing"], default_value=data_raw_spacing, user_data=data_raw_spacing)
+        dpg.set_value(img_tags["voxel_spacing"], dpg_spacing)
+    
+    # Get remaining DPG visual params
+    dpg_rotation = int(dpg.get_value(img_tags["rotation"])) if dpg.does_item_exist(img_tags["rotation"]) else 0
+    dpg_flips = [bool(dpg.get_value(tag)) if dpg.does_item_exist(tag) else False for tag in [img_tags["flip_lr"], img_tags["flip_ap"], img_tags["flip_si"]]]
+    dpg_display_alphas, dpg_dose_range, dpg_contour_thickness, dpg_image_window_width, dpg_image_window_level = _get_visual_texture_params()
     
     # (z, y, x) order
     view_slicing_dict = {
-        "axial": (xyz_slices[2], slice(xyz_ranges[1][0], xyz_ranges[1][1] + 1, 1), slice(xyz_ranges[0][0], xyz_ranges[0][1] + 1, 1)),
-        "coronal": (slice(xyz_ranges[2][0], xyz_ranges[2][1] + 1, 1), xyz_slices[1], slice(xyz_ranges[0][0], xyz_ranges[0][1] + 1, 1)),
-        "sagittal": (slice(xyz_ranges[2][0], xyz_ranges[2][1] + 1, 1), slice(xyz_ranges[1][0], xyz_ranges[1][1] + 1, 1), xyz_slices[0])
+        "axial": (
+            dpg_viewed_slices[2], 
+            slice(dpg_ranges[1][0], dpg_ranges[1][1] + 1, 1), 
+            slice(dpg_ranges[0][0], dpg_ranges[0][1] + 1, 1),
+        ),
+        "coronal": (
+            slice(dpg_ranges[2][0], dpg_ranges[2][1] + 1, 1), 
+            dpg_viewed_slices[1], 
+            slice(dpg_ranges[0][0], dpg_ranges[0][1] + 1, 1),
+        ),
+        "sagittal": (
+            slice(dpg_ranges[2][0], dpg_ranges[2][1] + 1, 1), 
+            slice(dpg_ranges[1][0], dpg_ranges[1][1] + 1, 1), 
+            dpg_viewed_slices[0],
+        )
     }
     
     texture_dict = {}
     for view_type, slicer in view_slicing_dict.items():
         texture_params = {
-            "view_type": view_type, "xyz_slices": xyz_slices, "xyz_ranges": xyz_ranges, "slicer": slicer, 
-            "image_length": image_length, "size": size, "voxel_spacing": spacing, 
-            "rotation": rotation, "flips": flips, "contour_thickness": contour_thickness,
-            "display_alphas": display_alphas, "dose_thresholds": dose_range,
-            "image_window_level": image_window_level, "image_window_width": image_window_width,
-            "show_crosshairs": dpg.get_value(tag_show_crosshairs) if dpg.does_item_exist(tag_show_crosshairs) else True,
-            "show_orientation_labels": dpg.get_value(tag_show_OL) if dpg.does_item_exist(tag_show_OL) else True
+            "view_type": view_type, "xyz_slices": dpg_viewed_slices, "xyz_ranges": dpg_ranges, "slicer": slicer, 
+            "image_length": image_length, "size": dpg_size, "voxel_spacing": dpg_spacing, 
+            "rotation": dpg_rotation, "flips": dpg_flips, "contour_thickness": dpg_contour_thickness,
+            "display_alphas": dpg_display_alphas, "dose_thresholds": dpg_dose_range,
+            "image_window_level": dpg_image_window_level, "image_window_width": dpg_image_window_width,
+            "show_crosshairs": dpg.get_value(img_tags["show_crosshairs"]) if dpg.does_item_exist(img_tags["show_crosshairs"]) else True,
+            "show_orientation_labels": dpg.get_value(img_tags["show_orientation_labels"]) if dpg.does_item_exist(img_tags["show_orientation_labels"]) else True,
         }
         texture_dict[view_type] = data_mgr.return_texture_from_active_data(texture_params)
-    
+
     _set_textures_and_images(image_length, texture_dict)
 
 
-def _get_core_texture_params(texture_action_type: str) -> Tuple[List[int], List[float], List[int], List[Tuple[int, int]], int, List[bool]]:
+def _get_dpg_image_length(WH_scales: Tuple[float, float] = (1.0, 1.0)) -> int:
     """
-    Retrieve the core texture parameters for generating the patient data texture.
+    Calculate DPG image length using viewport width/height scaling factors.
 
     Args:
-        texture_action_type: Action type, e.g. "reset", "initialize", or "update".
+        WH_scales: Tuple of (width_scale, height_scale).
 
     Returns:
-        A tuple of (size, spacing, slices, xyz_ranges, rotation, flips).
+        DPG image length as an integer, ensuring a minimum of 100.
     """
-    # Get necessary params
-    conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
-    data_mgr: DataManager = get_user_data(td_key="data_manager")
-    img_tags = get_tag("img_tags")
-    default_display_dict: Dict[str, Any] = get_user_data(td_key="default_display_dict")
-    
-    # Tags
-    viewed_slices_tag = img_tags["viewed_slices"]
-    xyz_range_tags = [img_tags["xrange"], img_tags["yrange"], img_tags["zrange"]]
-    rotation_tag = img_tags["rotation"]
-    flip_tags = [img_tags["flip_lr"], img_tags["flip_ap"], img_tags["flip_si"]]
-    spacing_tag = img_tags["voxel_spacing"]
-    spacing_cbox_tag = img_tags["voxel_spacing_cbox"]
-    
-    # Get unmodified params for size and spacing
-    original_size = data_mgr.get_image_reference_param("original_size") or default_display_dict["DATA_SIZE"]
-    original_spacing = data_mgr.get_image_reference_param("original_spacing") or default_display_dict["VOXEL_SPACING"]
-    
-    # Get core data viewing parameters
-    if texture_action_type == "reset":
-        spacing = conf_mgr.get_voxel_spacing() if (dpg.does_item_exist(spacing_cbox_tag) and dpg.get_value(spacing_cbox_tag)) else original_spacing
-        size = original_size
-        slices = default_display_dict["SLICE_VALS"]
-        xyz_ranges = default_display_dict["RANGES"]
-        rotation = int(default_display_dict["ROTATION"])
-        flips = [default_display_dict["FLIP_LR"], default_display_dict["FLIP_AP"], default_display_dict["FLIP_SI"]]
-    elif texture_action_type == "initialize":
-        spacing = conf_mgr.get_voxel_spacing() if (dpg.does_item_exist(spacing_cbox_tag) and dpg.get_value(spacing_cbox_tag)) else original_spacing
-        size = [round(original_size[i] * original_spacing[i] / spacing[i]) for i in range(len(spacing))]
-        slices = [round(size[i] / 2) for i in range(len(size))]
-        xyz_ranges = [(0, size[i] - 1) for i in range(len(size))]
-        rotation = int(default_display_dict["ROTATION"])
-        flips = [default_display_dict["FLIP_LR"], default_display_dict["FLIP_AP"], default_display_dict["FLIP_SI"]]
-    else:
-        spacing = dpg.get_value(spacing_tag)[:3] if dpg.does_item_exist(spacing_tag) else original_spacing
-        size = [round(original_size[i] * original_spacing[i] / spacing[i]) for i in range(len(spacing))]
-        slices = dpg.get_value(viewed_slices_tag)[:3] if dpg.does_item_exist(viewed_slices_tag) else default_display_dict["SLICE_VALS"]
-        xyz_ranges = [dpg.get_value(tag)[:2] for tag in xyz_range_tags] if all([dpg.does_item_exist(tag) for tag in xyz_range_tags]) else default_display_dict["RANGES"]
-        rotation = int(dpg.get_value(rotation_tag)) if dpg.does_item_exist(rotation_tag) else default_display_dict["ROTATION"]
-        flips = [dpg.get_value(tag) for tag in flip_tags] if all([dpg.does_item_exist(tag) for tag in flip_tags]) else [default_display_dict["FLIP_LR"], default_display_dict["FLIP_AP"], default_display_dict["FLIP_SI"]]
-        # Get previous display range limits
-        if all([dpg.does_item_exist(tag) for tag in xyz_range_tags]):
-            prev_range_limits = [max(config["max_value"] - config["min_value"], 1) for config in [dpg.get_item_configuration(tag) for tag in xyz_range_tags]]
-        else: 
-            prev_range_limits = [default_display_dict["RANGES"][i][1] - default_display_dict["RANGES"][i][0] for i in range(len(default_display_dict["RANGES"]))]
-        # Compute new xyz display ranges based on relative percentages
-        xyz_ranges = [(round((size[i] - 1) * (xyz_ranges[i][0] / prev_range_limits[i])), round((size[i] - 1) * (xyz_ranges[i][1] / prev_range_limits[i]))) for i in range(len(slices))]
-        # Compute new slices based on relative percentages
-        slices = [round((size[i] - 1) * (slices[i] / prev_range_limits[i])) for i in range(len(slices))]
-    
-    # Validate and update DPG elements
-    slices = [int(min(max(val, xyz_ranges[idx][0]), xyz_ranges[idx][1])) for idx, val in enumerate(slices)]
-    reset_slices = [int(min(max(round((xyz_ranges[idx][1] - xyz_ranges[idx][0]) / 2), xyz_ranges[idx][0]), xyz_ranges[idx][1])) for idx in range(len(xyz_ranges))]
-    if dpg.does_item_exist(viewed_slices_tag):
-        dpg.configure_item(viewed_slices_tag, default_value=reset_slices, user_data=reset_slices, min_value=0, max_value=max(size)-1)
-        dpg.set_value(viewed_slices_tag, slices)
-    
-    for dim, (range_tag, dim_range) in enumerate(zip(xyz_range_tags, xyz_ranges)):
-        dim_range = [int(min(max(dim_range[0], 0), size[dim] - 2)), int(min(max(dim_range[1], 1), size[dim] - 1))]
-        dim_range = dim_range if dim_range[0] < dim_range[1] else [dim_range[0]-1, dim_range[1]] if dim_range[0] > 0 else [dim_range[0], dim_range[1]+1]
-        reset_dim_range = (0, size[dim]-1)
-        if dpg.does_item_exist(range_tag):
-            dpg.configure_item(range_tag, default_value=reset_dim_range, user_data=reset_dim_range, max_value=size[dim]-1)
-            dpg.set_value(range_tag, dim_range)
-    
-    if dpg.does_item_exist(rotation_tag):
-        dpg.set_value(rotation_tag, str(rotation))
-    for flip_tag, flip in zip(flip_tags, flips):
-        if dpg.does_item_exist(flip_tag):
-            dpg.set_value(flip_tag, value=flip)
-    
-    if dpg.does_item_exist(spacing_tag):
-        dpg.configure_item(spacing_tag, default_value=original_spacing, user_data=original_spacing)
-        dpg.set_value(spacing_tag, spacing)
-    
-    return size, spacing, slices, xyz_ranges, rotation, flips
+    width_scale, height_scale = WH_scales
+    ax_W, ax_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_topleft"))
+    # misc_W, misc_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_topright"))
+    cor_W, cor_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_bottomleft"))
+    sag_W, sag_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_bottomright"))
+    min_size = min(
+        ax_W * width_scale, 
+        ax_H * height_scale,
+        # misc_W * width_scale,
+        # misc_H * height_scale,
+        cor_W * width_scale, 
+        cor_H * height_scale,
+        sag_W * width_scale,
+        sag_H * height_scale,
+    )
+    return max(int(((min_size * 0.95) * 2) // 2), 100)  # Ensure even rounding, and minimum size of 100
 
 
 def _get_visual_texture_params() -> Tuple[List[int], List[int], int, int, int]:
@@ -217,34 +292,6 @@ def _get_visual_texture_params() -> Tuple[List[int], List[int], int, int, int]:
         image_window_level = default_display_dict["IMAGE_WINDOW_LEVEL"]
     
     return display_alphas, dose_range, contour_thickness, image_window_width, image_window_level
-
-
-def _get_image_length(WH_ratios: Tuple[float, float] = (1.0, 1.0)) -> int:
-    """
-    Calculate image length using viewport width/height ratios.
-
-    Args:
-        WH_ratios: Tuple of (width_ratio, height_ratio).
-
-    Returns:
-        Image length as an integer, ensuring a minimum of 100.
-    """
-    width_ratio, height_ratio = WH_ratios
-    ax_W, ax_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_topleft"))
-    # misc_W, misc_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_topright"))
-    cor_W, cor_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_bottomleft"))
-    sag_W, sag_H = dpg.get_item_rect_size(dpg.get_item_parent("mw_ctr_bottomright"))
-    min_size = min(
-        ax_W * width_ratio, 
-        ax_H * height_ratio,
-        # misc_W * width_ratio,
-        # misc_H * height_ratio,
-        cor_W * width_ratio, 
-        cor_H * height_ratio,
-        sag_W * width_ratio,
-        sag_H * height_ratio,
-    )
-    return max(int(((min_size * 0.95) * 2) // 2), 100)  # Ensure even rounding, and minimum size of 100
 
 
 def _set_textures_and_images(image_length: int, texture_dict: Dict[str, Any]) -> None:

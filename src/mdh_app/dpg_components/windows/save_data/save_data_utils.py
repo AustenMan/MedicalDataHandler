@@ -10,12 +10,12 @@ import dearpygui.dearpygui as dpg
 
 
 from mdh_app.database.db_utils import update_patient_processed_at
+from mdh_app.database.models import Patient
 from mdh_app.dpg_components.core.utils import get_tag, get_user_data
 from mdh_app.utils.general_utils import validate_filename, sanitize_path_component
 
 
 if TYPE_CHECKING:
-    from mdh_app.database.models import Patient
     from mdh_app.managers.config_manager import ConfigManager
     from mdh_app.managers.data_manager import DataManager
 
@@ -35,7 +35,7 @@ def _execute_saving(sender: Union[str, int], app_data: Any, user_data: Any) -> N
         app_data: Additional event data.
         user_data: Additional user data.
     """
-    tag_save_window = get_tag("save_sitk_window")
+    tag_save_window = get_tag("save_data_window")
     tag_ptinfo_button = get_tag("ptinfo_button")
     conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
     
@@ -56,7 +56,7 @@ def _execute_saving(sender: Union[str, int], app_data: Any, user_data: Any) -> N
     if not dpg.does_item_exist(tag_save_window):
         return
     
-    logger.info("Saving data")
+    logger.info("Saving data, this may take a while depending on the size and resolution of the data, please wait...")
     
     save_selections_dict = dpg.get_item_user_data(tag_save_window)
     
@@ -74,7 +74,7 @@ def _execute_saving(sender: Union[str, int], app_data: Any, user_data: Any) -> N
     _process_dose_saving(sender, save_selections_dict, base_save_path)
     
     if sender == save_selections_dict["execute_bulk_save_tag"]:
-        logger.info("Save action is complete.")
+        logger.info("Completed bulk save!")
         if dpg.does_item_exist(tag_save_window):
             dpg.hide_item(tag_save_window)
 
@@ -99,7 +99,7 @@ def _process_image_saving(sender: Union[str, int], save_selections_dict: Dict[st
     override_image_with_roi_RED = dpg.get_value(save_selections_dict["main_checkboxes"]["override_image_with_roi_RED"])
     roi_overrides = (
         [
-            (roi_dict["data_key"], dpg.get_value(roi_dict["roi_phys_prop_tag"]))
+            ((str(roi_dict["data_key"][0]), int(roi_dict["data_key"][1]),), dpg.get_value(roi_dict["roi_phys_prop_tag"]))
             for roi_dict in save_selections_dict["rois"]
             if dpg.get_value(roi_dict["roi_phys_prop_tag"]) >= 0.0
         ]
@@ -183,6 +183,7 @@ def _process_roi_saving(sender: Union[str, int], save_selections_dict: Dict[str,
         makedirs(dirname(save_path), exist_ok=True)
         
         rtp_sopiuid, roi_number = roi_dict["data_key"]
+        roi_number = int(roi_number)  # Ensure roi_number is an integer
         rois_to_save.setdefault(save_path, []).append((rtp_sopiuid, roi_number))
     
     # After collecting, combine and save the ROIs with the same filenames

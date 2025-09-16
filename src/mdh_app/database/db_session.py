@@ -73,11 +73,9 @@ def get_session(expire_all: bool = False) -> Generator[Session, None, None]:
         expire_all: If True, expire all objects in session to force fresh DB reads.
     """
     if _ENGINE is None:
-        raise RuntimeError(
-            "Database engine not initialized. Call init_engine(db_path) first."
-        )
+        raise RuntimeError("Database engine not initialized. Call init_engine(db_path) first.")
 
-    session: Session = _SCOPED_SESSION()  # type: ignore[call-arg]
+    session: Session = _SCOPED_SESSION()
     try:
         if expire_all:
             session.expire_all()  # Force fresh reads from database

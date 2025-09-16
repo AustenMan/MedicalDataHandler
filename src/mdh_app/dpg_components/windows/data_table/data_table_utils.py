@@ -309,26 +309,26 @@ def _update_ancestors(ud: Dict[str, Any], selected_files: Set[str]) -> None:
 
 def _create_checkbox_callback(selected_files: Set[str]):
     """Factory to create the checkbox callback"""
-    callback_active = {"running": False}   # lock flag
+    callback_active = {"running": False}   # Lock flag
     
     def checkbox_callback(sender: int, app_data: bool, user_data: Dict[str, Any]) -> None:
-        # prevent re-entry
+        # Prevent re-entry
         if callback_active["running"]:
             return
         callback_active["running"] = True
         
         try:
-            # update selected files set
+            # Update selected files set
             fpaths = user_data.get("files", [])
             if app_data: # Checked
                 selected_files.update(fpaths)
             else: # Unchecked
                 selected_files.difference_update(fpaths)
             
-            # propagate down
+            # Propagate down
             _propagate_down(user_data, app_data, checkbox_callback, selected_files)
             
-            # update ancestors
+            # Update ancestors
             _update_ancestors(user_data, selected_files)
         finally:
             callback_active["running"] = False
@@ -352,7 +352,7 @@ def _render_node_inline(node: Node, parent_ud: Optional[Dict], checkbox_callback
     num_children = len(node.children or [])
     must_tree = (num_children > 1) or (num_files > 1)
 
-    # bypass parent when it only wraps a single child and has no files
+    # Bypass parent when it only wraps a single child and has no files
     if num_children == 1 and num_files == 0:
         return _render_node_inline(node.children[0], parent_ud, checkbox_callback, dcm_view_cb)
     
@@ -363,7 +363,7 @@ def _render_node_inline(node: Node, parent_ud: Optional[Dict], checkbox_callback
 
             files_count = num_files + sum(len(getattr(c, "file_objs", []) or []) for c in node.children)
             with dpg.tree_node(label=f"{node.label} ({files_count} files)", default_open=False):
-                # direct files (each gets checkbox + button)
+                # Direct files (each gets checkbox + button)
                 for fobj in file_objs:
                     fobj: File
                     fmd: Optional[FileMetadata] = getattr(fobj, "file_metadata", None)
@@ -391,13 +391,13 @@ def _render_node_inline(node: Node, parent_ud: Optional[Dict], checkbox_callback
                             )
                     ud["children"].append(child_ud)
 
-                # child nodes
+                # Child nodes
                 for child in node.children:
                     child_ud = _render_node_inline(child, ud, checkbox_callback, dcm_view_cb)
                     ud["children"].append(child_ud)
 
     else:
-        # single file -> inline file row
+        # Single file -> inline file row
         if num_files == 1:
             fobj: File = file_objs[0]
             fmd: Optional[FileMetadata] = getattr(fobj, "file_metadata", None)
@@ -424,13 +424,13 @@ def _render_node_inline(node: Node, parent_ud: Optional[Dict], checkbox_callback
                         )
                 ud["children"].append(file_ud)
         
-        # add child inline if present
+        # Add child inline if present
         if num_children == 1:
             child = node.children[0]
             child_ud = _render_node_inline(child, ud, checkbox_callback, dcm_view_cb)
             ud["children"].append(child_ud)
 
-        # leaf: no files and no children
+        # Leaf: no files and no children
         else:
             cb = dpg.add_checkbox(callback=checkbox_callback, user_data=ud)
             ud["checkbox"] = cb
@@ -466,7 +466,7 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
     doses_grouped_by_plan: Dict[str, List[Any]] = {}   # plan_sopi -> [File,...]
     orphan_dose_files: List[Any] = []                  # dose files with no ref_plan
 
-    # 1) classify files
+    # Classify files
     for file_obj in getattr(patient, "files", []):
         file_obj: File
         if not hasattr(file_obj, "file_metadata"):
@@ -526,7 +526,7 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
             else:
                 orphan_dose_files.append(file_obj)
     
-    # 2) wire relationships: series -> struct, struct -> plan, plan -> dose (dose via grouping later)
+    # Wire relationships: series -> struct, struct -> plan, plan -> dose (dose via grouping later)
     for struct_node in list(struct_map.values()):
         for series_uid in struct_node.metadata.get("ref_series", []):
             series_node = series_map.get(series_uid)
@@ -539,14 +539,14 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
             if s_node and s_node not in plan_node.children:
                 plan_node.children.append(s_node)
     
-    # 3) build dose nodes grouped by plan; attach plan node as child when available
+    # Build dose nodes grouped by plan; attach plan node as child when available
     dose_children: List[Node] = []
     for plan_sopi, files in doses_grouped_by_plan.items():
         plan_node = plan_map.get(plan_sopi)
         label = f"Dose for Plan: '{plan_node.label}'" if plan_node else f"Dose for Plan {plan_sopi}"
         children: List[Node] = []
         if plan_node:
-            # append the plan node as a child of the dose node so the dose tree drills into the plan
+            # Append the plan node as a child of the dose node so the dose tree drills into the plan
             children.append(plan_node)
         dose_node = Node(
             kind=NodeType.DOSE,
@@ -559,7 +559,7 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
         )
         dose_children.append(dose_node)
 
-    # orphan dose files become individual dose nodes
+    # Orphan dose files become individual dose nodes
     for fobj in orphan_dose_files:
         fobj: File
         md = fobj.file_metadata
@@ -576,24 +576,24 @@ def _build_dicom_nodes(patient: Patient) -> List[Node]:
         )
         dose_children.append(dn)
 
-    # 4) collect maps -> lists
+    # Collect maps -> lists
     all_plan_nodes = list(plan_map.items())       # list of (sopi, node)
     all_struct_nodes = list(struct_map.items())   # (sopi, node)
     all_series_nodes = list(series_map.items())   # (series_uid, node)
 
-    # 5) exclude plans that are referenced by any dose group (so they only appear under dose tree)
+    # Exclude plans that are referenced by any dose group (so they only appear under dose tree)
     referenced_plan_sopis = set(doses_grouped_by_plan.keys())
     plan_children = [node for sopi, node in all_plan_nodes if sopi not in referenced_plan_sopis]
 
-    # exclude structs referenced by any plan (so they will appear under plans if referenced, otherwise here)
+    # Exclude structs referenced by any plan (so they will appear under plans if referenced, otherwise here)
     referenced_struct_sopis = {s for p in plan_map.values() for s in p.metadata.get("ref_structs", [])}
     struct_children = [node for sopi, node in all_struct_nodes if sopi not in referenced_struct_sopis]
 
-    # exclude series referenced by any struct
+    # Exclude series referenced by any struct
     referenced_series = {uid for s in struct_map.values() for uid in s.metadata.get("ref_series", [])}
     series_children = [node for uid, node in all_series_nodes if uid not in referenced_series]
-    
-    # 6) create category containers (aggregate file_objs for counts)
+
+    # Create category containers (aggregate file_objs for counts)
     containers: List[Node] = []
 
     if dose_children:

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 def create_dicom_action_window(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """
     Create a window for DICOM actions in the GUI.
-    The window includes a progress bar a button to choose a directory containing DICOM files.
+    The window includes a progress bar and a button to choose a directory containing DICOM files.
     
     Args:
         sender: The tag of the UI element triggering this action.

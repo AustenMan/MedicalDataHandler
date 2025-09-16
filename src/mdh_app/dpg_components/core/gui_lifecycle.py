@@ -99,7 +99,7 @@ def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None, 
         data_mgr: DataManager = get_user_data(td_key="data_manager")
 
         if ss_mgr.cleanup_event.is_set():
-            logger.warning("Cleanup already in progress.")
+            logger.warning("Cleanup is already in progress. Please wait...")
             return
         
         # If no data is loaded and no action is active, simply submit the action.
@@ -134,8 +134,8 @@ def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None, 
             button_callback=partial(ss_mgr.start_cleanup, _execute_action),
             button_theme=get_hidden_button_theme(),
             no_close=True,
-            confirmation_text="An action is in progress. Cancel it and clear data?",
-            warning_string="Cancelling will clear loaded data and stop ongoing tasks."
+            confirmation_text="The GUI must be cleaned up before proceeding. Continue?",
+            warning_string="Any ongoing actions will be cancelled, and any loaded data will be cleared."
         )
 
     return wrapped
@@ -153,7 +153,7 @@ def _reset_gui_layout() -> None:
         get_tag("inspect_ptobj_window"),
         get_tag("inspect_dicom_popup"),
         get_tag("inspect_data_popup"),
-        get_tag("save_sitk_window")
+        get_tag("save_data_window")
     ]
     safe_delete(tags_to_delete)
     

@@ -115,11 +115,10 @@ def create_popup_dicom_inspection(sender: Union[str, int], app_data: Any, user_d
         add_dicom_dataset_to_tree(
             window_tag=tag_inspect_dcm,
             window_states=window_states,
-            data=dicom_dataset, 
-            label=None, 
-            parent=tag_tree_group, 
-            text_wrap_width=round(0.95 * popup_width), 
-            max_depth=5,
+            data=dicom_dataset,
+            parent=tag_tree_group,
+            text_wrap_width=round(0.95 * popup_width),
+            max_depth=10,
         )
     
     # Check in case user closed the popup before finished loading

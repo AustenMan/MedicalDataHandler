@@ -24,7 +24,7 @@ from mdh_app.dpg_components.interactions.keyboard_handlers import (
 )
 from mdh_app.dpg_components.widgets.progress_bar import update_progress
 from mdh_app.dpg_components.rendering.texture_manager import request_texture_update
-from mdh_app.dpg_components.themes.theme_manager import get_global_theme
+from mdh_app.dpg_components.themes.global_themes import get_global_theme
 from mdh_app.dpg_components.themes.progress_themes import get_pbar_theme
 from mdh_app.dpg_components.windows.exit.exit_window import create_exit_popup
 from mdh_app.dpg_components.windows.logging.log_win_utils import refresh_logger_messages
@@ -73,7 +73,7 @@ class GUILauncher:
             
             # Apply global theme
             dpg.bind_theme(get_global_theme())
-            logger.debug("DearPyGUI Global theme applied")
+            logger.debug("DearPyGUI global theme applied")
             
             # Set font scale
             font_scale = self.config_manager.get_font_scale()
@@ -339,8 +339,7 @@ class GUILauncher:
             # Create viewport
             dpg.create_viewport(
                 title=(
-                    "Medical Data Handler v1.0 by Austen Maniscalco. "
-                    "Free & Open-Source. Questions? Austen.Maniscalco@UTSouthwestern.edu"
+                    "Medical Data Handler v1.0 | GitHub: https://github.com/AustenMan/MedicalDataHandler/"
                 ),
                 small_icon=icon_file,
                 large_icon=icon_file,
@@ -501,7 +500,7 @@ class GUILauncher:
                 "inspect_ptobj_window": dpg.generate_uuid(),
                 "inspect_dicom_popup": dpg.generate_uuid(),
                 "inspect_data_popup": dpg.generate_uuid(),
-                "save_sitk_window": dpg.generate_uuid(),
+                "save_data_window": dpg.generate_uuid(),
                 
                 # Progress bar tag
                 "pbar": dpg.generate_uuid(),
@@ -565,7 +564,10 @@ class GUILauncher:
                     "window_width": dpg.generate_uuid(),
                     "window_level": dpg.generate_uuid(),
                     "voxel_spacing": dpg.generate_uuid(),
-                    "voxel_spacing_cbox": dpg.generate_uuid(),
+                    "voxel_spacing_config": dpg.generate_uuid(),
+                    "force_voxel_spacing_config": dpg.generate_uuid(),
+                    "force_voxel_spacing_isotropic_largest": dpg.generate_uuid(),
+                    "force_voxel_spacing_isotropic_smallest": dpg.generate_uuid(),
                     "zoom_factor": dpg.generate_uuid(),
                     "xrange": dpg.generate_uuid(),
                     "yrange": dpg.generate_uuid(),
@@ -641,31 +643,31 @@ class GUILauncher:
     def _update_default_display_dictionary(self) -> None:
         """ Update the default display settings dictionary. """
         default_data_size: Tuple[int, int, int] = (600, 600, 600)
-
+        
+        x_range = (0, default_data_size[0] - 1)
+        y_range = (0, default_data_size[1] - 1)
+        z_range = (0, default_data_size[2] - 1)
+        
+        x_slice = max(min(round(default_data_size[0] / 2), x_range[1]), x_range[0])
+        y_slice = max(min(round(default_data_size[1] / 2), y_range[1]), y_range[0])
+        z_slice = max(min(round(default_data_size[2] / 2), z_range[1]), z_range[0])
+        
         self.default_display_dict.update(
             {
                 "DATA_SIZE": default_data_size,
-                "SLICE_VALS": [
-                    round(default_data_size[0] / 2),
-                    round(default_data_size[1] / 2),
-                    round(default_data_size[2] / 2)
-                ],
+                "VOXEL_SPACING": (3.0, 3.0, 3.0),
+                "SLICE_VALS": [x_slice, y_slice, z_slice],
+                "RANGES": [x_range, y_range, z_range],
+                "ROTATION": 0,
+                "FLIP_LR": False,
+                "FLIP_AP": False,
+                "FLIP_SI": False,
                 "DISPLAY_ALPHAS": [100, 100, 40],
                 "DOSE_RANGE": [0, 100],
                 "CONTOUR_THICKNESS": 1,
                 "IMAGE_WINDOW_PRESET": "Custom",
                 "IMAGE_WINDOW_WIDTH": 375,
                 "IMAGE_WINDOW_LEVEL": 40,
-                "RANGES": [
-                    (0, default_data_size[0] - 1),
-                    (0, default_data_size[1] - 1),
-                    (0, default_data_size[2] - 1)
-                ],
-                "ROTATION": 0,
-                "FLIP_LR": False,
-                "FLIP_AP": False,
-                "FLIP_SI": False,
-                "VOXEL_SPACING": (3.0, 3.0, 3.0),
             }
         )
 

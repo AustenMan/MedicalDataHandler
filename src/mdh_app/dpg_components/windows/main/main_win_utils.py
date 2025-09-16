@@ -41,7 +41,6 @@ def _fill_mw_settings_table() -> None:
         dpg.add_table_column(width_stretch=True)
         dpg.add_table_column(width_stretch=True)
         dpg.add_table_column(width_stretch=True)
-        dpg.add_table_column(width_stretch=True)
         
         tag_row = dpg.generate_uuid()
         with dpg.table_row(tag=tag_row):
@@ -99,7 +98,9 @@ def _build_main_window_layout() -> str:
     NOTE:
         Ensure all rules are followed with \n and \t characters.
         The returned string ***must*** use TAB characters for indentation and newlines for line breaks.
-        I do not recommend making changes. Changes to the layout may have downstream impacts.
+        
+        ***I do not recommend making changes.***
+        Changes to the layout may have downstream impacts.
 
     Returns:
         A string representing the dashboard layout.

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Tuple, Any, Union, Dict, List
 import dearpygui.dearpygui as dpg
 
 
-from mdh_app.dpg_components.core.utils import get_tag, get_user_data, add_custom_button
+from mdh_app.dpg_components.core.utils import get_tag, get_user_data, add_custom_button, add_custom_separator
 from mdh_app.dpg_components.themes.button_themes import get_hidden_button_theme, get_colored_button_theme
 from mdh_app.dpg_components.windows.dicom_inspection.dcm_inspect_win import create_popup_dicom_inspection
 from mdh_app.utils.dpg_utils import safe_delete, get_popup_params
@@ -52,12 +52,12 @@ def _add_rtp_button(parent: Union[str, int], rtp_sopiuid: str) -> None:
     review_time = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "ReviewTime", "")
     reviewer_name = data_mgr.get_rtplan_ds_value_by_uid(rtp_sopiuid, "ReviewerName", "N/A")
 
-    rtp_btn_descriptor = label or name or description or modality
+    rtp_btn_descriptor = label or name or description
     rtp_button_label = f"{modality} - {rtp_btn_descriptor}" if rtp_btn_descriptor else modality
     rtp_text = (
-        f"RT Plan Label: {label}\n"
-        f"RT Plan Name: {name}\n"
-        f"RT Plan Description: {description}\n"
+        f"RT Plan Label: {label or 'N/A'}\n"
+        f"RT Plan Name: {name or 'N/A'}\n"
+        f"RT Plan Description: {description or 'N/A'}\n"
         f"RT Plan Date and Time: {date} {time}\n"
         f"Number of Fractions Planned: {num_fxns_planned}\n"
         f"Approval Status: {approval_status}\n"
@@ -130,7 +130,6 @@ def _popup_beam_summary(sender: Union[str, int], app_data: Any, user_data: Tuple
                             width=size_dict["button_width"],
                             readonly=True
                         )
-        dpg.add_spacer(height=size_dict["spacer_height"])
     
     with dpg.window(
         tag=tag_inspect,
@@ -160,3 +159,4 @@ def _popup_beam_summary(sender: Union[str, int], app_data: Any, user_data: Tuple
             return
         for beam_summary in beam_summaries:
             _add_beam_summary_table(beam_summary)
+            add_custom_separator()

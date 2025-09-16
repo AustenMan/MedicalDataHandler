@@ -144,7 +144,7 @@ def construct_image(
     reader = sitk.ImageSeriesReader()
     reader.MetaDataDictionaryArrayUpdateOn()  # Preserve DICOM metadata
     reader.LoadPrivateTagsOn()  # Include private DICOM tags
-    reader.SetOutputPixelType(sitk.sitkFloat32)  # Standardize to float32
+    reader.SetOutputPixelType(sitk.sitkFloat32)  # float32 generally adequate
     reader.SetFileNames(sorted_files)
     
     # Execute image construction
@@ -154,9 +154,6 @@ def construct_image(
     except Exception as e:
         logger.error("ImageSeriesReader failed to construct image!", exc_info=True, stack_info=True)
         return None
-    
-    # Ensure consistent data type
-    image = sitk.Cast(image, sitk.sitkFloat32)
     
     # Merge metadata from all slices into the final image
     try:

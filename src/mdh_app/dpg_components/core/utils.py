@@ -68,20 +68,17 @@ def get_user_data(td_key: Optional[str] = None, tag: Optional[Union[str, int]] =
     raise ValueError(f"Invalid input. td_key must be a string and tag must be a string or integer: td_key={td_key}, tag={tag}")
 
 
-def update_viewport_and_popups(
-    new_screen_size: Tuple[int, int],
-    current_screen_size: Optional[Tuple[int, int]] = None
-) -> Tuple[float, float]:
-    """
-    Update the viewport dimensions and adjust open popups to the new screen size.
-    
-    Args:
-        new_screen_size: New screen dimensions as (width, height).
-        current_screen_size: Current screen dimensions as (width, height). Defaults to None.
+def update_viewport_and_popups() -> Tuple[float, float]:
+    """ 
+    Update the viewport dimensions and adjust open popups to the new (based on config) screen size.
     
     Returns:
         A tuple containing the width and height scaling factors.
     """
+    # Get the config screen size
+    conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
+    new_screen_size = conf_mgr.get_screen_size()
+    
     # Update the viewport size
     dpg.configure_viewport(
         item=0,
@@ -90,16 +87,17 @@ def update_viewport_and_popups(
         max_width=new_screen_size[0], max_height=new_screen_size[1]
     )
     
-    # Get the width and height ratios between the new and current screen sizes
+    # Get the width and height scaling factors based on the new and current screen sizes
+    current_screen_size = (dpg.get_viewport_width(), dpg.get_viewport_height())
     if isinstance(current_screen_size, (tuple, list)) and len(current_screen_size) == 2:
         width_ratio = new_screen_size[0] / current_screen_size[0]
         height_ratio = new_screen_size[1] / current_screen_size[1]
-        wh_ratios = (width_ratio, height_ratio)
+        wh_scales = (width_ratio, height_ratio)
     else:
-        wh_ratios = (1.0, 1.0)
+        wh_scales = (1.0, 1.0)
     
     # Update any open windows if the screen size has changed
-    if wh_ratios != (1.0, 1.0):
+    if wh_scales != (1.0, 1.0):
         tag_dict = get_user_data(td_key="tag_dict")
         for tag in list(tag_dict.values()):
             if isinstance(tag, (int, str)) and dpg.does_item_exist(tag) and dpg.get_item_type(tag) == "mvAppItemType::mvWindowAppItem":
@@ -108,12 +106,12 @@ def update_viewport_and_popups(
                 new_pos = (round(new_screen_size[0] * prev_pos_percent[0]), round(new_screen_size[1] * prev_pos_percent[1]))
                 
                 prev_W, prev_H = dpg.get_item_rect_size(tag)
-                new_W, new_H = min(round(prev_W * wh_ratios[0]), new_screen_size[0]), min(round(prev_H * wh_ratios[1]), new_screen_size[1])
+                new_W, new_H = min(round(prev_W * wh_scales[0]), new_screen_size[0]), min(round(prev_H * wh_scales[1]), new_screen_size[1])
                 
                 dpg.configure_item(tag, width=new_W, height=new_H, pos=new_pos)
     
-    # Return the width and height ratios
-    return wh_ratios
+    # Return the width and height scaling factors
+    return wh_scales
 
 
 def update_font_scale(new_font_scale: float) -> None:

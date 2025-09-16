@@ -62,20 +62,7 @@ def add_spacing_controls(
                         )
                     dpg.add_text("Voxel Spacing (mm):")
                 with dpg.group(horizontal=True):
-                    # Checkbox for using config voxel spacing
-                    dpg.add_checkbox(
-                        tag=get_tag("img_tags")["voxel_spacing_cbox"], 
-                        default_value=conf_mgr.get_bool_use_config_voxel_spacing(),
-                        callback=_update_spacing_settings
-                    )
-                    with dpg.tooltip(parent=dpg.last_item()):
-                        dpg.add_text(
-                            default_value=(
-                                "Checked: Use the config voxel spacing (a standardized spacing) for all "
-                                "patients. Unchecked: Only use the data's native voxel spacing."
-                            ), 
-                            wrap=size_dict["tooltip_width"]
-                        )
+                    # Input for voxel spacing
                     dpg.add_input_floatx(
                         tag=get_tag("img_tags")["voxel_spacing"], 
                         size=len(default_voxel_spacing), 
@@ -87,13 +74,79 @@ def add_spacing_controls(
                         max_clamped=True, 
                         on_enter=True,
                         width=size_dict["button_width"], 
-                        callback=request_texture_update
+                        callback=_update_spacing_settings
                     )
                     dpg.add_button(
                         label="Reset", 
                         before=dpg.last_item(), 
                         user_data=dpg.last_item(), 
                         callback=_reset_setting_callback
+                    )
+            # Config Voxel Spacing Checkbox
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text(
+                            "Force the use of the voxel spacing defined in the configuration file. This will override "
+                            "any manual spacing input.",
+                            wrap=size_dict["tooltip_width"]
+                        )
+                    dpg.add_text("Force Config Voxel Spacing:")
+                with dpg.group(horizontal=True):
+                    dpg.add_checkbox(
+                        tag=get_tag("img_tags")["force_voxel_spacing_config"], 
+                        default_value=conf_mgr.get_bool_use_config_voxel_spacing(), 
+                        callback=_update_spacing_settings
+                    )
+                    # Input for config voxel spacing
+                    dpg.add_input_floatx(
+                        tag=get_tag("img_tags")["voxel_spacing_config"], 
+                        size=len(default_voxel_spacing), 
+                        default_value=conf_mgr.get_voxel_spacing(), 
+                        min_value=voxel_spacing_limits[0],
+                        max_value=voxel_spacing_limits[1], 
+                        min_clamped=True, 
+                        max_clamped=True, 
+                        on_enter=True,
+                        width=size_dict["button_width"], 
+                        callback=_update_spacing_settings
+                    )
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text(
+                            "The voxel spacing defined in the configuration file.",
+                            wrap=size_dict["tooltip_width"]
+                        )
+            # Checkbox for largest isotropic spacing
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text(
+                            "Force isotropic voxel spacing by setting all dimensions to the largest "
+                            "voxel spacing value based on the loaded data. This will override any manual spacing input.",
+                            wrap=size_dict["tooltip_width"]
+                        )
+                    dpg.add_text("Force Isotropic Spacing (Largest):")
+                with dpg.group(horizontal=True):
+                    dpg.add_checkbox(
+                        tag=get_tag("img_tags")["force_voxel_spacing_isotropic_largest"],
+                        default_value=conf_mgr.get_bool_voxel_spacing_isotropic_largest(),
+                        callback=_update_spacing_settings
+                    )
+            # Checkbox for smallest isotropic spacing
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text(
+                            "Force isotropic voxel spacing by setting all dimensions to the smallest "
+                            "voxel spacing value based on the loaded data. This will override any manual spacing input.",
+                            wrap=size_dict["tooltip_width"]
+                        )
+                    dpg.add_text("Force Isotropic Spacing (Smallest):")
+                with dpg.group(horizontal=True):
+                    dpg.add_checkbox(
+                        tag=get_tag("img_tags")["force_voxel_spacing_isotropic_smallest"],
+                        default_value=conf_mgr.get_bool_voxel_spacing_isotropic_smallest(),
+                        callback=_update_spacing_settings
                     )
 
 
@@ -202,25 +255,81 @@ def add_rot_flip_controls(
 
 def _update_spacing_settings(sender: Union[str, int], app_data: bool, user_data: Any) -> None:
     """
-    Update the voxel spacing based on the checkbox state and config settings.
+    Update the voxel spacing.
     
     Args:
-        sender: The checkbox item.
-        app_data: The new checkbox state.
+        sender: The sender of the event.
+        app_data: The new state.
         user_data: Additional user data.
     """
     # Update the config manager checkbox setting
     conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
-    use_config_voxel_spacing = app_data
-    conf_mgr.update_user_config({"use_config_voxel_spacing": use_config_voxel_spacing})
+    img_tags = get_tag("img_tags")
+    tag_spacing = img_tags["voxel_spacing"]
+    tag_config_spacing = img_tags["voxel_spacing_config"]
+    force_config = img_tags["force_voxel_spacing_config"]
+    force_isotr_lg = img_tags["force_voxel_spacing_isotropic_largest"]
+    force_isotr_sm = img_tags["force_voxel_spacing_isotropic_smallest"]
+    default_spacing = dpg.get_item_user_data(tag_spacing)
     
-    tag_spacing = get_tag("img_tags")["voxel_spacing"]
-    if use_config_voxel_spacing:
-        config_spacing = conf_mgr.get_voxel_spacing()
-        dpg.set_value(tag_spacing, config_spacing)
+    if sender == force_config:
+        if app_data:
+            # If using config spacing, also disable isotropic options
+            conf_mgr.update_user_config({"use_config_voxel_spacing": app_data, "force_voxel_spacing_isotropic_largest": False, "force_voxel_spacing_isotropic_smallest": False})
+            dpg.set_value(force_isotr_lg, False)
+            dpg.set_value(force_isotr_sm, False)
+            dpg.set_value(tag_spacing, conf_mgr.get_voxel_spacing())  # Set to config spacing
+        else:
+            conf_mgr.update_user_config({"use_config_voxel_spacing": app_data})
+            if not any([conf_mgr.get_bool_use_config_voxel_spacing(), conf_mgr.get_bool_voxel_spacing_isotropic_largest(), conf_mgr.get_bool_voxel_spacing_isotropic_smallest()]):
+                dpg.set_value(tag_spacing, default_spacing)  # Set to default spacing if no options are selected
+    
+    elif sender == force_isotr_lg:
+        if app_data:
+            # If isotropic is checked, disable config spacing option and smallest isotropic
+            conf_mgr.update_user_config({"force_voxel_spacing_isotropic_largest": app_data, "use_config_voxel_spacing": False, "force_voxel_spacing_isotropic_smallest": False})
+            dpg.set_value(force_config, False)
+            dpg.set_value(force_isotr_sm, False)
+            max_spacing = max(default_spacing)
+            dpg.set_value(tag_spacing, [max_spacing]*3)  # Set to largest isotropic spacing
+        else:
+            conf_mgr.update_user_config({"force_voxel_spacing_isotropic_largest": False})
+            if not any([conf_mgr.get_bool_use_config_voxel_spacing(), conf_mgr.get_bool_voxel_spacing_isotropic_largest(), conf_mgr.get_bool_voxel_spacing_isotropic_smallest()]):
+                dpg.set_value(tag_spacing, default_spacing)  # Set to default spacing if no options are selected
+    
+    elif sender == force_isotr_sm:
+        if app_data:
+            # If isotropic is checked, disable config spacing option and largest isotropic
+            conf_mgr.update_user_config({"force_voxel_spacing_isotropic_smallest": app_data, "use_config_voxel_spacing": False, "force_voxel_spacing_isotropic_largest": False})
+            dpg.set_value(force_config, False)
+            dpg.set_value(force_isotr_lg, False)
+            min_spacing = min(default_spacing)
+            dpg.set_value(tag_spacing, [min_spacing]*3)
+        else:
+            conf_mgr.update_user_config({"force_voxel_spacing_isotropic_smallest": False})
+            if not any([conf_mgr.get_bool_use_config_voxel_spacing(), conf_mgr.get_bool_voxel_spacing_isotropic_largest(), conf_mgr.get_bool_voxel_spacing_isotropic_smallest()]):
+                dpg.set_value(tag_spacing, default_spacing)  # Set to default spacing if no options are selected
+    
+    elif sender == tag_config_spacing:
+        new_config_spacing = app_data[:3]
+        conf_mgr.update_user_config({"voxel_spacing": new_config_spacing})
+        dpg.set_value(tag_config_spacing, new_config_spacing)  # Update the config spacing input to match
+        if not dpg.get_value(force_config):
+            return  # No texture update if not forcing config spacing
+        dpg.set_value(tag_spacing, new_config_spacing)  # Set to config spacing
+    
+    elif sender == tag_spacing:
+        # Update voxel spacing input, disable checkboxes
+        conf_mgr.update_user_config({"use_config_voxel_spacing": False, "force_voxel_spacing_isotropic_largest": False, "force_voxel_spacing_isotropic_smallest": False})
+        dpg.set_value(force_config, False)
+        dpg.set_value(force_isotr_lg, False)
+        dpg.set_value(force_isotr_sm, False)
+        new_spacing = app_data[:3]
+        dpg.set_value(tag_spacing, new_spacing)  # Set to user input spacing
+    
     else:
-        default_spacing = dpg.get_item_user_data(tag_spacing)
-        dpg.set_value(tag_spacing, default_spacing)
+        logger.warning(f"Unknown sender for voxel spacing update: {sender}")
+        return
     
     request_texture_update(texture_action_type="update")
 

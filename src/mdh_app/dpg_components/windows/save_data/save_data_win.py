@@ -37,7 +37,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
         app_data: Additional event data.
         user_data: Additional user data.
     """
-    tag_save_window = get_tag("save_sitk_window")
+    tag_save_window = get_tag("save_data_window")
     tag_save_button = get_tag("save_button")
     conf_mgr: ConfigManager = get_user_data(td_key="config_manager")
     data_mgr: DataManager = get_user_data(td_key="data_manager")
@@ -59,6 +59,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
     
     tag_hidden_theme = get_hidden_button_theme()
     save_settings_dict = conf_mgr.get_save_settings_dict()
+    unmatched_name = conf_mgr.get_unmatched_organ_name()
     
     # Data to show in the save window
     save_data_dict = dpg.get_item_user_data(tag_save_button)
@@ -226,8 +227,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                 rts_sopiuid = str(rts_sopiuid)
                 
                 roi_metadata = data_mgr.get_roi_gui_metadata_by_uid(rts_sopiuid, roi_number)
-                roi_use_templated_name = roi_metadata.get("use_template_name", False)
-                roi_name = roi_metadata.get("ROITemplateName", "") if roi_use_templated_name else roi_metadata.get("ROIName", "")
+                roi_name = roi_metadata.get("display_name", "")
                 rt_roi_interpreted_type = roi_metadata.get("RTROIInterpretedType", "")
                 roi_physical_property_value = roi_metadata.get("ROIPhysicalPropertyValue", -1.0)  # Relative Electron Density value, -1.0 if not set
                 roi_goals = roi_metadata.get("roi_goals", {})
@@ -255,7 +255,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                 row_tag = dpg.generate_uuid()
                 with dpg.table_row(tag=row_tag):
                     add_custom_button(label=roi_label, height=button_height, tooltip_text=roi_text)
-                    bulksave_tag = add_custom_checkbox(default_value=True, tooltip_text="Include this ROI in the bulk save list.")
+                    bulksave_tag = add_custom_checkbox(default_value=roi_name != unmatched_name, tooltip_text="Include this ROI in the bulk save list.")
                     save_tag = add_custom_button(
                         label="Save", 
                         callback=lambda s, a, u: ss_mgr.submit_action(partial(_execute_saving, s, a, u)),
@@ -284,7 +284,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
                     filename_tag = dpg.add_input_text(default_value=default_filename, width=size_dict["table_w"])
                 
                 save_selections_dict["rois"].append({
-                    "data_key": (rts_sopiuid, roi_number),
+                    "data_key": (rts_sopiuid, int(roi_number)),
                     "study_instance_uid": study_instance_uid,
                     "modality": modality,
                     "sop_instance_uid": rts_sopiuid,
@@ -387,7 +387,7 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             with dpg.tooltip(parent=dpg.last_item()):
                 dpg.add_text("Filename for the summed dose, if any will exist (based on user selections below).", wrap=size_dict["tooltip_width"])
             dpg.add_text(f"Dose Sum Name: ")
-            save_selections_dict["main_checkboxes"]["dosesum_name_tag"] = dpg.add_input_text(default_value="DOSE_PlanSum", width=size_dict["table_w"])
+            save_selections_dict["main_checkboxes"]["dosesum_name_tag"] = dpg.add_input_text(default_value="DOSE_CustomSum", width=size_dict["table_w"])
         with dpg.table(
             resizable=True, 
             reorderable=True, 

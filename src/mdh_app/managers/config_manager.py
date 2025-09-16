@@ -576,9 +576,61 @@ class ConfigManager:
                 f"Value for using config voxel spacing '{use_config_voxel_spacing}' is invalid. Using fallback: {fallback_value}."
             )
             return fallback_value
+        
+        vsi_lg = self.get_user_setting("force_voxel_spacing_isotropic_largest", False)
+        if use_config_voxel_spacing and vsi_lg:
+            self.update_user_config({"force_voxel_spacing_isotropic_largest": False})
+        
+        vsi_sm = self.get_user_setting("force_voxel_spacing_isotropic_smallest", False)
+        if use_config_voxel_spacing and vsi_sm:
+            self.update_user_config({"force_voxel_spacing_isotropic_smallest": False})
 
         return use_config_voxel_spacing
 
+    def get_bool_voxel_spacing_isotropic_largest(self) -> bool:
+        """Get whether to use isotropic voxel spacing."""
+        fallback_value = False
+
+        voxel_spacing_isotropic_largest = self.get_user_setting("force_voxel_spacing_isotropic_largest", fallback_value)
+
+        if not isinstance(voxel_spacing_isotropic_largest, bool):
+            logger.error(
+                f"Value for isotropic voxel spacing (largest) '{voxel_spacing_isotropic_largest}' is invalid. Using fallback: {fallback_value}."
+            )
+            return fallback_value
+        
+        use_config_spacing = self.get_user_setting("use_config_voxel_spacing", False)
+        if voxel_spacing_isotropic_largest and use_config_spacing:
+            self.update_user_config({"use_config_voxel_spacing": False})
+        
+        vsi_lg = self.get_user_setting("force_voxel_spacing_isotropic_smallest", False)
+        if voxel_spacing_isotropic_largest and vsi_lg:
+            self.update_user_config({"force_voxel_spacing_isotropic_smallest": False})
+
+        return voxel_spacing_isotropic_largest
+
+    def get_bool_voxel_spacing_isotropic_smallest(self) -> bool:
+        """Get whether to use isotropic voxel spacing (smallest)."""
+        fallback_value = False
+
+        voxel_spacing_isotropic_smallest = self.get_user_setting("force_voxel_spacing_isotropic_smallest", fallback_value)
+
+        if not isinstance(voxel_spacing_isotropic_smallest, bool):
+            logger.error(
+                f"Value for isotropic voxel spacing (smallest) '{voxel_spacing_isotropic_smallest}' is invalid. Using fallback: {fallback_value}."
+            )
+            return fallback_value
+
+        use_config_spacing = self.get_user_setting("use_config_voxel_spacing", False)
+        if voxel_spacing_isotropic_smallest and use_config_spacing:
+            self.update_user_config({"use_config_voxel_spacing": False})
+        
+        vsi_lg = self.get_user_setting("force_voxel_spacing_isotropic_largest", False)
+        if voxel_spacing_isotropic_smallest and vsi_lg:
+            self.update_user_config({"force_voxel_spacing_isotropic_largest": False})
+        
+        return voxel_spacing_isotropic_smallest
+    
     def get_save_settings_dict(self) -> Dict[str, bool]:
         """Get save settings with fallback validation."""
         fallback_dict: Dict[str, bool] = {

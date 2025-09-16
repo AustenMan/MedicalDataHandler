@@ -311,21 +311,23 @@ def normalize_dcm_string(s: Any) -> str:
     return str(s).strip().lower() if s is not None else ""
 
 
-def build_userdata(tag: Any = "", VR: Any = None, value: Any = None) -> dict:
+def build_userdata(tag: Any = "", VR: Any = None, value: Any = None, tag_name: Any = None) -> dict:
     """
     Create a standardized user_data dictionary with normalized string fields
     for consistent future matching (e.g., case-insensitive, whitespace-trimmed).
 
     Args:
-        tag: DICOM tag or key name.
+        tag: DICOM tag.
         VR: Value Representation.
         value: Associated value or description.
+        tag_name: DICOM tag name.
 
     Returns:
         A dict with lowercase, trimmed string fields.
     """
     return {
         "tag": normalize_dcm_string(tag),
+        "name": normalize_dcm_string(tag_name),
         "VR": normalize_dcm_string(VR),
         "value": normalize_dcm_string(value)
     }
@@ -335,7 +337,7 @@ def add_dicom_dataset_to_tree(
     window_tag: Union[str, int],
     window_states: dict,
     data: Any,
-    label: str = "",
+    item_idx: Optional[int] = None,
     parent: Optional[int] = None,
     text_wrap_width: int = -1,
     text_color_one: Tuple[int, int, int] = (30, 200, 120),
@@ -348,8 +350,9 @@ def add_dicom_dataset_to_tree(
     
     Args:
         window_tag: The tag of the parent window.
+        window_states: Dictionary tracking window state (e.g., if aborted).
         data (Any): The DICOM data to display. Can be a Dataset, DataElement, or base data type.
-        label (str): Label for the current data node.
+        item_idx (Optional[int]): Optional item number for labeling (e.g., in sequences).
         parent (Optional[int]): Parent node in the GUI.
         text_wrap_width (int): Width for text wrapping.
         text_color_one (Tuple[int, int, int]): RGB color for the labels.
@@ -365,309 +368,297 @@ def add_dicom_dataset_to_tree(
             The code you posted creates the entire tree at the start, with tree nodes in the closed state. I'd suggest that you only create children when a tree node is expanded - see add_item_toggled_open_handler. You can attach the list or dict of supposed child values to the tree node via user_data, and when it gets expanded, just pick up user_data and build children from there.
             Note: the user_data argument in add_item_toggled_open_handler receives user data for the handler itself, not for the tree node. Use get_item_user_data to retrieve it from the tree node.
     """   
+    def is_aborted():
+        return window_states.get("aborted") or not dpg.does_item_exist(window_tag)
+
+    def infer_from_data(obj, item_idx) -> Tuple[str, str, str, Optional[str]]:
+        """Return (display_label, tag_str, tag_name, VR)"""
+        if isinstance(obj, DataElement):
+            t = str(obj.tag)
+            name = obj.name if obj.name != "Unknown" else f"Private Tag {t}"
+            vr = obj.VR
+            # prefer user-friendly label "Name (tag)"
+            return f"{name} ({t})", t, name, vr
+        if isinstance(obj, Dataset):
+            if item_idx is not None:
+                return f"Item #{item_idx+1}", "", "Item", None
+            return "Dataset", "", "Dataset", None
+        if isinstance(obj, Sequence):
+            return "Sequence", "", "Sequence", None
+        if isinstance(obj, dict):
+            return "dict", "", "dict", None
+        if isinstance(obj, list):
+            return "list", "", "list", None
+        # fallback for primitives
+        return str(type(obj).__name__), "", str(obj), None
+    
     # Early exit if window no longer exists
-    if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+    if is_aborted():
         window_states["aborted"] = True
         return
     
     if current_depth > max_depth:
+        label, tag_str, tag_name, tag_vr = infer_from_data(data)
         dpg.add_text(
             default_value=f"{label}: (Max recursion depth reached)",
             parent=parent,
-            user_data=build_userdata(tag=label, VR=None, value="(Max recursion depth reached)")
+            user_data=build_userdata(tag=tag_str or label, tag_name=tag_name or label, VR=tag_vr, value="(Max recursion depth reached)")
         )
         return
     
-    def add_empty_value(parent, key_or_label):
-        with dpg.group(parent=parent):
+    def add_empty_value(parent_item, key_or_label, key_name=None):
+        key_name = key_name or key_or_label
+        with dpg.group(parent=parent_item):
             dpg.add_text(
                 default_value=f"{key_or_label}:",
                 wrap=text_wrap_width,
                 bullet=True,
                 color=text_color_one,
-                user_data=build_userdata(tag=key_or_label, VR=None, value="")  # No value provided
+                user_data=build_userdata(tag=key_or_label, tag_name=key_name, VR=None, value="")  # No value provided
             )
             dpg.add_text(
                 default_value="\tN/A",
                 wrap=text_wrap_width,
                 color=text_color_two,
-                user_data=build_userdata(tag=key_or_label, VR=None, value="N/A")
+                user_data=build_userdata(tag=key_or_label, tag_name=key_name, VR=None, value="N/A")
             )
     
-    # Handle pydicom Dataset
+    # infer label/tag/name for this node
+    display_label, node_tag, node_name, node_VR = infer_from_data(data, item_idx)
+    
+    # Dataset: iterate its elements
     if isinstance(data, Dataset):
-        if label:
-            new_parent = dpg.add_tree_node(
-                label=label,
-                parent=parent,
-                user_data=build_userdata(tag=label, VR=None, value=None)
-            )
-        else:
-            new_parent = parent
-        for elem in data:
-            # Check if window still exists before each element
-            if window_states["aborted"] or not dpg.does_item_exist(window_tag):
-                window_states["aborted"] = True
-                return
-            
-            tag = elem.tag
-            tag_name = elem.name if elem.name != "Unknown" else f"Private Tag {tag}"
-            tag_label = f"{tag_name} {tag}" if str(tag).startswith("(") and str(tag).endswith(")") else f"{tag_name} ({tag})"
-            add_dicom_dataset_to_tree(
-                window_tag=window_tag,
-                data=elem,
-                label=tag_label,
-                parent=new_parent,
-                text_wrap_width=text_wrap_width,
-                text_color_one=text_color_one,
-                text_color_two=text_color_two,
-                max_depth=max_depth,
-                current_depth=current_depth + 1,
-                window_states=window_states
-            )
-    # Handle pydicom DataElement
-    elif isinstance(data, DataElement):
         new_parent = dpg.add_tree_node(
-            label=label if label else "DataElement",
+            label=display_label,
             parent=parent,
-            user_data=build_userdata(tag=data.tag, VR=data.VR, value=data.value)
-        )
-        if data.value is not None:
-            tag = data.tag
-            tag_name = data.name if data.name != "Unknown" else f"Private Tag {tag}"
-            value = data.value
-            tag_VR = data.VR
-            tag_VR_type = convert_VR_string_to_python_type(str(data.VR))
-            if isinstance(value, Dataset):
-                add_dicom_dataset_to_tree(
-                    window_tag=window_tag,
-                    data=value,
-                    label="Value",
-                    parent=new_parent,
-                    text_wrap_width=text_wrap_width,
-                    text_color_one=text_color_one,
-                    text_color_two=text_color_two,
-                    max_depth=max_depth,
-                    current_depth=current_depth + 1,
-                    window_states=window_states
-                )
-            elif isinstance(value, Sequence):
-                # Special handling for Contour Sequence
-                is_contour_sequence = (data.name == "Contour Sequence" or 
-                                    ("Contour Sequence" in label and not "ROI" in label) or
-                                    "(3006,0040)" in label or 
-                                    str(data.tag) == "(3006,0040)")
-                
-                if is_contour_sequence and len(value) > 1:
-                    # Only show first item
-                    if window_states["aborted"] or not dpg.does_item_exist(window_tag):
-                        window_states["aborted"] = True
-                        return
-                    
-                    add_dicom_dataset_to_tree(
-                        window_tag=window_tag,
-                        data=value[0],
-                        label="Item #0 (Example)",
-                        parent=new_parent,
-                        text_wrap_width=text_wrap_width,
-                        text_color_one=text_color_one,
-                        text_color_two=text_color_two,
-                        max_depth=max_depth,
-                        current_depth=current_depth + 1,
-                        window_states=window_states
-                    )
-                    
-                    # Add truncation notice
-                    dpg.add_text(
-                        default_value=f"... and {len(value) - 1} more items (truncated for performance)",
-                        parent=new_parent,
-                        wrap=text_wrap_width,
-                        color=(255, 165, 0),  # Orange color for the notice
-                        user_data=build_userdata(tag="Truncation Notice", VR=None, value=f"{len(value) - 1} items hidden")
-                    )
-                else:
-                    for idx, item in enumerate(value):
-                        # Check if window still exists before each item
-                        if window_states["aborted"] or not dpg.does_item_exist(window_tag):
-                            window_states["aborted"] = True
-                            return
-
-                        item_label = f"Item #{idx}"
-                        add_dicom_dataset_to_tree(
-                            window_tag=window_tag,
-                            data=item,
-                            label=item_label,
-                            parent=new_parent,
-                            text_wrap_width=text_wrap_width,
-                            text_color_one=text_color_one,
-                            text_color_two=text_color_two,
-                            max_depth=max_depth,
-                            current_depth=current_depth + 1,
-                            window_states=window_states
-                        )
-            elif isinstance(value, (list, tuple)):
-                dpg.add_text(
-                    default_value=f"Value: {value}",
-                    parent=new_parent,
-                    wrap=text_wrap_width,
-                    color=text_color_two,
-                    user_data=build_userdata(tag=tag, VR=tag_VR, value=value)
-                )
-                with dpg.tooltip(parent=dpg.last_item()):
-                    dpg.add_text(
-                        default_value=f"VR: {tag_VR} ---> Value Representation: {tag_VR_type}",
-                        wrap=text_wrap_width,
-                        color=text_color_two,
-                        user_data=build_userdata(tag="VR Info", VR=tag_VR, value=tag_VR_type)
-                    )
-            else:
-                dpg.add_text(
-                    default_value=f"Value: {value}",
-                    parent=new_parent,
-                    wrap=text_wrap_width,
-                    color=text_color_two,
-                    user_data=build_userdata(tag=tag, VR=tag_VR, value=value)
-                )
-                with dpg.tooltip(parent=dpg.last_item()):
-                    dpg.add_text(
-                        default_value=f"VR: {tag_VR} ---> Value Representation: {tag_VR_type}",
-                        wrap=text_wrap_width,
-                        color=text_color_two,
-                        user_data=build_userdata(tag="VR Info", VR=tag_VR, value=tag_VR_type)
-                    )
-        else:
-            add_empty_value(new_parent, "Value")
-    # Handle pydicom Sequence
-    elif isinstance(data, Sequence):
-        # Check if this is a Contour Sequence based on the label
-        is_contour_sequence = (("Contour Sequence" in label and not "ROI" in label) or "(3006,0040)" in label if label else False)
-
-        new_parent = dpg.add_tree_node(
-            label=label if label else "Sequence",
-            parent=parent,
-            user_data=build_userdata(tag=label if label else "Sequence", VR=None, value=None)
+            user_data=build_userdata(tag=node_tag or display_label, tag_name=node_name or display_label, VR=None, value=None),
+            default_open=(current_depth==0),  # Root dataset open by default
+            delay_search=(current_depth > 0), # Delay search for non-root nodes
         )
         
-        if is_contour_sequence and len(data) > 1:
-            # Only show first item for Contour Sequence
-            if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+        for elem in data:
+            if is_aborted():
                 window_states["aborted"] = True
                 return
-            
             add_dicom_dataset_to_tree(
                 window_tag=window_tag,
-                data=data[0],
-                label="Item #0 (Example)",
+                window_states=window_states,
+                data=elem,
                 parent=new_parent,
                 text_wrap_width=text_wrap_width,
                 text_color_one=text_color_one,
                 text_color_two=text_color_two,
                 max_depth=max_depth,
-                current_depth=current_depth + 1,
-                window_states=window_states
+                current_depth=current_depth + 1
             )
-            
-            # Add truncation notice
-            dpg.add_text(
-                default_value=f"... and {len(data) - 1} more items (truncated for performance)",
+        return
+
+    # DataElement: show node and its value(s)
+    if isinstance(data, DataElement):
+        data_label = display_label or node_name
+        new_parent = dpg.add_tree_node(
+            label=data_label,
+            parent=parent,
+            user_data=build_userdata(tag=node_tag or data_label, tag_name=node_name or data_label, VR=node_VR, value=data.value)
+        )
+
+        if data.value is None:
+            add_empty_value(new_parent, "Value", "Value")
+            return
+        
+        value = data.value
+
+        # Dataset inside DataElement
+        if isinstance(value, Dataset):
+            add_dicom_dataset_to_tree(
+                window_tag=window_tag,
+                window_states=window_states,
+                data=value,
                 parent=new_parent,
-                wrap=text_wrap_width,
-                color=(255, 165, 0),  # Orange color
-                user_data=build_userdata(tag="Truncation Notice", VR=None, value=f"{len(data) - 1} items hidden")
+                text_wrap_width=text_wrap_width,
+                text_color_one=text_color_one,
+                text_color_two=text_color_two,
+                max_depth=max_depth,
+                current_depth=current_depth + 1
             )
-        else:
-            for idx, item in enumerate(data):
-                # Check if window still exists before each item
-                if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+            return
+        
+        # Sequence handling (truncates Contour Sequences to 1 item for performance)
+        if isinstance(value, Sequence):
+            is_contour_sequence = (
+                (data.name == "Contour Sequence")
+                or ("Contour Sequence" in data.name)
+                or str(data.tag) == "(3006,0040)"
+            )
+            if is_contour_sequence and len(value) > 1:
+                add_dicom_dataset_to_tree(
+                    window_tag=window_tag,
+                    window_states=window_states,
+                    data=value[0],
+                    item_idx=0,
+                    parent=new_parent,
+                    text_wrap_width=text_wrap_width,
+                    text_color_one=text_color_one,
+                    text_color_two=text_color_two,
+                    max_depth=max_depth,
+                    current_depth=current_depth + 1
+                )
+                dpg.add_text(
+                    default_value=f"... and {len(value)-1} more items (truncated for performance)",
+                    parent=new_parent,
+                    wrap=text_wrap_width,
+                    color=(255,165,0),
+                    user_data=build_userdata(tag="Truncation Notice", tag_name="Truncation Notice", VR=None, value=f"{len(value)-1} items hidden")
+                )
+                return
+            
+            for idx, item in enumerate(value):
+                if is_aborted():
                     window_states["aborted"] = True
                     return
-                
-                item_label = f"Item #{idx}"
                 add_dicom_dataset_to_tree(
                     window_tag=window_tag,
+                    window_states=window_states,
                     data=item,
-                    label=item_label,
+                    item_idx=idx,
                     parent=new_parent,
                     text_wrap_width=text_wrap_width,
                     text_color_one=text_color_one,
                     text_color_two=text_color_two,
                     max_depth=max_depth,
-                    current_depth=current_depth + 1,
-                    window_states=window_states
+                    current_depth=current_depth + 1
                 )
-    # Handle dictionary
-    elif isinstance(data, dict):
-        new_parent = dpg.add_tree_node(
-            label=label if label else "dict",
-            parent=parent,
-            user_data=build_userdata(tag=label if label else "dict", VR=None, value=None)
-        )
-        for key, value in data.items():
-            # Check if window still exists before each item
-            if window_states["aborted"] or not dpg.does_item_exist(window_tag):
-                window_states["aborted"] = True
-                return
-            
-            if value:
-                add_dicom_dataset_to_tree(
-                    window_tag=window_tag,
-                    data=value,
-                    label=str(key),
-                    parent=new_parent,
-                    text_wrap_width=text_wrap_width,
-                    text_color_one=text_color_one,
-                    text_color_two=text_color_two,
-                    max_depth=max_depth,
-                    current_depth=current_depth + 1,
-                    window_states=window_states
+            return
+
+        # Lists/tuples as value
+        if isinstance(value, (list, tuple)):
+            with dpg.group(parent=new_parent):
+                dpg.add_text(
+                    default_value=f"Value: {value}",
+                    wrap=text_wrap_width,
+                    color=text_color_two,
+                    user_data=build_userdata(tag=node_tag or data_label, tag_name=node_name or data_label, VR=node_VR, value=value)
                 )
-            else:
-                add_empty_value(new_parent, key)
-    # Handle list
-    elif isinstance(data, list):
+                dpg.add_text(
+                    default_value=f"VR: {node_VR} ---> Value Representation: {convert_VR_string_to_python_type(str(node_VR))}",
+                    wrap=text_wrap_width,
+                    color=text_color_two,
+                    user_data=build_userdata(tag="VR Info", tag_name="VR Info", VR=node_VR, value=convert_VR_string_to_python_type(str(node_VR)))
+                )
+            return
+
+        # Single value
+        with dpg.group(parent=new_parent):
+            dpg.add_text(
+                default_value=f"Value: {value}",
+                wrap=text_wrap_width,
+                color=text_color_two,
+            user_data=build_userdata(tag=node_tag or data_label, tag_name=node_name or data_label, VR=node_VR, value=value)
+            )
+            dpg.add_text(
+                default_value=f"VR: {node_VR} ---> Value Representation: {convert_VR_string_to_python_type(str(node_VR))}",
+                wrap=text_wrap_width,
+                color=text_color_two,
+                user_data=build_userdata(tag="VR Info", tag_name="VR Info", VR=node_VR, value=convert_VR_string_to_python_type(str(node_VR)))
+            )
+        return
+    
+    # Sequence (top-level not wrapped in DataElement)
+    if isinstance(data, Sequence):
         new_parent = dpg.add_tree_node(
-            label=label if label else "list",
+            label=display_label,
             parent=parent,
-            user_data=build_userdata(tag=label if label else "list", VR=None, value=None)
+            user_data=build_userdata(tag=node_tag or display_label, tag_name=node_name or display_label, VR=None, value=None)
         )
         for idx, item in enumerate(data):
-            # Check if window still exists before each item
-            if window_states["aborted"] or not dpg.does_item_exist(window_tag):
+            if is_aborted():
                 window_states["aborted"] = True
                 return
-            
-            item_label = f"Item #{idx}"
+            add_dicom_dataset_to_tree(
+                window_tag=window_tag,
+                window_states=window_states,
+                data=item,
+                item_idx=idx,
+                parent=new_parent,
+                text_wrap_width=text_wrap_width,
+                text_color_one=text_color_one,
+                text_color_two=text_color_two,
+                max_depth=max_depth,
+                current_depth=current_depth + 1
+            )
+        return
+    
+    # Dictionary
+    if isinstance(data, dict):
+        new_parent = dpg.add_tree_node(
+            label=display_label,
+            parent=parent,
+            user_data=build_userdata(tag=node_tag or display_label, tag_name=node_name or display_label, VR=None, value=None)
+        )
+        for key, val in data.items():
+            if is_aborted():
+                window_states["aborted"] = True
+                return
+            key_label = str(key)
+            if val:
+                add_dicom_dataset_to_tree(
+                    window_tag=window_tag,
+                    window_states=window_states,
+                    data=val,
+                    parent=new_parent,
+                    text_wrap_width=text_wrap_width,
+                    text_color_one=text_color_one,
+                    text_color_two=text_color_two,
+                    max_depth=max_depth,
+                    current_depth=current_depth + 1
+                )
+            else:
+                add_empty_value(new_parent, key_label, key_label)
+        return
+    
+    # List
+    if isinstance(data, list):
+        new_parent = dpg.add_tree_node(
+            label=display_label,
+            parent=parent,
+            user_data=build_userdata(tag=node_tag or display_label, tag_name=node_name or display_label, VR=None, value=None)
+        )
+        for idx, item in enumerate(data):
+            if is_aborted():
+                window_states["aborted"] = True
+                return
             if item:
                 add_dicom_dataset_to_tree(
                     window_tag=window_tag,
+                    window_states=window_states,
                     data=item,
-                    label=item_label,
+                    item_idx=idx,
                     parent=new_parent,
                     text_wrap_width=text_wrap_width,
                     text_color_one=text_color_one,
                     text_color_two=text_color_two,
                     max_depth=max_depth,
-                    current_depth=current_depth + 1,
-                    window_states=window_states
+                    current_depth=current_depth + 1
                 )
             else:
-                add_empty_value(new_parent, item_label)
-    # Fallback for base types
-    else:
-        with dpg.group(parent=parent):
-            dpg.add_text(
-                default_value=f"{label}:",
-                wrap=text_wrap_width,
-                bullet=True,
-                color=text_color_one,
-                user_data=build_userdata(tag=label, VR=None, value=str(data))
-            )
-            dpg.add_text(
-                default_value=f"\t{str(data)}",
-                wrap=text_wrap_width,
-                color=text_color_two,
-                user_data=build_userdata(tag=label, VR=None, value=str(data))
-            )
+                add_empty_value(new_parent, f"Item #{idx}", f"Item #{idx}")
+        return
+    
+    # Fallback for basic data types
+    with dpg.group(parent=parent):
+        dpg.add_text(
+            default_value=f"{display_label}:",
+            wrap=text_wrap_width,
+            bullet=True,
+            color=text_color_one,
+            user_data=build_userdata(tag=node_tag or display_label, tag_name=node_name or display_label, VR=None, value=str(data))
+        )
+        dpg.add_text(
+            default_value=f"\t{str(data)}",
+            wrap=text_wrap_width,
+            color=text_color_two,
+            user_data=build_userdata(tag=node_tag or display_label, tag_name=node_name or display_label, VR=None, value=str(data))
+        )
 
 
 def modify_table_rows(

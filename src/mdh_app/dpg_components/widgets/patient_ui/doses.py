@@ -61,7 +61,7 @@ def _add_rtd_button(parent: Union[str, int], rtd_sopiuid: str) -> None:
     rtplan_description = data_mgr.get_rtplan_ds_value_by_uid(ref_rtp_sopiuid, "RTPlanDescription", "") if ref_rtp_sopiuid else ""
     rtplan_descriptor = rtplan_label or rtplan_name or rtplan_description
     
-    rtd_btn_label = f"{dose_summation_type.title()} #{ref_beam_number} Dose" if (dose_summation_type and ref_beam_number) else (f"{dose_summation_type.title()} Dose" if dose_summation_type else "RT Dose")
+    rtd_btn_label = f"Beam #{ref_beam_number} Dose" if (dose_summation_type.strip().upper() == "BEAM" and ref_beam_number) else ("Beam Dose" if dose_summation_type.strip().upper() == "BEAM" else "Dose")
     rtd_btn_label += f" for RT Plan '{rtplan_descriptor}'" if rtplan_descriptor else ""
     rtd_text = (
         f"Modality: {modality}\n"
@@ -69,7 +69,7 @@ def _add_rtd_button(parent: Union[str, int], rtd_sopiuid: str) -> None:
         f"Dose Type: {dose_type}\n"
         f"Dose Comment: {dose_comment}\n"
         f"Dose Summation Type: {dose_summation_type}\n"
-        f"Referenced RT Plan Label/Name/Description: '{rtplan_label}'/'{rtplan_name}'/'{rtplan_description}'\n"
+        f"Referenced RT Plan Label/Name/Description: '{rtplan_label or 'NaN'}'/'{rtplan_name or 'NaN'}'/'{rtplan_description or 'NaN'}'\n"
         f"Referenced RT Plan Beam Number: {ref_beam_number if ref_beam_number else 'N/A'}\n"
         f"Number of Fractions Planned (as intended by RT Plan): {num_fxns_planned}\n"
         f"Number of Fractions (as shown in the Dose): {num_fxns if num_fxns != "0" else "N/A"}\n"

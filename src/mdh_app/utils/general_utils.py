@@ -311,14 +311,12 @@ def validate_directory(path_str: str) -> Tuple[bool, Optional[str], str]:
     
     # Check for invalid characters in path components
     for part in path.parts:
-        # Skip drive letter on Windows (e.g., "C:" or "C:\")
-        if os.name == 'nt' and re.match(r'^[A-Za-z]:$', part):
-            continue
-        # Skip root slash on Unix
-        if part in ('/', '\\'):
+        # Skip Windows drive root (e.g., "C:\")
+        if part == path.anchor and path.anchor:  # This handles "C:\", "/", etc.
             continue
         
-        invalid_chars = r'[<>:"|?*\x00-\x1F]'  # Same for both OS now
+        # Check remaining parts for invalid characters
+        invalid_chars = r'[<>:"|?*\x00-\x1F]'
         if re.search(invalid_chars, part):
             return False, None, f"Invalid characters in path component: {part}"
 
@@ -408,6 +406,7 @@ def regex_find_dose_and_fractions(roi_name: str) -> Dict[str, Optional[Union[flo
         
         if dose > 9999:
             dose = None
+    dose = int(dose) if dose is not None else None
     
     # Extract fractions if available
     fractions_match = re.search(in_fraction_pattern, roi_name, re.IGNORECASE)
@@ -419,7 +418,7 @@ def regex_find_dose_and_fractions(roi_name: str) -> Dict[str, Optional[Union[flo
     # Reasonable limits for fractions
     if fractions is not None and (fractions > 46 or (dose is not None and (fractions < 10 and dose > 5500))): 
         fractions = None
-        
+    
     return {'dose': dose, 'fractions': fractions}
 
 
@@ -608,22 +607,57 @@ def validate_roi_goals_format(roi_goals_string: str) -> Tuple[bool, List[str]]:
     """
     Verifies that the ROI goals follow the expected template and specific rules for each metric.
     
-    Expected format:
-        Keys should follow the pattern: {metric}_{value}_{unit}
-            Metric can be V, D, DC, CV, CI, MAX, MEAN, MIN, etc.
-            Value should be a number (can be integer or float)
-            Unit can be cGy, Gy, %, cc, etc.
-        Values should be a list of strings with comparison signs:
-            Format: {comparison}_{value}_{unit}
-            Comparison can be >, >=, <, <=, =
-    
-    Rules:
-        Key: CI metric must have a value in units of cGy, Values: CI values units must be float or int.
-        Key: CV metric must have a value in units of cGy, Values: CV values units must be cc or %.
-        Key: DC metric must have a value in units of cc or %, Values: DC values units must be cGy or %.
-        Key: D metric must have a value in units of cc or %, Values: D values units must be cGy or %.
-        Keys: MAX, MEAN, MIN metrics must have values in units of cGy or %.
-        Key: V metric must have a value in units of cGy or %, Values: V values units must be % or cc.
+    "ROI GOAL FORMAT - Dictionary with metric keys and constraint values\n"
+    "\n"
+    "KEY FORMAT: {metric}_{value}_{unit}\n"
+    "------------------------------------\n"
+    "\t- metric: The dose metric type (V, D, DC, CV, CI, MAX, MEAN, MIN)\n"
+    "\t- value: Number (integer or float)\n"
+    "\t- unit: Dose unit (cGy, Gy, %) or volume unit (%, cc)\n"
+    "\n"
+    "VALUE FORMAT: List of constraint strings\n"
+    "-----------------------------------------\n"
+    "\t- Pattern: \"{operator}_{threshold}_{unit}\"\n"
+    "\t- Operators: >, >=, <, <=, =\n"
+    "\t- Exception: CI uses threshold only (no operator/unit)\n"
+    "\n"
+    "METRIC-SPECIFIC REQUIREMENTS\n"
+    "-----------------------------\n"
+    "\n"
+    "V (Volume receiving dose):\n"
+    "\t- Key: dose value (cGy or %), e.g., \"V_5000_cGy\"\n"
+    "\t- Value: volume threshold (% or cc), e.g., [\"<_20_%\"]\n"
+    "\n"
+    "D (Dose to volume):\n"
+    "\t- Key: volume value (% or cc), e.g., \"D_95_%\"\n"
+    "\t- Value: dose threshold (cGy or %), e.g., [\">_6000_cGy\"]\n"
+    "\n"
+    "DC (Dose complement at volume):\n"
+    "\t- Key: volume value (% or cc), e.g., \"DC_98_%\"\n"
+    "\t- Value: dose threshold (cGy or %), e.g., [\">_5400_cGy\"]\n"
+    "\n"
+    "CV (Complement volume):\n"
+    "\t- Key: dose value (must be cGy), e.g., \"CV_2000_cGy\"\n"
+    "\t- Value: volume threshold (% or cc), e.g., [\">_30_cc\"]\n"
+    "\n"
+    "CI (Conformity Index):\n"
+    "\t- Key: reference dose (must be cGy), e.g., \"CI_5000_cGy\"\n"
+    "\t- Value: index value only (no operator/unit), e.g., [\"1.2\"]\n"
+    "\n"
+    "MAX/MEAN/MIN (Dose statistics):\n"
+    "\t- Key: metric name only, e.g., \"MAX\"\n"
+    "\t- Value: dose threshold (cGy or %), e.g., [\"<_7420_cGy\"]\n"
+    "\n"
+    "COMPLETE EXAMPLE\n"
+    "----------------\n"
+    "{\n"
+    "\t\"V_7000_cGy\": [\">_95_%\"],\t\t\t# >95% volume gets 7000 cGy\n"
+    "\t\"D_95_%\": [\">_6000_cGy\"],\t\t\t# 95% volume gets >6000 cGy\n"
+    "\t\"MAX\": [\"<_7420_cGy\"],\t\t\t\t  # Max dose <7420 cGy\n"
+    "\t\"CI_5000_cGy\": [\"1.25\"],\t\t\t\t  # Conformity index at 5000 cGy is 1.25\n"
+    "\t\"CV_2000_cGy\": [\">_10_cc\"],\t\t# >10cc volume is spared from 2000 cGy\n"
+    "\t\"DC_2_%\": [\">_5400_cGy\"]\t\t\t # The min dose covering 98% volume is >5400 cGy\n"
+    "}"
     
     Args:
         roi_goals_string (str): The ROI goals as a JSON-encoded string.

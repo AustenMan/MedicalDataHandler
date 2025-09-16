@@ -12,7 +12,6 @@ import dearpygui.dearpygui as dpg
 from mdh_app.database.db_utils import get_num_patients, get_patient_full
 from mdh_app.dpg_components.core.gui_lifecycle import wrap_with_cleanup
 from mdh_app.dpg_components.core.utils import get_tag, get_user_data, add_custom_separator
-from mdh_app.dpg_components.themes.button_themes import get_colored_button_theme
 from mdh_app.dpg_components.themes.table_themes import get_table_cell_spacing_theme
 from mdh_app.dpg_components.windows.data_table.data_table_utils import (
     get_patient_dates, confirm_removal_callback, load_patient_data, build_dicom_structure,

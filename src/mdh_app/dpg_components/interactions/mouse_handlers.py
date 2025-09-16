@@ -35,6 +35,7 @@ def get_hovered_view_dict() -> Dict[str, Any]:
             return view_dict
     return {}
 
+
 def get_mouse_slice_pos_xyz(view_dict: Dict[str, Any]) -> Optional[Tuple[int, int, int]]:
     """
     Determine the current slice position (X, Y, Z) based on mouse position within a view.
@@ -70,10 +71,10 @@ def get_mouse_slice_pos_xyz(view_dict: Dict[str, Any]) -> Optional[Tuple[int, in
     min_x, min_y, min_z = [dpg.get_item_configuration(tag)["min_value"] for tag in xyz_range_inp_tags]
     max_x, max_y, max_z = [dpg.get_item_configuration(tag)["max_value"] for tag in xyz_range_inp_tags]
     
-    # Calculate size of each range (adjust if lower bound is zero)
-    x_size = (curr_x_range[1] - curr_x_range[0] + 1) if curr_x_range[0] == 0 else (curr_x_range[1] - curr_x_range[0])
-    y_size = (curr_y_range[1] - curr_y_range[0] + 1) if curr_y_range[0] == 0 else (curr_y_range[1] - curr_y_range[0])
-    z_size = (curr_z_range[1] - curr_z_range[0] + 1) if curr_z_range[0] == 0 else (curr_z_range[1] - curr_z_range[0])
+    # Calculate size of each range
+    x_size = curr_x_range[1] - curr_x_range[0] + 1
+    y_size = curr_y_range[1] - curr_y_range[0] + 1
+    z_size = curr_z_range[1] - curr_z_range[0] + 1
     
     # Slicer is based on NPY (Y, X, Z) order
     view_type = view_dict.get("view_type")
@@ -100,6 +101,7 @@ def get_mouse_slice_pos_xyz(view_dict: Dict[str, Any]) -> Optional[Tuple[int, in
     
     return xyz_slice_pos
 
+
 def copy_log_text() -> None:
     """Copy the text from the log window to the clipboard."""
     try:
@@ -117,6 +119,7 @@ def copy_log_text() -> None:
     except Exception as e:
         logger.debug(f"Failed to copy text from log window.", exc_info=True, stack_info=True)
 
+
 def _handler_MouseLeftClick(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """Toggle tooltip visibility for the hovered view."""
     view_dict = get_hovered_view_dict()
@@ -124,28 +127,31 @@ def _handler_MouseLeftClick(sender: Union[str, int], app_data: Any, user_data: A
         tooltip_tag = view_dict.get("tooltip")
         is_tooltip_shown = dpg.is_item_shown(tooltip_tag)
         dpg.configure_item(tooltip_tag, show=not is_tooltip_shown)
-    
+
+
 def _handler_MouseRightClick(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
-    """Move viewing planes to the mouse location in the hovered view."""
+    """Either copy the log text, or move viewing planes to the mouse location in a hovered view."""
     view_dict = get_hovered_view_dict()
     if not view_dict:
         copy_log_text()
         return
     
-    img_tags = get_tag("img_tags")
-    
-    old_slices = tuple(dpg.get_value(img_tags["viewed_slices"])[:3])
+    # Check if slice positions have changed
+    viewed_slices_tag = get_tag("img_tags")["viewed_slices"]
+    old_slices = tuple(dpg.get_value(viewed_slices_tag)[:3])
     new_slices = get_mouse_slice_pos_xyz(view_dict)
     if new_slices is None or new_slices == old_slices:
-        return
+        return  # No change
     
     # Update the slice values
-    dpg.set_value(img_tags["viewed_slices"], new_slices)
+    dpg.set_value(viewed_slices_tag, new_slices)
     request_texture_update(texture_action_type="update")
+
 
 def _handler_MouseMiddleClick(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """Placeholder for middle mouse click functionality."""
     pass
+
 
 def _handler_MouseMiddleRelease(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """
@@ -155,6 +161,7 @@ def _handler_MouseMiddleRelease(sender: Union[str, int], app_data: Any, user_dat
         sender: The event handler tag.
     """
     dpg.set_item_user_data(sender, (0, 0))
+
 
 def _handler_MouseMiddleDrag(sender: Union[str, int], app_data: Tuple[Any, ...], user_data: Any) -> None:
     """
@@ -176,9 +183,12 @@ def _handler_MouseMiddleDrag(sender: Union[str, int], app_data: Tuple[Any, ...],
     dims_LR_TB = view_dict["dims_LR_TB"]
     _, raw_delta_lr, raw_delta_tb = app_data
     
-    # Swap direction for sagittal y-axis movement
+    # Swap direction for sagittal y-axis movement and sagittal/coronal z-axis movement
     if view_type == "sagittal":
         raw_delta_lr = -raw_delta_lr
+        raw_delta_tb = -raw_delta_tb
+    if view_type == "coronal":
+        raw_delta_tb = -raw_delta_tb
     
     # Smoothen the mouse movement
     prev_mouse_delta = dpg.get_item_user_data(tag_mouse_release)
@@ -208,16 +218,16 @@ def _handler_MouseMiddleDrag(sender: Union[str, int], app_data: Tuple[Any, ...],
     for dim_idx, d_diff in zip(dims_LR_TB, new_mouse_delta):
         dim_tag, dim_range, dim_min, dim_max = dims_vals[dim_idx]
         active_display_size = dim_range[1] - dim_range[0]
-        new_lower = round(
-            min(
-                max(
-                    dim_range[0] + (d_diff * pan_speed), 
-                    dim_min
-                ), 
-                dim_max - active_display_size
-            )
-        )
-        new_range = tuple([new_lower, new_lower + active_display_size])
+        
+        # Calculate new range based on pan
+        new_lower = round(dim_range[0] + (d_diff * pan_speed))
+        new_upper = new_lower + active_display_size
+        
+        # Clamp to bounds
+        new_lower = max(dim_min, min(new_lower, dim_max - active_display_size))
+        new_upper = new_lower + active_display_size
+        
+        new_range = (new_lower, new_upper)
         if dim_range != new_range:
             any_change = True
         
@@ -226,7 +236,8 @@ def _handler_MouseMiddleDrag(sender: Union[str, int], app_data: Tuple[Any, ...],
     # Trigger texture refresh on another thread
     if any_change:
         request_texture_update(texture_action_type="update")
-    
+
+
 def _handler_MouseWheel(sender: Union[str, int], app_data: int, user_data: Any) -> None:
     """
     Process mouse wheel events to perform zooming or slice scrolling.
@@ -251,77 +262,78 @@ def _handler_MouseWheel(sender: Union[str, int], app_data: int, user_data: Any) 
         zoom_factor_dict = dpg.get_item_user_data(img_tags["zoom_factor"])
         zoom_factor = zoom_factor_dict[zoom_factor_key]
         
-        dims_info = [
-            (
-                tag, 
-                tuple(dpg.get_value(tag)[:2]), 
-                dpg.get_item_configuration(tag)["min_value"],
-                dpg.get_item_configuration(tag)["max_value"]
-            )
-            for tag in [img_tags["xrange"], img_tags["yrange"], img_tags["zrange"]]
-        ]
-        current_slices = dpg.get_value(img_tags["viewed_slices"])[:3]
+        # Calculate new ranges for all three dimensions
+        dim_tags = [img_tags["xrange"], img_tags["yrange"], img_tags["zrange"]]
+        dim_ranges = [tuple(dpg.get_value(tag)[:2]) for tag in dim_tags]
+        dim_bounds = [(dpg.get_item_configuration(tag)["min_value"], dpg.get_item_configuration(tag)["max_value"]) for tag in dim_tags]
+        dim_slices = dpg.get_value(img_tags["viewed_slices"])[:3]
+        current_spans = [r[1] - r[0] + 1 for r in dim_ranges]
         
-        for idx, (dim_tag, dim_range, dim_min, dim_max) in enumerate(dims_info):
-            zoom_center = current_slices[idx]
-            range_delta = dim_range[1] - dim_range[0]
-            
-            zoom_type = app_data > 0
-            if zoom_type: # Zoom in
-                span = range_delta * (1 - zoom_factor)
-            else: # Zoom out
-                span = range_delta / (1 - zoom_factor)
-            
-            min_val = round(zoom_center - span / 2)
-            max_val = round(zoom_center + span / 2)
-            
-            if min_val < dim_min:
-                max_val = min(max_val - (min_val - dim_min), dim_max)
-                min_val = dim_min
-            if max_val > dim_max:
-                min_val = max(min_val - (max_val - dim_max), dim_min)
-                max_val = dim_max
-            
-            # Ensure that the range is at least 16 units
-            while max_val - min_val < 16:
-                if min_val > dim_min:
-                    min_val -= 1
-                if max_val < dim_max:
-                    max_val += 1
-                if min_val == dim_min and max_val == dim_max:
-                    break
-            
-            new_range = (min_val, max_val)
-            
-            if dim_range != new_range:
-                any_change = True
-            
-            dpg.set_value(dim_tag, new_range)
+        # Scale: <1 for zoom-in, >1 for zoom-out
+        if app_data > 0:  # zoom in
+            scale = max(0.01, 1.0 - zoom_factor)
+        else:  # zoom out
+            scale = 1.0 / max(1e-6, (1.0 - zoom_factor))
+        
+        # Compute new spans proportionally, clamp to each axis's available span
+        bounds_spans = [(b[1] - b[0] + 1) for b in dim_bounds]
+        new_spans = [max(1, min(bounds_spans[i], int(round(current_spans[i] * scale)))) for i in range(3)]
+
+        # If rounding produced no-change, force a 1-voxel step for all dims
+        if all(new_spans[i] == current_spans[i] for i in range(3)):
+            if app_data > 0:  # zoom in
+                new_spans = [max(1, min(bounds_spans[i], current_spans[i] - 1)) for i in range(3)]
+            else:  # zoom out
+                new_spans = [min(bounds_spans[i], current_spans[i] + 1) for i in range(3)]
+        
+        # If no change after this, just exit
+        if all(new_spans[i] == current_spans[i] for i in range(3)):
+            dpg.set_item_user_data(key_down_tag, False)
+            return
+        
+        any_change = True
+        
+        # Apply ranges centered on their slices, clamped to bounds
+        for dim_tag, (min_b, max_b), slice_pos, span in zip(dim_tags, dim_bounds, dim_slices, new_spans):
+            half = span // 2
+            start = slice_pos - half
+            end = start + span - 1
+            if start < min_b:
+                start = min_b
+                end = min_b + span - 1
+            if end > max_b:
+                end = max_b
+                start = max_b - span + 1
+            dpg.set_value(dim_tag, (int(start), int(end)))
         
         dpg.set_item_user_data(key_down_tag, False)
     
     # Scroll functionality
     else:
+        # Get current slices and determine which dimension to scroll based on view
         view_type = view_dict["view_type"]
         slice_tag = img_tags["viewed_slices"]
         current_slices = tuple(dpg.get_value(slice_tag)[:3])
         
         # Range and slice idx based on which dim is being scrolled through
+        direction = _clip_direction(app_data)
+        if direction == 0:
+            return
+        
+        # Determine which dimension to adjust based on view
+        xyz_tags = [img_tags["xrange"], img_tags["yrange"], img_tags["zrange"]]
         if view_type == "axial":
-            range_tag = img_tags["zrange"]
             slice_idx = 2
-            direction = int(app_data) 
         elif view_type == "coronal":
-            range_tag = img_tags["yrange"]
             slice_idx = 1
-            direction = -int(app_data) 
+            direction = -direction  # Invert direction for coronal view
         elif view_type == "sagittal":
-            range_tag = img_tags["xrange"]
             slice_idx = 0
-            direction = -int(app_data) 
-        
-        range_min, range_max = dpg.get_value(range_tag)[:2]
-        
+            direction = -direction  # Invert direction for sagittal view
+
+        # Ensure the slice is within the valid range
+        range_cfg = dpg.get_item_configuration(xyz_tags[slice_idx])
+        range_min, range_max = range_cfg["min_value"], range_cfg["max_value"]
         slices_list = list(current_slices)
         slices_list[slice_idx] = int(min(max(slices_list[slice_idx] + direction, range_min), range_max))
         new_slices = tuple(slices_list)
@@ -329,26 +341,49 @@ def _handler_MouseWheel(sender: Union[str, int], app_data: int, user_data: Any) 
             any_change = True
         dpg.set_value(slice_tag, new_slices)
         
-        xyz_tags = [img_tags["xrange"], img_tags["yrange"], img_tags["zrange"]]
-        for idx, (dim_tag, dim_slice) in enumerate(zip(xyz_tags, new_slices)):
-            range_config = dpg.get_item_configuration(dim_tag)
-            dim_min_limit, dim_max_limit = range_config["min_value"], range_config["max_value"]
+        # Adjust ranges to ensure the new slice is visible
+        for (dim_tag, dim_slice) in zip(xyz_tags, new_slices):
             curr_range = tuple(dpg.get_value(dim_tag)[:2])
             dim_min, dim_max = curr_range
             
-            # Ensure dim_slice is within the range
-            new_dim_min = max(min(dim_min, dim_slice - 1, dim_max_limit - 1), dim_min_limit)
-            new_dim_max = min(max(dim_max, dim_slice + 1, new_dim_min + 1), dim_max_limit)
-            new_range = (new_dim_min, new_dim_max)
-            
-            if curr_range != new_range:
-                any_change = True
-            
-            dpg.set_value(dim_tag, new_range)
-    
+            # Only adjust if slice is outside current range
+            if dim_slice < dim_min or dim_slice > dim_max:
+                range_cfg = dpg.get_item_configuration(dim_tag)
+                dim_min_limit, dim_max_limit = range_cfg["min_value"], range_cfg["max_value"]
+                
+                # Keep the same range size, just shift it to include the slice
+                range_size = dim_max - dim_min
+                if dim_slice < dim_min:
+                    new_dim_min = max(dim_slice, dim_min_limit)
+                    new_dim_max = min(new_dim_min + range_size, dim_max_limit)
+                else:  # dim_slice > dim_max
+                    new_dim_max = min(dim_slice, dim_max_limit)
+                    new_dim_min = max(new_dim_max - range_size, dim_min_limit)
+                
+                new_range = (new_dim_min, new_dim_max)
+                if curr_range != new_range:
+                    any_change = True
+                    dpg.set_value(dim_tag, new_range)
+        
     # Trigger texture refresh on another thread
     if any_change:
         request_texture_update(texture_action_type="update")
+
+
+def _clip_direction(val: Any) -> int:
+    """ Preserve sign and ensure it is always >= 1, 0, or <= -1 """
+    try:
+        val = float(val)
+    except (ValueError, TypeError):
+        return 0
+    if val == 0:
+        return 0
+    if 0 < val < 1:
+        return 1
+    if -1 < val < 0:
+        return -1
+    return int(val)
+
 
 def _itemhandler_MouseHover(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """Update tooltip content for the hovered view based on current mouse location."""
@@ -368,7 +403,7 @@ def _itemhandler_MouseHover(sender: Union[str, int], app_data: Any, user_data: A
     dose_value_list = data_mgr.return_dose_value_list_at_slice(zyx_slices)
     
     # Build tooltip content
-    img_values = ", ".join([str(round(val)) for val in img_value_list]) if img_value_list else ""
+    img_values = ", ".join([str(round(val)) for val in img_value_list]) if img_value_list else "N/A"
     dose_values_sum = round(sum(dose_value_list) * 100) if dose_value_list else 0
     # dose_values = ", ".join([str(round(val * 100)) for val in dose_value_list]) if dose_value_list else ""
     
