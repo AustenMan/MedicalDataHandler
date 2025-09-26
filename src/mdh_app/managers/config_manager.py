@@ -341,7 +341,7 @@ class ConfigManager:
 
     def get_unmatched_organ_name(self) -> str:
         """Get unmatched organ name setting."""
-        return self.get_user_setting("unmatched_organ_name", "MISSING")
+        return self.get_user_setting("unmatched_organ_name", "UnknownStruct")
     
     def get_organ_matching_dict(self) -> Dict[str, Any]:
         """Return the organ matching configuration dictionary."""
@@ -363,7 +363,7 @@ class ConfigManager:
         """Get disease sites list with optional DPG formatting."""
         sites: List[str] = self.configs.get("disease_sites", [])
         if ready_for_dpg:
-            prepend_list = ["SELECT_MAIN_SITE", "UNKNOWN_SITE", "MULTIPLE_SITES"]
+            prepend_list = ["UnknownSite", "MultiSite"]
             return prepend_list + sorted(sites)
         return sites
 
@@ -371,7 +371,7 @@ class ConfigManager:
         """Get machine names list with optional DPG formatting."""
         names: List[str] = self.configs.get("machine_names", [])
         if ready_for_dpg:
-            prepend_list = ["SELECT_MACHINE", "Unspecified-Machine"]
+            prepend_list = ["UnknownMachine"]
             return prepend_list + sorted(names)
         return names
 
@@ -379,7 +379,7 @@ class ConfigManager:
         """Get TG-263 organ-at-risk names with optional DPG formatting."""
         names: List[str] = self.configs.get("tg_263_names", [])
         if ready_for_dpg:
-            prepend_list = ["SELECT_MASK_NAME", "PTV", "CTV", "GTV", "ITV"]
+            prepend_list = ["UnknownStruct", "PTV", "CTV", "GTV", "ITV"]
             return prepend_list + sorted(names)
         return names
     

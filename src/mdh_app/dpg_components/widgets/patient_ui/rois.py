@@ -321,8 +321,8 @@ def update_roi_display_and_tooltip(roi_button_tag: Union[str, int]) -> None:
 
     # Get current ROI metadata
     roi_metadata = data_mgr.get_roi_gui_metadata_by_uid(rts_sopiuid, roi_number)
-    original_roi_name = roi_metadata.get("ROIName", "-MISSING-")
-    display_name = roi_metadata.get("display_name", "-MISSING-")
+    original_roi_name = roi_metadata.get("ROIName", "UnknownStruct")
+    display_name = roi_metadata.get("display_name", "UnknownStruct")
     base_template_name = roi_metadata.get("base_template_name", None)
     is_template_based = roi_metadata.get("is_template_based", False)
     custom_suffix = roi_metadata.get("custom_suffix", "")
@@ -438,7 +438,7 @@ def _build_template_display_name(rts_sopiuid: str, roi_number: int) -> str:
     is_template_based = data_mgr.get_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, "is_template_based", False)
 
     if not is_template_based or not base_template:
-        return data_mgr.get_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, "display_name", "-MISSING-")
+        return data_mgr.get_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, "display_name", "UnknownStruct")
 
     # Start with base template name
     display_name = base_template

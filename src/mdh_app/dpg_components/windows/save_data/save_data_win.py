@@ -114,16 +114,16 @@ def create_save_window(sender: Union[str, int], app_data: Any, user_data: Any) -
             default_value=save_settings_dict["convert_ct_hu_to_red"],
             checkbox_label="Map CT Hounsfield Units to Relative Electron Densities",
             add_spacer_after=True,
-            tooltip_text="If selected, CT Hounsfield Units will be converted to Relative Electron Densities using a conversion table.",
+            tooltip_text="If selected, CT Hounsfield Units will be converted to Relative Electron Densities using a conversion table.\nNo impact on other image modalities (MR, PET, etc...).",
         )
         save_selections_dict["main_checkboxes"]["override_image_with_roi_RED"] = add_custom_checkbox(
             default_value=save_settings_dict["override_image_with_roi_RED"],
             checkbox_label="Override image(s) with ROI R.E.D. values",
             add_spacer_after=True,
             tooltip_text=(
-                "If selected, images will be overridden with specified ROI Relative Electron Densities.\n"
-                "For instance, if titanium has an assigned RED of 4.5, the image will be overridden accordingly.\n"
-                "If not, images will be saved as-is."
+                "If selected, CT image values will be overridden with each ROI's specified Relative Electron Densities.\n"
+                "For instance, if titanium has an assigned RED of 4.5, the CT image will be overridden accordingly in that region.\n"
+                "If unchecked, ROI overrides will be ignored.\nNo impact on other image modalities (MR, PET, etc...)."
             ),
         )
         with dpg.table(

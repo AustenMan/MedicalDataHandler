@@ -69,21 +69,40 @@ def init_engine(db_path: str, echo: bool = False) -> None:
 def get_session(expire_all: bool = False) -> Generator[Session, None, None]:
     """Provide database session with automatic transaction handling.
     
-    Args:
-        expire_all: If True, expire all objects in session to force fresh DB reads.
+    If `expire_all` is True use a brand-new Session (no cached identity map).
+    Otherwise use the scoped session for normal operations.
     """
     if _ENGINE is None:
         raise RuntimeError("Database engine not initialized. Call init_engine(db_path) first.")
 
-    session: Session = _SCOPED_SESSION()
+    use_scoped = not expire_all and _SCOPED_SESSION is not None
+    session: Session
+    
     try:
+        # Re-use scoped session for normal ops
+        if use_scoped:
+            session = _SCOPED_SESSION()
+        # Otherwise make a fresh session to avoid cached objects
+        else:
+            session = _SESSION_FACTORY()
+
+        # If needed to expire, ensure the identity map is cleared
         if expire_all:
-            session.expire_all()  # Force fresh reads from database
+            session.expire_all()
+
         yield session
         session.commit()
+    
     except Exception:
         session.rollback()
+        logger.exception("Session rollback because of exception", exc_info=True, stack_info=True)
         raise
+    
     finally:
-        session.close()
-        _SCOPED_SESSION.remove()
+        # Close the session instance
+        try:
+            session.close()
+        finally:
+            # Only remove the scoped registry if we used it
+            if use_scoped:
+                _SCOPED_SESSION.remove()

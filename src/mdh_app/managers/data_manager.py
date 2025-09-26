@@ -316,7 +316,7 @@ class DataManager:
         # Review from here
         self._clear_cache()
         if not self.is_any_data_loaded:
-            logger.error("No data loaded")
+            logger.error("No valid data was selected or loaded, please try again.")
             return
         self.load_rtstruct_goals(patient.mrn)
         logger.info("Loaded SITK data")
@@ -889,11 +889,11 @@ class DataManager:
         # Set the key if possible
         metadata_dict = self.rtstruct_roi_metadata.get(struct_uid, {}).get(roi_number, {})
         if key not in metadata_dict:
-            logger.error(f"Attempted to set unknown ROI metadata key '{key}' for struct {struct_uid}, ROI {roi_number}.")
+            logger.error(f"Attempted to set unknown ROI metadata key '{key}' for struct ({struct_uid}, ROI {roi_number}).")
             return
 
         metadata_dict[key] = value
-        logger.info(f"Set ROI metadata key '{key}' for struct {struct_uid}, ROI {roi_number} to {value}.")
+        logger.info(f"Set ROI metadata key '{key}' for struct ({struct_uid}, ROI {roi_number}) to {value}.")
 
     def get_roi_gui_metadata_by_uid(self, struct_uid: str, roi_number: int, return_deepcopy: bool = True) -> Dict[str, Any]:
         """
@@ -935,7 +935,7 @@ class DataManager:
         # Retrieve the key if possible
         metadata_dict = self.rtstruct_roi_metadata.get(struct_uid, {}).get(roi_number, {})
         if key not in metadata_dict:
-            logger.warning(f"Requested unknown ROI metadata key '{key}' for struct {struct_uid}, ROI {roi_number}. Returning default.")
+            logger.warning(f"Requested unknown ROI metadata key '{key}' for struct ({struct_uid}, ROI {roi_number}). Returning default.")
         value = metadata_dict.get(key, default)
         return deepcopy(value) if return_deepcopy else value
 

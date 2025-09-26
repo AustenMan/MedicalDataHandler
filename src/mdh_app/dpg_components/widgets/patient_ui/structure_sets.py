@@ -138,7 +138,7 @@ def _add_roi_button(
         
         # Button to inspect ROI
         tag_roi_button = dpg.add_button(
-            label="-MISSING-", 
+            label="UnknownStruct", 
             width=size_dict["button_width"], 
             callback=show_roi_configuration_popup, 
             user_data=(rts_sopiuid, roi_number)
