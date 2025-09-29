@@ -4,3 +4,6 @@ opencv-python==4.11.0.86
 scipy==1.15.1
 numpy==2.2.2
 SimpleITK==2.4.1
+sqlite==3.45.3
+sqlalchemy==2.0.41
+pynrrd==1.1.3

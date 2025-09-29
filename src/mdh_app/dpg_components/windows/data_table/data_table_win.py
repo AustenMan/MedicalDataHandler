@@ -45,6 +45,7 @@ def toggle_data_window(force_show: bool = False, label: str = "") -> None:
     tag_filter_processed = get_tag("input_filter_processed")
     tag_filter_name = get_tag("input_filter_name")
     tag_filter_mrn = get_tag("input_filter_mrn")
+    tag_filter_site = get_tag("input_filter_site")
     size_dict = get_user_data(td_key="size_dict")
     popup_width, popup_height, popup_pos = get_popup_params(width_ratio=0.9, height_ratio=0.9)
     
@@ -72,26 +73,55 @@ def toggle_data_window(force_show: bool = False, label: str = "") -> None:
             with dpg.table_row():
                 with dpg.group(horizontal=True):
                     with dpg.tooltip(parent=dpg.last_item()):
-                        dpg.add_text("Filter by a specific patient name. Reload table to apply.")
+                        dpg.add_text("Filter by a specific patient name.")
                     dpg.add_text("Name: ")
-                    dpg.add_input_text(tag=tag_filter_name, width=size_dict["button_width"], default_value="", on_enter=True)
+                    dpg.add_input_text(
+                        tag=tag_filter_name, 
+                        width=size_dict["button_width"], 
+                        default_value="", 
+                        on_enter=True,
+                        callback=_update_data_table,
+                    )
                 with dpg.group(horizontal=True):
                     with dpg.tooltip(parent=dpg.last_item()):
-                        dpg.add_text("Filter by a specific patient MRN. Reload table to apply.")
+                        dpg.add_text("Filter by a specific patient MRN.")
                     dpg.add_text("MRN: ")
-                    dpg.add_input_text(tag=tag_filter_mrn, width=size_dict["button_width"], default_value="", on_enter=True)
-            
+                    dpg.add_input_text(
+                        tag=tag_filter_mrn, 
+                        width=size_dict["button_width"], 
+                        default_value="", 
+                        on_enter=True,
+                        callback=_update_data_table,
+                    )
+
             with dpg.table_row():
                 with dpg.group(horizontal=True):
                     with dpg.tooltip(parent=dpg.last_item()):
-                        dpg.add_text("Filter by data that you have previously processed. Reload table to apply.")
+                        dpg.add_text("Filter by data that you have previously processed.")
                     dpg.add_text("Processed Type: ")
-                    dpg.add_combo(tag=tag_filter_processed, items=["Any", "Processed", "Unprocessed"], default_value="Any", width=size_dict["button_width"])
+                    dpg.add_combo(
+                        tag=tag_filter_processed, 
+                        items=["Any", "Processed", "Unprocessed"], 
+                        default_value="Any", 
+                        width=size_dict["button_width"],
+                        callback=_update_data_table,
+                    )
+                with dpg.group(horizontal=True):
+                    with dpg.tooltip(parent=dpg.last_item()):
+                        dpg.add_text("Filter by a specific disease site.\nTechnically searches all labels, names, and descriptions, so it may be used for a broader search than just site.")
+                    dpg.add_text("Site: ")
+                    dpg.add_input_text(
+                        tag=tag_filter_site, 
+                        width=size_dict["button_width"], 
+                        default_value="", 
+                        on_enter=True,
+                        callback=_update_data_table,
+                    )
                 
             with dpg.table_row():
                 with dpg.group(horizontal=True):
                     with dpg.tooltip(parent=dpg.last_item()):
-                        dpg.add_text("Specify the page number for the data table. Reload table to apply.")
+                        dpg.add_text("Specify the page number for the data table.")
                     dpg.add_text("Page: ")
                     dpg.add_input_int(
                         tag=tag_table_page_input,
@@ -104,6 +134,7 @@ def toggle_data_window(force_show: bool = False, label: str = "") -> None:
                         on_enter=True,
                         step=1,
                         step_fast=5,
+                        callback=_update_data_table,
                     )
                 with dpg.group(horizontal=True):
                     with dpg.tooltip(parent=dpg.last_item()):
@@ -126,35 +157,27 @@ def toggle_data_window(force_show: bool = False, label: str = "") -> None:
                         on_enter=True,
                         step=1,
                         step_fast=10,
+                        callback=_update_data_table,
                     )
             
             with dpg.table_row():
                 with dpg.group(horizontal=True):
                     with dpg.tooltip(parent=dpg.last_item()):
-                            dpg.add_text(
-                                default_value=(
-                                    "Loads/reloads the data table with patient data."
-                                )
-                            )
+                        dpg.add_text("Loads/reloads the data table with patient data.")
                     dpg.add_button(
                         tag=tag_table_reload_button,
                         width=size_dict["button_width"],
                         label="Load Data Table",
-                        callback=wrap_with_cleanup(_create_ptobj_table),
+                        callback=wrap_with_cleanup(_update_data_table),
                     )
                 with dpg.group(horizontal=True):
                     with dpg.tooltip(parent=dpg.last_item()):
-                            dpg.add_text(
-                                default_value=(
-                                    "Add patient data to this local database by reading DICOM files from a directory."
-                                )
-                            )
+                        dpg.add_text("Add patient data to this local database by reading DICOM files from a directory.")
                     dpg.add_button(
                         width=size_dict["button_width"],
                         label="Add New Data",
                         callback=create_dicom_action_window, 
-                    )
-                        
+                    )      
         
         add_custom_separator(parent_tag=tag_data_window)
     else:
@@ -207,7 +230,7 @@ def _create_new_data_table() -> None:
     )
 
 
-def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
+def _update_data_table(sender: Union[str, int], app_data: Any, user_data: Any) -> None:
     """
     Display a popup table listing patients with their metadata.
 
@@ -221,6 +244,9 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
     original_reload_label = dpg.get_item_label(tag_table_reload_button)
     dpg.configure_item(tag_table_reload_button, enabled=False, label="Loading...")
     
+    if dpg.is_item_enabled(tag_table_reload_button):
+        return  # Prevent concurrent updates
+    
     # Get necessary parameters
     ss_mgr: SharedStateManager = get_user_data(td_key="shared_state_manager")
     dcm_mgr: DicomManager = get_user_data(td_key="dicom_manager")
@@ -230,6 +256,7 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
     tag_filter_processed = get_tag("input_filter_processed")
     tag_filter_name = get_tag("input_filter_name")
     tag_filter_mrn = get_tag("input_filter_mrn")
+    tag_filter_site = get_tag("input_filter_site")
     size_dict = get_user_data(td_key="size_dict")
     
     # Find number of patients and number of rows to display
@@ -255,18 +282,21 @@ def _create_ptobj_table(sender: Union[str, int], app_data: Any, user_data: Any) 
     find_never_processed = {"Processed": False, "Unprocessed": True}.get(filter_processed_value, None)
     mrn_search = dpg.get_value(tag_filter_mrn) or None
     name_search = dpg.get_value(tag_filter_name) or None
+    site_search = dpg.get_value(tag_filter_site) or None
     
     # Load relevant patient data
-    if sender == tag_table_reload_button:
+    if sender == "go_back_button":
+        subset_pt_data = dpg.get_item_user_data(tag_data_window)
+    else:
         subset_pt_data: Dict[Tuple[str, str], Patient] = dcm_mgr.load_patient_data_from_db(
             subset_size=num_table_rows, 
             subset_idx=table_index,
             never_processed=find_never_processed,
             filter_mrns=mrn_search,
-            filter_names=name_search)
+            filter_names=name_search,
+            filter_sites=site_search,
+        )
         dpg.set_item_user_data(tag_data_window, subset_pt_data)
-    else:
-        subset_pt_data = dpg.get_item_user_data(tag_data_window)
     
     # Show the data window and create a new data table
     toggle_data_window(force_show=True, label="Patient Data")
@@ -345,7 +375,7 @@ def _display_patient_files_table(sender: Union[str, int], app_data: Any, user_da
                 label=back_label,
                 width=round(dpg.get_text_size(back_label)[0] * 2),
                 height=size_dict["button_height"],
-                callback=_create_ptobj_table,
+                callback=lambda s, a, u: _update_data_table("go_back_button", None, None)
             )
             load_label = "Load Selected Data"
             dpg.add_button(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 import logging
-from time import sleep
+import time
 from functools import partial
 from typing import TYPE_CHECKING, Callable, Optional, Any, Union, Dict
 
@@ -98,6 +98,7 @@ def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None, 
         ss_mgr: SharedStateManager = get_user_data(td_key="shared_state_manager")
         data_mgr: DataManager = get_user_data(td_key="data_manager")
 
+        # If cleanup is already in progress, do nothing
         if ss_mgr.cleanup_event.is_set():
             logger.warning("Cleanup is already in progress. Please wait...")
             return
@@ -109,23 +110,38 @@ def wrap_with_cleanup(action: Optional[Callable[[Any, Any, Any], None]] = None, 
 
         def _execute_action() -> None:
             try:
+                # Set the cleanup event flag
                 ss_mgr.cleanup_event.set()
+                
+                # Wait for current actions with timeout
+                timeout = 30  # seconds
+                start_time = time.time()
                 while ss_mgr.is_action_in_progress():
-                    sleep(0.1)
+                    if time.time() - start_time > timeout:
+                        logger.error("Timeout waiting for actions to complete; you may need to restart the program.")
+                        break
+                    time.sleep(0.1)
+                
+                # Perform cleanup
                 with ss_mgr.thread_lock:
                     if data_mgr.is_any_data_loaded:
                         data_mgr.clear_data()
                         _reset_gui_layout()
-                        logger.info("Cleanup complete.")
+                    logger.info("GUI cleanup is complete.")
+                
+                # Clear the event flag
                 ss_mgr.cleanup_event.clear()
-                while ss_mgr.cleanup_event.is_set():
-                    sleep(0.1) # Wait for the flag to be cleared
+                
+                # If an action was provided, submit it now
                 if action is not None:
                     ss_mgr.submit_action(partial(action, sender, app_data, user_data))
+                
                 safe_delete(get_tag("confirmation_popup"))
             except Exception as e:
                 logger.exception(f"Failed to perform cleanup!", exc_info=True, stack_info=True)
+                ss_mgr.cleanup_event.clear()  # Ensure event is cleared on error
         
+        # If skipping confirmation, execute directly
         if skip_confirmation:
             _execute_action()
             return

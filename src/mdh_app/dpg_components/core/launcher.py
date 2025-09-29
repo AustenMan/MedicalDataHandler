@@ -513,6 +513,7 @@ class GUILauncher:
                 "input_filter_processed": dpg.generate_uuid(),
                 "input_filter_name": dpg.generate_uuid(),
                 "input_filter_mrn": dpg.generate_uuid(),
+                "input_filter_site": dpg.generate_uuid(),
                 
                 # Response tags
                 "latest_gui_response": dpg.generate_uuid(),

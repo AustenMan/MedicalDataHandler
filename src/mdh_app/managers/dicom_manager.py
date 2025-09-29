@@ -243,7 +243,7 @@ class DicomManager():
         """Check if a cleanup or shutdown event has been triggered."""
         return self.cleanup_check() or self.shutdown_check()
         
-    def process_dicom_directory(self, dicom_dir: str, chunk_size: int = 10_000) -> None:
+    def process_dicom_directory(self, dicom_dir: str, chunk_size: int = 1_000) -> None:
         """Process DICOM directory with parallel discovery and metadata extraction."""
         if self.get_exit_status():
             return
@@ -329,44 +329,53 @@ class DicomManager():
             return
         
         num_dcm_files = len(dicom_files)
-        start_text = "(Step 2/2) Reading DICOM metadata and inserting to DB..."
-        self.progress_callback(0, num_dcm_files, start_text)
+        reading_text = "(Step 2/2) Reading DICOM metadata..."
+        inserting_text = f"(Step 2/2) Inserting chunk of DICOM metadata into database..."
+        self.progress_callback(0, num_dcm_files, reading_text)
         
         analyzed = 0
         committed = 0
-        with get_session() as ses:
-            for chunk in chunked_iterable(iter(dicom_files), chunk_size):
-                if not chunk or self.get_exit_status():
+        
+        for chunk in chunked_iterable(iter(dicom_files), chunk_size):
+            if not chunk or self.get_exit_status():
+                break
+            
+            futures = [
+                fu for fp in chunk 
+                if (
+                    not self.get_exit_status() and
+                    (fu := self.ss_mgr.submit_executor_action(read_dicom_metadata, fp)) is not None
+                )
+            ] if not self.get_exit_status() else []
+            
+            # Collect all metadata first, then batch process
+            chunk_metadata = []
+            for fu in as_completed(futures):
+                if self.get_exit_status():
                     break
-                
-                futures = [
-                    fu for fp in chunk 
-                    if (
-                        not self.get_exit_status() and
-                        (fu := self.ss_mgr.submit_executor_action(read_dicom_metadata, fp)) is not None
-                    )
-                ] if not self.get_exit_status() else []
-                
-                inserted = 0
-                for fu in as_completed(futures):
-                    if self.get_exit_status():
-                        break
-                    try:
-                        meta = fu.result()
-                        inserted += self._upsert(ses, meta)
-                    except Exception as e:
-                        logger.exception("Failed to process DICOM metadata.", exc_info=True, stack_info=True)
-                    finally:
-                        if isinstance(fu, Future) and not fu.done():
-                            fu.cancel()
-                        analyzed += 1
-                        if analyzed % 100 == 0:
-                            self.progress_callback(min(analyzed, num_dcm_files - 1), num_dcm_files, start_text)
-                
-                ses.commit()  # commit changes after each chunk
-                committed += inserted
+                try:
+                    meta = fu.result()
+                    if meta:
+                        chunk_metadata.append(meta)
+                except Exception as e:
+                    logger.exception("Failed to process DICOM metadata.", exc_info=True, stack_info=True)
+                finally:
+                    if isinstance(fu, Future) and not fu.done():
+                        fu.cancel()
+                    analyzed += 1
+                    if analyzed % 100 == 0:
+                        self.progress_callback(min(analyzed, num_dcm_files - 1), num_dcm_files, reading_text)
+            
+            # Batch upsert with pre-cached lookups
+            if chunk_metadata:
+                self.progress_callback(min(analyzed, num_dcm_files - 1), num_dcm_files, inserting_text)
+                with get_session() as ses:
+                    inserted = self._batch_upsert(ses, chunk_metadata)
+                    committed += inserted
+                    # Auto-commit happens via get_session
         
         if self.get_exit_status():
+            self.progress_callback(100, 100, "Aborted DICOM processing task at user request!", True)
             return
         
         if analyzed == 0:
@@ -376,97 +385,135 @@ class DicomManager():
         else:
             self.progress_callback(analyzed, analyzed, f"(Step 2/2) Finished analyzing metadata from {analyzed} DICOM files. Committed {committed} records to the database.")
 
-    def _upsert(self, ses: Session, meta: Dict[str, str]) -> int:
-        """Insert/update Patient, File, FileMetadata with conflict handling."""
-        if not meta or self.get_exit_status():
-            return 0
+    def _batch_upsert(self, ses: Session, metadata_list: List[Dict[str, str]]) -> int:
+        """Batch upsert with cached lookups to minimize queries."""
+        # Perform a single query for all patients in this batch
+        patient_keys = {(m["patient_id"], m["patient_name"]) for m in metadata_list}
+        file_paths = {m["file_path"] for m in metadata_list}
         
-        try:
-            # --- Patient ------------------------------------------------
-            mrn  = meta["patient_id"]
-            name = meta["patient_name"]
-            # if self.anonymize:
-            #     mrn  = _pseudo(mrn,  self._salt)
-            #     name = _pseudo(name, self._salt)
+        # Find already existing patients
+        existing_patients = {
+            (p.mrn, p.name): p 
+            for p in ses.query(Patient).filter(
+                or_(*[
+                    (Patient.mrn == mrn) & (Patient.name == name) 
+                    for mrn, name in patient_keys
+                ])
+            ).all()
+        } if patient_keys else {}
+        
+        # Find already existing files
+        existing_files = {
+            f.path: f 
+            for f in ses.query(File).filter(File.path.in_(file_paths)).all()
+        } if file_paths else {}
+        
+        # Collect new patients and files for bulk insert
+        new_patients = []
+        new_files = []
+        
+        for meta in metadata_list:
+            patient_key = (meta["patient_id"], meta["patient_name"])
             
-            patient = (
-                ses.query(Patient)
-                .filter_by(mrn=mrn, name=name)
-                .one_or_none()
-            )
-            if patient is None:
+            # Add new patients to pending list
+            if patient_key not in existing_patients:
                 patient = Patient(
-                    mrn=mrn,
-                    name=name,
+                    mrn=meta["patient_id"],
+                    name=meta["patient_name"],
                     is_anonymized=self.anonymize,
                     created_at=datetime.now(),
                 )
-                ses.add(patient)
-                ses.flush()  # gets PK
-
-            # --- File ---------------------------------------------------
-            file_row = ses.query(File).filter_by(path=meta["file_path"]).one_or_none()
-            if file_row is None:
+                new_patients.append(patient)
+                existing_patients[patient_key] = patient
+        
+        # Single flush for all new patients
+        if new_patients:
+            ses.add_all(new_patients)
+            ses.flush()
+        
+        # Now process files with patient IDs available
+        for meta in metadata_list:
+            patient_key = (meta["patient_id"], meta["patient_name"])
+            patient = existing_patients[patient_key]
+            
+            if meta["file_path"] not in existing_files:
                 file_row = File(
                     patient_id=patient.id,
                     path=meta["file_path"],
                     created_at=datetime.now(),
                 )
-                ses.add(file_row)
-                ses.flush()
-
-            # --- FileMetadata ------------------------------------------
-            md = ses.query(FileMetadata).filter_by(file_id=file_row.id).one_or_none()
+                new_files.append(file_row)
+                existing_files[meta["file_path"]] = file_row
+        
+        # Single flush for all new files
+        if new_files:
+            ses.add_all(new_files)
+            ses.flush()
+        
+        # Bulk query existing metadata
+        file_ids = [existing_files[m["file_path"]].id for m in metadata_list]
+        existing_metadata = {
+            md.file_id: md 
+            for md in ses.query(FileMetadata).filter(FileMetadata.file_id.in_(file_ids)).all()
+        } if file_ids else {}
+        
+        # Process metadata
+        new_metadata = []
+        inserted = 0
+        
+        for meta in metadata_list:
+            file_row = existing_files[meta["file_path"]]
+            patient = existing_patients[(meta["patient_id"], meta["patient_name"])]
+            
             new_values = {
-                "frame_of_reference_uid":           meta["frame_of_reference_uid"],
-                "modality":                         meta["modality"],
-                "sop_instance_uid":                 meta["sop_instance_uid"],
-                "sop_class_uid":                    meta.get("sop_class_uid"),
-                "dose_summation_type":              meta.get("dose_summation_type"),
-                "series_instance_uid":              meta.get("series_instance_uid"),
-                "study_instance_uid":               meta.get("study_instance_uid"),
-                "label":                            meta.get("label"),
-                "name":                             meta.get("name"),
-                "description":                      meta.get("description"),
-                "date":                             meta.get("date"),
-                "time":                             meta.get("time"),
-                "referenced_sop_class_uid_seq":             dumps(meta["referenced_sop_class_uid_seq"]),
-                "referenced_sop_instance_uid_seq":          dumps(meta["referenced_sop_instance_uid_seq"]),
-                "referenced_frame_of_reference_uid_seq":    dumps(meta["referenced_frame_of_reference_uid_seq"]),
-                "referenced_series_instance_uid_seq":       dumps(meta["referenced_series_instance_uid_seq"]),
-                "referenced_rt_plan_sopi_seq":              dumps(meta["referenced_rt_plan_sopi_seq"]),
-                "referenced_rt_plan_sopc_seq":              dumps(meta["referenced_rt_plan_sopc_seq"]),
-                "referenced_structure_set_sopi_seq":        dumps(meta["referenced_structure_set_sopi_seq"]),
-                "referenced_structure_set_sopc_seq":        dumps(meta["referenced_structure_set_sopc_seq"]),
-                "referenced_dose_sopi_seq":                 dumps(meta["referenced_dose_sopi_seq"]),
-                "referenced_dose_sopc_seq":                 dumps(meta["referenced_dose_sopc_seq"]),
+                "frame_of_reference_uid": meta["frame_of_reference_uid"],
+                "modality": meta["modality"],
+                "sop_instance_uid": meta["sop_instance_uid"],
+                "sop_class_uid": meta.get("sop_class_uid"),
+                "dose_summation_type": meta.get("dose_summation_type"),
+                "series_instance_uid": meta.get("series_instance_uid"),
+                "study_instance_uid": meta.get("study_instance_uid"),
+                "label": meta.get("label"),
+                "name": meta.get("name"),
+                "description": meta.get("description"),
+                "date": meta.get("date"),
+                "time": meta.get("time"),
+                "referenced_sop_class_uid_seq": dumps(meta.get("referenced_sop_class_uid_seq", [])),
+                "referenced_sop_instance_uid_seq": dumps(meta.get("referenced_sop_instance_uid_seq", [])),
+                "referenced_frame_of_reference_uid_seq": dumps(meta.get("referenced_frame_of_reference_uid_seq", [])),
+                "referenced_series_instance_uid_seq": dumps(meta.get("referenced_series_instance_uid_seq", [])),
+                "referenced_rt_plan_sopi_seq": dumps(meta.get("referenced_rt_plan_sopi_seq", [])),
+                "referenced_rt_plan_sopc_seq": dumps(meta.get("referenced_rt_plan_sopc_seq", [])),
+                "referenced_structure_set_sopi_seq": dumps(meta.get("referenced_structure_set_sopi_seq", [])),
+                "referenced_structure_set_sopc_seq": dumps(meta.get("referenced_structure_set_sopc_seq", [])),
+                "referenced_dose_sopi_seq": dumps(meta.get("referenced_dose_sopi_seq", [])),
+                "referenced_dose_sopc_seq": dumps(meta.get("referenced_dose_sopc_seq", [])),
             }
             
+            md = existing_metadata.get(file_row.id)
             if md is None:
-                md = FileMetadata(
+                # New metadata
+                new_metadata.append(FileMetadata(
                     file_id=file_row.id,
                     patient_id=patient.id,
-                    **new_values,
-                )
-                ses.add(md)
-                return 1 # Successfully inserted new metadata
-            
-            # compare – update only if something changed
-            updated = False
-            for k, v in new_values.items():
-                if getattr(md, k) != v and v is not None:
-                    setattr(md, k, v)
-                    updated = True
-            return 1 if updated else 0
+                    **new_values
+                ))
+                inserted += 1
+            else:
+                # Check for updates
+                updated = False
+                for k, v in new_values.items():
+                    if getattr(md, k) != v and v is not None:
+                        setattr(md, k, v)
+                        updated = True
+                if updated:
+                    inserted += 1
         
-        except IntegrityError as exc:
-            logger.warning(f"DB integrity error on {meta['file_path']}", exc_info=True, stack_info=True)
-            ses.rollback()
-            return 0
-        except Exception as e:
-            logger.exception(f"Failed to upsert metadata for {meta['file_path']}.", exc_info=True, stack_info=True)
-            ses.rollback()
-            return 0
+        # Single add for all new metadata
+        if new_metadata:
+            ses.add_all(new_metadata)
+        
+        return inserted
 
     def load_patient_data_from_db(
         self,
@@ -475,6 +522,7 @@ class DicomManager():
         never_processed: Optional[bool] = None,
         filter_mrns: Optional[str] = None,
         filter_names: Optional[str] = None,
+        filter_sites: Optional[str] = None,
     ) -> Dict[Tuple[str, str], Patient]:
         """Load patient data from database with filtering options."""
         if self.get_exit_status():
@@ -488,14 +536,30 @@ class DicomManager():
                 # Build base query
                 stmt = select(Patient)
 
-                # Filter by MRN/Name
+                # Add joins if site filter is specified
+                if filter_sites:
+                    stmt = stmt.join(File, Patient.id == File.patient_id).join(FileMetadata, File.id == FileMetadata.file_id)
+                
+                # Filter by MRN/Name/Site if provided
                 filters = []
                 if filter_mrns:
                     filters.append(Patient.mrn.ilike(f"%{filter_mrns.strip()}%"))
                 if filter_names:
                     filters.append(Patient.name.ilike(f"%{filter_names.strip()}%"))
+                # Check label, name, and description fields
+                if filter_sites:
+                    site_pattern = f"%{filter_sites.strip()}%"
+                    filters.append(
+                        or_(
+                            FileMetadata.label.ilike(site_pattern),
+                            FileMetadata.name.ilike(site_pattern),
+                            FileMetadata.description.ilike(site_pattern)
+                        )
+                    )
+                
+                # Apply filters
                 if filters:
-                    stmt = stmt.where(or_(*filters))
+                    stmt = stmt.where(or_(*filters) if len(filters) > 1 else filters[0])
 
                 # never_processed filtering: no filtering if None
                 if never_processed is True:

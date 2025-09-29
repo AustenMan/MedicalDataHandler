@@ -948,13 +948,27 @@ def parse_struct_goal(
     return goal_type, spare_volume, spare_dose
 
 
-def validate_rgb_color(color_data: Any) -> Optional[List[int]]:
-    """ Get valid ROI display color data."""
-    if not isinstance(color_data, list) or len(color_data) != 3:
-        return [random.randint(0, 255) for _ in range(3)]
+def normalize_rgb_color(color_data: Any, default: Optional[List[int]] = None) -> List[int]:
+    """
+    Normalize color data to valid RGB values [0-255].
+    
+    Args:
+        color_data: Input color (list/tuple of 3 ints)
+        default: Fallback color if invalid. If None, generates random.
+    
+    Returns:
+        List of 3 integers in range [0, 255]
+    """
+    # Try to parse as integers
     try:
-        # Clamp each color component to valid RGB range
-        normalized_color = [int(round(min(max(float(component), 0), 255))) for component in color_data]
-        return normalized_color
-    except (ValueError, TypeError):
-        return [random.randint(0, 255) for _ in range(3)]
+        if not color_data or len(color_data) != 3:
+            raise ValueError("Color must have exactly 3 components")
+        
+        color = [int(c) for c in color_data]
+        
+    except (ValueError, TypeError, AttributeError):
+        # Use default or generate random
+        return default if default else [random.randint(0, 255) for _ in range(3)]
+    
+    # Clamp to valid range
+    return [min(max(c, 0), 255) for c in color]

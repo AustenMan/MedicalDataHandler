@@ -24,7 +24,7 @@ from mdh_app.utils.dicom_utils import (
 from mdh_app.utils.general_utils import (
     get_json_list, struct_name_priority_key, regex_find_dose_and_fractions,
     clean_dicom_string, find_reformatted_mask_name, find_disease_site,
-    validate_rgb_color, atomic_save
+    normalize_rgb_color, atomic_save
 )
 from mdh_app.utils.numpy_utils import numpy_roi_mask_generation, create_HU_to_RED_map
 from mdh_app.utils.sitk_utils import (
@@ -802,7 +802,8 @@ class DataManager:
 
         # Get ROI info
         roi_name = clean_dicom_string(roi_ds_dict.get("StructureSetROI", {}).get("ROIName", unmatched_organ_name))
-        roi_display_color = validate_rgb_color(roi_ds_dict.get("ROIContour", {}).get("ROIDisplayColor", None))
+        roi_display_color = normalize_rgb_color(roi_ds_dict.get("ROIContour", {}).get("ROIDisplayColor", None))
+        print(f"ROI {roi_number} Name: {roi_name}, Color: {roi_display_color}")
         rt_roi_interpreted_type = roi_ds_dict.get("RTROIObservations", {}).get("RTROIInterpretedType", "CONTROL")
         
         # Get ROI Physical Properties (REL_ELEC_DENSITY overrides)

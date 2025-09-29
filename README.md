@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">MedicalDataHandler</h1>  
-<p align="center"><em>A Research-Oriented Graphical User Interface for DICOM Processing, Image Analysis, and Data Management</em></p>
+<p align="center"><em>A Research-Oriented GUI for DICOM Data Management</em></p>
 <p align="center"><em><a href="https://github.com/AustenMan/MedicalDataHandler/releases"><strong>🔗 Only looking for the latest EXE? Click here!</strong></a></em></p>
 
 ---
@@ -26,7 +26,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - **Manage DICOM data effortlessly** without coding.  
 - **Automatically detect and organize DICOM files** into structured datasets.  
 - **Inspect and visualize patient data** with **real-time rendering**.  
-- **Export data in NIfTI format** for seamless integration in downstream pipelines (e.g., AI model training).  
+- **Export data in NRRD format** for seamless integration in downstream pipelines (e.g., AI model training).  
 
 ---
 
@@ -43,7 +43,7 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✅ **Offer an intuitive, modern GUI** for **flexible, codeless** data visualization and processing.  
 - ✅ **Minimize opportunity for user error** with features such as:  
    - **Automated DICOM file identification and organization**, eliminating manual organization of DICOM files across numerous folders.  
-   - **Structured tables** displaying data by **patient** and **Frame of Reference** for improved clarity.  
+   - **Structured tables** displaying patient data and organized by relational DICOM UIDs.  
    - **Automated Structure Name Matching & Renaming** following [TG-263](https://www.aapm.org/pubs/reports/RPT_263.pdf).  
 - ✅ **Provide research-focused validation tools** to analyze DICOM metadata and catch errors before they propagate in downstream applications.  
 - ✅ **Enable specialized post-processing**, including:  
@@ -80,39 +80,41 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 ## 📂 Features  
 
 ### **📊 DICOM Data Management & Processing**  
-- ✔ **Automated DICOM file identification** in a user-specified directory.  
+- ✔ **Automated DICOM file discovery** in user-specified directories.  
 
   <p align="center">
     <img src="images/2_DicomSearch.png" alt="DICOM Search">
     <br>
-    <em>Figure 2: Users can select "Add New Data", and then "Choose a DICOM Directory" to specify a folder for searching DICOM files.</em>
+    <em>Figure 2: Users can select "Add New Data", and then "Choose a DICOM Directory" to search for DICOM files.</em>
   </p>
 
-- ✔ **Automated DICOM file linking** to group related data.  
-
-  <p align="center">
-    <img src="images/3_DicomLink.png" alt="DICOM Linking">
-    <br>
-    <em>Figure 3: After the search completes, users can select "Start Linking DICOM Files" to automatically read, organize, and group related files.</em>
-  </p>
+- ✔ **SQL database indexing** via [SQLite](https://github.com/sqlite/sqlite) and [SQLAlchemy](https://github.com/sqlalchemy/sqlalchemy) for persistent storage and efficient querying of DICOM metadata.  
 
 - ✔ **Patient Data Table** for structured display of accessible patient data.  
 
   <p align="center">
-    <img src="images/4_DataTablePatients.png" alt="Data Table Patients">
+    <img src="images/3_DataTablePatients.png" alt="Data Table Patients">
     <br>
-    <em>Figure 4: Selecting "Explore Data" followed by "Load or Reload Data Table" creates patient rows, with timestamps for creation, modification, access, and processing.</em>
+    <em>Figure 4: The patient table supports filtering by MRN, name, processing status, or site-specific metadata.</em>
   </p>
 
-- ✔ **Patient Object Inspection** for in-depth data analysis.  
+- ✔ **Patient Object Inspection** for backend storage analysis.  
 
   <p align="center">
-    <img src="images/5_PatientInspect.png" alt="Inspection Patient Object">
+    <img src="images/4_PatientInspect.png" alt="Inspection Patient Object">
     <br>
-    <em>Figure 5: Clicking "Inspect" in the patient table allows detailed examination of the patient object, including nested data and data relationships.</em>
+    <em>Figure 4: Clicking "Inspect" in the patient table displays the patient database record and relationships, including associated files.</em>
   </p>
 
-- ✔ **DICOM metadata inspection** with collapsible trees and filters.
+- ✔ **Automated File Grouping** for convenient organization of patient-specific data.  
+
+  <p align="center">
+    <img src="images/5_DataTableLoad.png" alt="Data Table Load">
+    <br>
+    <em>Figure 5: After patient selection, the table shows data grouped by relational DICOM UID values. Metadata columns show labels, names, descriptions, and timestamps for each file.</em>
+  </p>
+
+- ✔ **DICOM metadata inspection** using [Pydicom](https://github.com/pydicom/pydicom), with collapsible trees and filters.
 
   <p align="center">
     <img src="images/6_DicomInspect.png" alt="Inspection DICOM Metadata">
@@ -120,29 +122,17 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
     <em>Figure 6: The DICOM metadata inspection panel enables structured viewing and filtering of attributes for individual files.</em>
   </p>
 
-- ✔ **Frame Of Reference UID Data Table** for deeper organization of patient-specific data.  
 
-  <p align="center">
-    <img src="images/7_DataTableFrames.png" alt="Data Table FORUID">
-    <br>
-    <em>Figure 7: Selecting a patient updates the table to show available Frame of Reference UIDs and associated modalities for better data organization.</em>
-  </p>
 
 ### **🖼️ Interactive 2D Visualization**  
 - ✅ **Data visualization** by converting DICOM data to [SimpleITK](https://github.com/SimpleITK/SimpleITK) Images and [NumPy](https://github.com/numpy/numpy) arrays.  
 
-  <p align="center">
-    <img src="images/8_DataTableLoad.png" alt="Data Table Load">
-    <br>
-    <em>Figure 8: After selecting a Frame of Reference UID, users pick the data to load and press "Load Selected Data" to visualize it.</em>
-  </p>
-
 - ✅ **Customizable display toggles** for flexible visualization of any loaded images, dose distributions, and/or structures.  
 
   <p align="center">
-    <img src="images/9_LoadedHomePage.png" alt="DICOM Data Loaded">
+    <img src="images/7_LoadedHomePage.png" alt="DICOM Data Loaded">
     <br>
-    <em>Figure 9: A fully loaded dataset displayed with interactive visualization controls and toggle options for images, dose distributions, and structures.</em>
+    <em>Figure 7: A fully loaded dataset displayed with interactive visualization controls and toggle options for images, dose distributions, and structures.</em>
   </p>
 
 - ✅ **Three-pane view support** for axial, sagittal and coronal planes with the ability to:  
@@ -158,28 +148,36 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
   - **Rename, recolor, or remove** segmentations.  
 
   <p align="center">
-    <img src="images/10_ThreeViews.png" alt="Three Views">
+    <img src="images/8_ThreeViews.png" alt="Three Views">
     <br>
-    <em>Figure 1: Three-pane visualization of axial, sagittal, and coronal views, with voxel inspection at the cursor.</em>
+    <em>Figure 8: Three-pane visualization of axial, sagittal, and coronal views, with voxel-level information displayed at the mouse cursor.</em>
   </p>
 
-- ✅ **Inspection of loaded data** to add or edit certain fields, such as machine name.
+- ✅ **Concise beam summary** for each RT Plan to inform users about essential treatment planning details.
 
   <p align="center">
-    <img src="images/11_SitkInspect.png" alt="Inspection Loaded Data">
+    <img src="images/9_BeamSummary.png" alt="Inspection Loaded Data">
     <br>
-    <em>Figure 10: The inspection panel for loaded data allows adding or modifying specific fields, such as machine name or structure labels.</em>
+    <em>Figure 9: The beam summary panel includes the treatment machine name, radiation type, angles, and more as extracted from the DICOM metadata.</em>
   </p>
 
-### **🔄 DICOM-to-NIfTI Conversion**  
-- ✔ **NIfTI export** for each 3D volume while retaining DICOM metadata, and optionally retaining custom modifications.  
+- ✅ **Inspection of loaded data** to view or modify metadata fields.
+
+  <p align="center">
+    <img src="images/10_SitkInspect.png" alt="Inspection Loaded Data">
+    <br>
+    <em>Figure 10: The inspection panel for loaded data allows viewing and/or modifying specific metadata fields, depending on the data type.</em>
+  </p>
+
+### **🔄 DICOM-to-NRRD Conversion**  
+- ✔ **NRRD export** for each 3D volume while retaining DICOM metadata, and optionally retaining custom modifications.  
 - ✔ **Customizable post-processing tools** and flexible **file naming** options.  
 - ✔ **Supports both partial (single-item) and batch data saving**.  
 
   <p align="center">
-    <img src="images/13_Save.png" alt="Save">
+    <img src="images/12_Save.png" alt="Save">
     <br>
-    <em>Figure 11: The save window enables exporting selected data to NIfTI format with customizable options.</em>
+    <em>Figure 12: The save window enables exporting selected data to NRRD format with customizable options.</em>
   </p>
 
 ### **🛠 Additional Features**  
@@ -192,9 +190,9 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
   - **Data rotation or flips**  
 
   <p align="center">
-    <img src="images/12_Settings.png" alt="Settings">
+    <img src="images/11_Settings.png" alt="Settings">
     <br>
-    <em>Figure 12: The settings panel provides controls for GUI customization, data rotation/flips, etc.</em>
+    <em>Figure 11: The settings panel provides controls for GUI customization, data rotation/flips, etc.</em>
   </p>
 
 ---
@@ -205,15 +203,18 @@ MedicalDataHandler is a **graphical user interface (GUI) tool** built with [Dear
 - ✔ **Direct DICOM import from DAEMON Server**.  
 - ✔ **Dose-Volume Histogram (DVH) visualization**.  
 - ✔ **Basic image processing tools (e.g., applying filters).**  
+- ✔ **Oblique plane visualization support (e.g., beams' eye view).**  
 - ✔ **3D RTPLAN beam data representation and beam visualization.**  
-- ✔ **Direct NIfTI imports** and **writing back to DICOM format**.  
+- ✔ **Direct NRRD imports** and **writing back to DICOM format**.  
+- ✔ **Support for rigid image registration and persistent registration storage.**  
+- ✔ **Support for data anonymization.**  
 - ✔ **Potential C# re-write** for possible integration with **ESAPI**.  
 
 ---
 
 ## ⚠️ Disclaimers  
 
-I am relatively new to computer science and software development; I learned as I built this software, and I aim to eventually re-write/re-factor much of the code.
+I am relatively new to computer science and software development; I learned as I built this software, and I aim to continually improve this code.
 
 A large language model (LLM) was used to assist with **code review, writing docstrings, and formatting this README**.  
 

@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from typing import Generator, Optional, TYPE_CHECKING
 
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, scoped_session
 
 
@@ -55,6 +55,13 @@ def init_engine(db_path: str, echo: bool = False) -> None:
         },
     )
 
+    with _ENGINE.begin() as conn:
+        conn.execute(text("PRAGMA journal_mode = WAL"))  # Write-ahead logging
+        conn.execute(text("PRAGMA synchronous = NORMAL"))  # Faster writes
+        conn.execute(text("PRAGMA cache_size = -64000"))  # 64MB cache
+        conn.execute(text("PRAGMA temp_store = MEMORY"))  # Use RAM for temp tables
+        conn.execute(text("PRAGMA mmap_size = 8000000000"))  # Memory-map up to 8GB
+    
     # Create all tables defined in models
     Base.metadata.create_all(_ENGINE)
 
@@ -89,6 +96,8 @@ def get_session(expire_all: bool = False) -> Generator[Session, None, None]:
         # If needed to expire, ensure the identity map is cleared
         if expire_all:
             session.expire_all()
+            # Ensure we can see recently committed data
+            session.execute(text("PRAGMA read_uncommitted = 0"))
 
         yield session
         session.commit()
