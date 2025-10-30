@@ -53,7 +53,8 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
         return None
 
     # Initialize mask with (slices, rows, cols) shape
-    mask_shape = (sitk_image_params["slices"], sitk_image_params["rows"], sitk_image_params["cols"])
+    slices, rows, cols = sitk_image_params["slices"], sitk_image_params["rows"], sitk_image_params["cols"]
+    mask_shape = (slices, rows, cols)
     mask_np = np.zeros(mask_shape, dtype=np.uint8)
     
     # Precompute transformation matrix components
@@ -65,6 +66,7 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
     has_valid_contour_data = False
     contour_seq = roi_ds_dict.get("ROIContour", {}).get("ContourSequence", [])
     
+    slice_contours = {}  # Stores references per-slice
     for contour_ds in contour_seq:
         try:
             contour_num = contour_ds.get("ContourNumber", None)
@@ -89,8 +91,22 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
             contour_points_3d = np.array(contour_points_flat, dtype=np.float32).reshape(-1, 3)
             matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
             
-            # Add points to mask
-            numpy_roi_mask_generation(mask=mask_np, matrix_points=matrix_points, geometric_type=contour_geom_type)
+            if contour_geom_type == "OPEN_NONPLANAR":
+                # Generate mask for this contour
+                numpy_roi_mask_generation(mask=mask_np, matrix_points=matrix_points, geometric_type=contour_geom_type)
+            else:
+                # 2D, All points should have same z for this condition
+                slice_idx = int(matrix_points[0, 2])
+                if not all(matrix_points[:, 2] == slice_idx):
+                    logger.error("All contour points must have the same Z value for non-OPEN_NONPLANAR contours!")
+                    continue
+                if not (0 <= slice_idx < slices):
+                    continue  # Skip out-of-bounds slices
+                if slice_idx not in slice_contours:
+                    slice_contours[slice_idx] = []
+                matrix_points_2d = np.ascontiguousarray(matrix_points[:, :2])
+                slice_contours[slice_idx].append(matrix_points_2d)
+                
             has_valid_contour_data = True
         except Exception as e:
             logger.error(
@@ -103,6 +119,17 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
     if not has_valid_contour_data:
         logger.warning(f"No valid contour data processed for ROI '{roi_name}' (number: {roi_number}).")
         return None
+    
+    # Draw all contours per slice at once
+    for slice_idx, contours in slice_contours.items():
+        if len(contours) == 1 and len(contours[0]) == 1:
+            # Single point
+            x, y = contours[0][0]
+            if 0 <= y < rows and 0 <= x < cols:
+                mask_np[slice_idx, y, x] = 1
+        else:
+            # Multiple points/contours
+            cv2.fillPoly(mask_np[slice_idx], contours, 1)
     
     # Create SimpleITK image from numpy array
     mask_sitk: sitk.Image = sitk.GetImageFromArray(mask_np)

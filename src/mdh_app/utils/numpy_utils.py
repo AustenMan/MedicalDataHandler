@@ -20,25 +20,19 @@ logger = logging.getLogger(__name__)
 def numpy_roi_mask_generation(
     mask: np.ndarray,  # Pre-allocated 3D uint8 mask array in [slices, rows, cols] order
     matrix_points: np.ndarray,  # (N, 3) array of (x, y, z) coordinates, where x=col, y=row, z=slice. dtype=int32
-    geometric_type: str
+    geometric_type: str,
 ) -> None:
-    """Generate 3D ROI mask from matrix points (credit for initial inspiration: github.com/brianmanderson)."""
-    n_pts = len(matrix_points)
-    if n_pts == 0:
-        return  # Nothing to draw
+    """Generate 3D ROI mask from OPEN_NONPLANAR matrix points."""
+    assert geometric_type == "OPEN_NONPLANAR", "Only OPEN_NONPLANAR supported"
     
-    # Handle single point ROIs
+    if len(matrix_points) == 0:
+        return
+    
     if len(matrix_points) == 1:
         x, y, z = matrix_points[0]
         if 0 <= z < mask.shape[0] and 0 <= y < mask.shape[1] and 0 <= x < mask.shape[2]:
             mask[z, y, x] = 1
         return
-    
-    # 2D, All points should have same z for this condition
-    if geometric_type != "OPEN_NONPLANAR":
-        slice = int(matrix_points[0, 2])  
-        points = np.ascontiguousarray(matrix_points[:, :2])
-        cv2.fillPoly(mask[slice], [points], 1)
     
     # 3D, Points may not all be on same z-slice for this condition
     else:
@@ -52,7 +46,7 @@ def numpy_roi_mask_generation(
                 z = int(p1[2])
                 if 0 <= z < mask.shape[0]:
                     cv2.line(mask[z], (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), 1)
-                continue  # Move to next segment
+                continue
             
             # Number of interpolation points
             n_points = int(abs(p2[2] - p1[2])) + 1
