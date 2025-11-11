@@ -1,4 +1,4 @@
-Copyright © 2025 The University of Texas Southwestern Medical Center.
+Copyright ï¿½ 2025 The University of Texas Southwestern Medical Center.
 All rights reserved.
 (1) Redistribution and use in source and binary forms, with or without modification, are permitted for academic research use only (subject to the limitations in the disclaimer below) provided that the following conditions are met:
 (a) Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
@@ -13,72 +13,72 @@ All rights reserved.
 (a) MIT License
 The following components are licensed under the MIT License.  Copyright notices for these components are as follows:
 1.	Pydicom
-Copyright © 2008-2020 Darcy Mason and pydicom contributors
+Copyright ï¿½ 2008-2020 Darcy Mason and pydicom contributors
 Source: https://github.com/pydicom/pydicom
 Version: 3.0.1
 Time: 2025-03-17
 
 2.	Dear PyGui
-Copyright © 2025 Dear PyGui, LLC
+Copyright ï¿½ 2025 Dear PyGui, LLC
 Source: https://github.com/hoffstadt/DearPyGui
-Version: 2.0.0
-Time: 2025-03-17
+Version: 2.1.0
+Time: 2025-11-11
 
 3.	DearPyGui_Extend
-Copyright © 2023 Fabricio Chamon
+Copyright ï¿½ 2023 Fabricio Chamon
 Source: https://github.com/fabriciochamon/DearPyGui_Extend
 Version: 0.1.4
 Time: 2025-03-17
 
 4.	opencv-python
-Copyright © Olli-Pekka Heinisuo
+Copyright ï¿½ Olli-Pekka Heinisuo
 Source: https://github.com/opencv/opencv-python 
 Version: 4.11.0.86
 Time: 2025-03-17
 
 5.	pynrrd
-Copyright © 2012 Maarten H. Everts and contributors
+Copyright ï¿½ 2012 Maarten H. Everts and contributors
 Source: https://github.com/mhe/pynrrd
 Version: 1.1.3
 Time: 2025-09-28
 
 6. SQLAlchemy
-Copyright © 2005-2025 SQLAlchemy authors and contributors
+Copyright ï¿½ 2005-2025 SQLAlchemy authors and contributors
 Source: https://github.com/sqlalchemy/sqlalchemy
 Version: 2.0.41
 Time: 2025-09-28
 
 7. pytest
-Copyright © 2004 Holger Krekel and others
+Copyright ï¿½ 2004 Holger Krekel and others
 Source: https://github.com/pytest-dev/pytest
 Version: 8.4.2
 Time: 2025-09-28
 
-Permission is granted, free of charge, to any person obtaining a copy of this software and associated documentation files (“Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and;/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is granted, free of charge, to any person obtaining a copy of this software and associated documentation files (ï¿½Softwareï¿½), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and;/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice (including the next paragraph) shall be included in all copies or substantial portions of the Software.  
 
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  
+THE SOFTWARE IS PROVIDED ï¿½AS ISï¿½, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  
 
 (b) Apache 2.0
 The following components are licensed under the Apache License 2.0.  Copyright notices for these components are as follows:
 1.	SimpleITK 
-Copyright © 2010-2019 Insight Software Consortium
-Copyright © 2020 NumFOCUS
+Copyright ï¿½ 2010-2019 Insight Software Consortium
+Copyright ï¿½ 2020 NumFOCUS
 Source: https://github.com/SimpleITK/SimpleITK
 Version: 2.4.1
 Time: 2025-03-17
 
-Licensed under the Apache License Version 2.0 (the “License”);
+Licensed under the Apache License Version 2.0 (the ï¿½Licenseï¿½);
 You may not use this file except in compliance with the License.  
 You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an ï¿½AS ISï¿½ BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and limitations under the License.  
 
-(c)  BSD 3-Clause License (the “Modified BSD License”)
+(c)  BSD 3-Clause License (the ï¿½Modified BSD Licenseï¿½)
 The following components are licensed under the BSD 3-Clause License.  Copyright notices for these components are as follows:
 
 1.	scipy
-Copyright © 2001-2002 Enthought, Inc. 2003, SciPy Developers
+Copyright ï¿½ 2001-2002 Enthought, Inc. 2003, SciPy Developers
 Source: https://github.com/scipy/scipy
 Version: 1.15.1
 Time: 2025-03-17
@@ -88,15 +88,15 @@ Redistribution and use in source and binary forms, with or without modification,
 1.	Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
 2.	Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
 3.	Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ï¿½AS ISï¿½ AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (d) Numpy License
 The following components are licensed under the Numpy License.  Copyright notices for these components are as follows:
 1.	numpy
-Copyright © 2005-2025, NumPy Developers.
+Copyright ï¿½ 2005-2025, NumPy Developers.
 Source: https://github.com/numpy/numpy
-Version: 2.2.2
-Time: 2025-03-17
+Version: 2.2.4
+Time: 2025-11-11
 The full text of the Numpy License is included below:
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 
@@ -112,7 +112,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 The following component is licensed under the SIL Open Font License Version 1.1:
 
 1.	Inter Font
-Copyright © 2020 The Inter Project Authors
+Copyright ï¿½ 2020 The Inter Project Authors
 Source: https://github.com/rsms/inter
 Version: 4.2
 Time: 2025-03-26
