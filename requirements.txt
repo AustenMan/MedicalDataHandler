@@ -1,8 +1,8 @@
 pydicom==3.0.1
-dearpygui==2.0.0
+dearpygui==2.1.0
 opencv-python==4.11.0.86
 scipy==1.15.1
-numpy==2.2.2
+numpy==2.2.4
 SimpleITK==2.4.1
 sqlite==3.45.3
 sqlalchemy==2.0.41
