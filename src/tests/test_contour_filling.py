@@ -4,11 +4,12 @@ Test ROI contour-to-mask conversion and complete DICOM-to-mask pipeline includin
 from __future__ import annotations
 
 
+import cv2
 import numpy as np
 import pytest
 
 
-from mdh_app.utils.numpy_utils import numpy_roi_mask_generation
+from mdh_app.utils.numpy_utils import resample_contour_dense, numpy_roi_mask_generation
 
 
 class TestContourFilling:
@@ -33,18 +34,43 @@ class TestContourFilling:
             20.0, 40.0, 15.0   # Point 4
         ]
 
-        # Transform physical coords to matrix indices (data_manager.py:89-90)
+        # Transform physical coords to matrix indices
         origin_array = np.array(origin, dtype=np.float32)
         spacing_array = np.array(spacing, dtype=np.float32)
         direction_array = np.array(direction, dtype=np.float32).reshape(3, 3)
         A_inv_T = np.linalg.inv(direction_array @ np.diag(spacing_array)).T
 
         contour_points_3d = np.array(contour_data_flat, dtype=np.float32).reshape(-1, 3)
-        matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
+        dense_points_3d = resample_contour_dense(contour_points_3d, spacing=spacing_array)
+        matrix_points_float =(dense_points_3d - origin_array) @ A_inv_T
 
-        # Execute polygon filling
+        # Group by Z slice
         mask = np.zeros(volume_shape, dtype=np.uint8)
-        numpy_roi_mask_generation(mask, matrix_points, "CLOSED_PLANAR")
+        shift = 4
+        slice_contours = {}
+        
+        z_values = matrix_points_float[:, 2]
+        unique_slices = np.unique(np.round(z_values).astype(int))
+        
+        for slice_idx in unique_slices:
+            if not (0 <= slice_idx < volume_shape[0]):
+                continue
+            
+            slice_mask = np.abs(z_values - slice_idx) < 0.5
+            if not np.any(slice_mask):
+                continue
+            
+            xy_slice = matrix_points_float[slice_mask, :2]
+            xy_points_shifted = np.rint(xy_slice * (2 ** shift)).astype(np.int32)
+            xy_points_shifted = np.ascontiguousarray(xy_points_shifted)
+            
+            if slice_idx not in slice_contours:
+                slice_contours[slice_idx] = []
+            slice_contours[slice_idx].append(xy_points_shifted)
+        
+        # Draw contours
+        for slice_idx, contours in slice_contours.items():
+            cv2.fillPoly(mask[slice_idx], contours, color=1, shift=shift, lineType=cv2.LINE_8)
 
         # Verify polygon interior is filled
         assert mask[15, 30, 30] == 1, "Center not filled"  # [slice, row, col]
@@ -88,11 +114,13 @@ class TestContourFilling:
         A_inv_T = np.linalg.inv(direction_array @ np.diag(spacing_array)).T
 
         contour_points_3d = np.array(contour_data_flat, dtype=np.float32).reshape(-1, 3)
-        matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
+        dense_points_3d = resample_contour_dense(contour_points_3d, spacing=spacing_array)
+        matrix_points_float = (dense_points_3d - origin_array) @ A_inv_T
+        matrix_points_int = np.rint(matrix_points_float).astype(np.int32)
 
         # Execute 3D interpolation
         mask = np.zeros(volume_shape, dtype=np.uint8)
-        numpy_roi_mask_generation(mask, matrix_points, "OPEN_NONPLANAR")
+        numpy_roi_mask_generation(mask, matrix_points_int, "OPEN_NONPLANAR")
 
         # Verify original points (slice, row, col indexing)
         assert mask[5, 10, 10] == 1, "Start missing"
@@ -141,10 +169,35 @@ class TestContourFilling:
         A_inv_T = np.linalg.inv(direction_array @ np.diag(spacing_array)).T
 
         contour_points_3d = np.array(contour_data_flat, dtype=np.float32).reshape(-1, 3)
-        matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
+        dense_points_3d = resample_contour_dense(contour_points_3d, spacing=spacing_array)
+        matrix_points_float = (dense_points_3d - origin_array) @ A_inv_T
 
+        # Group by Z slice and draw
         mask = np.zeros(volume_shape, dtype=np.uint8)
-        numpy_roi_mask_generation(mask, matrix_points, "CLOSED_PLANAR")
+        shift = 4
+        slice_contours = {}
+        
+        z_values = matrix_points_float[:, 2]
+        unique_slices = np.unique(np.round(z_values).astype(int))
+        
+        for slice_idx in unique_slices:
+            if not (0 <= slice_idx < volume_shape[0]):
+                continue
+            
+            slice_mask = np.abs(z_values - slice_idx) < 0.5
+            if not np.any(slice_mask):
+                continue
+            
+            xy_slice = matrix_points_float[slice_mask, :2]
+            xy_points_shifted = np.rint(xy_slice * (2 ** shift)).astype(np.int32)
+            xy_points_shifted = np.ascontiguousarray(xy_points_shifted)
+            
+            if slice_idx not in slice_contours:
+                slice_contours[slice_idx] = []
+            slice_contours[slice_idx].append(xy_points_shifted)
+        
+        for slice_idx, contours in slice_contours.items():
+            cv2.fillPoly(mask[slice_idx], contours, color=1, shift=shift, lineType=cv2.LINE_8)
 
         # Verify outer regions are filled (slice, row, col indexing)
         assert mask[10, 25, 25] == 1, "Outer region not filled"
@@ -178,29 +231,62 @@ class TestContourFilling:
         # DICOM edge cases
         edge_cases = [
             # Single point (degenerate contour)
-            [15.0, 15.0, 7.0],
+            ([15.0, 15.0, 7.0], "CLOSED_PLANAR"),
             # Linear contour (2 points)
-            [5.0, 5.0, 7.0, 25.0, 25.0, 7.0],
+            ([5.0, 5.0, 7.0, 25.0, 25.0, 7.0], "CLOSED_PLANAR"),
             # Boundary contour
-            [0.0, 0.0, 0.0, 29.0, 0.0, 0.0, 29.0, 29.0, 0.0, 0.0, 29.0, 0.0],
-            # Out-of-bounds points
-            [-5.0, -5.0, 7.0, 35.0, 35.0, 7.0]
+            ([0.0, 0.0, 0.0, 29.0, 0.0, 0.0, 29.0, 29.0, 0.0, 0.0, 29.0, 0.0], "CLOSED_PLANAR"),
+            # Out-of-bounds points (should be clipped by bounds check)
+            ([-5.0, -5.0, 7.0, 35.0, 35.0, 7.0], "CLOSED_PLANAR")
         ]
 
-        for i, contour_data_flat in enumerate(edge_cases):
+        for i, (contour_data_flat, geom_type) in enumerate(edge_cases):
             try:
                 contour_points_3d = np.array(contour_data_flat, dtype=np.float32).reshape(-1, 3)
-                matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
+                dense_points_3d = resample_contour_dense(contour_points_3d, spacing=spacing_array)
+                matrix_points_float = (dense_points_3d - origin_array) @ A_inv_T
+
                 mask = np.zeros(volume_shape, dtype=np.uint8)
-                numpy_roi_mask_generation(mask, matrix_points, "CLOSED_PLANAR")
+                
+                if geom_type == "OPEN_NONPLANAR":
+                    matrix_points_int = np.rint(matrix_points_float).astype(np.int32)
+                    numpy_roi_mask_generation(mask, matrix_points_int, geom_type)
+                else:
+                    # Use slice grouping for planar contours
+                    shift = 4
+                    slice_contours = {}
+                    z_values = matrix_points_float[:, 2]
+                    unique_slices = np.unique(np.round(z_values).astype(int))
+                    
+                    for slice_idx in unique_slices:
+                        if not (0 <= slice_idx < volume_shape[0]):
+                            continue
+                        
+                        slice_mask = np.abs(z_values - slice_idx) < 0.5
+                        if not np.any(slice_mask):
+                            continue
+                        
+                        xy_slice = matrix_points_float[slice_mask, :2]
+                        xy_points_shifted = np.rint(xy_slice * (2 ** shift)).astype(np.int32)
+                        xy_points_shifted = np.ascontiguousarray(xy_points_shifted)
+                        
+                        if slice_idx not in slice_contours:
+                            slice_contours[slice_idx] = []
+                        slice_contours[slice_idx].append(xy_points_shifted)
+                    
+                    for slice_idx, contours in slice_contours.items():
+                        if len(contours) == 1 and len(contours[0]) == 1:
+                            # Single point case
+                            x = contours[0][0][0] >> shift
+                            y = contours[0][0][1] >> shift
+                            if 0 <= y < volume_shape[1] and 0 <= x < volume_shape[2]:
+                                mask[slice_idx, y, x] = 1
+                        else:
+                            cv2.fillPoly(mask[slice_idx], contours, color=1, shift=shift, lineType=cv2.LINE_8)
 
-                # Verify mask has valid shape
+                # Verify mask validity
                 assert mask.shape == volume_shape, f"Edge case {i}: incorrect mask shape"
-
-                # Verify mask contains only valid values
                 assert np.all((mask == 0) | (mask == 1)), f"Edge case {i}: invalid mask values"
-
-                # Verify reasonable mask size
                 total_voxels = np.sum(mask)
                 assert total_voxels <= np.prod(volume_shape), f"Edge case {i}: mask exceeds volume"
 
@@ -233,14 +319,38 @@ class TestContourFilling:
         A_inv_T = np.linalg.inv(direction_array @ np.diag(spacing_array)).T
 
         contour_points_3d = np.array(contour_data_flat, dtype=np.float32).reshape(-1, 3)
-        matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
+        dense_points_3d = resample_contour_dense(contour_points_3d, spacing=spacing_array)
+        matrix_points_float = (dense_points_3d - origin_array) @ A_inv_T
 
         # Monitor memory usage and execution time
         import time
         start_time = time.time()
 
+        # Process using slice grouping
         mask = np.zeros(volume_shape, dtype=np.uint8)
-        numpy_roi_mask_generation(mask, matrix_points, "CLOSED_PLANAR")
+        shift = 4
+        slice_contours = {}
+        z_values = matrix_points_float[:, 2]
+        unique_slices = np.unique(np.round(z_values).astype(int))
+        
+        for slice_idx in unique_slices:
+            if not (0 <= slice_idx < volume_shape[0]):
+                continue
+            
+            slice_mask = np.abs(z_values - slice_idx) < 0.5
+            if not np.any(slice_mask):
+                continue
+            
+            xy_slice = matrix_points_float[slice_mask, :2]
+            xy_points_shifted = np.rint(xy_slice * (2 ** shift)).astype(np.int32)
+            xy_points_shifted = np.ascontiguousarray(xy_points_shifted)
+            
+            if slice_idx not in slice_contours:
+                slice_contours[slice_idx] = []
+            slice_contours[slice_idx].append(xy_points_shifted)
+        
+        for slice_idx, contours in slice_contours.items():
+            cv2.fillPoly(mask[slice_idx], contours, color=1, shift=shift, lineType=cv2.LINE_8)
 
         execution_time = time.time() - start_time
 
@@ -258,7 +368,7 @@ class TestContourFilling:
     def test_physical_to_matrix_transform(self):
         """
         Test physical coordinate to matrix index transformation.
-        References data_manager.py:89-90 transformation pipeline.
+        References data_manager transformation pipeline.
         """
         # Image parameters (matching build_single_mask)
         volume_shape = (50, 100, 100)  # (slices, rows, cols)
@@ -274,18 +384,41 @@ class TestContourFilling:
             10.0, 20.0, 20.0
         ]
 
-        # Transform using build_single_mask pipeline (data_manager.py:89-90)
+        # Transform using build_single_mask pipeline
         origin_array = np.array(origin, dtype=np.float32)
         spacing_array = np.array(spacing, dtype=np.float32)
         direction_array = np.array(direction, dtype=np.float32).reshape(3, 3)
         A_inv_T = np.linalg.inv(direction_array @ np.diag(spacing_array)).T
 
         contour_points_3d = np.array(contour_data_flat, dtype=np.float32).reshape(-1, 3)
-        matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
+        dense_points_3d = resample_contour_dense(contour_points_3d, spacing=spacing_array)
+        matrix_points_float = (dense_points_3d - origin_array) @ A_inv_T
 
-        # Execute mask generation
+        # Process using slice grouping
         mask = np.zeros(volume_shape, dtype=np.uint8)
-        numpy_roi_mask_generation(mask, matrix_points, "CLOSED_PLANAR")
+        shift = 4
+        slice_contours = {}
+        z_values = matrix_points_float[:, 2]
+        unique_slices = np.unique(np.round(z_values).astype(int))
+        
+        for slice_idx in unique_slices:
+            if not (0 <= slice_idx < volume_shape[0]):
+                continue
+            
+            slice_mask = np.abs(z_values - slice_idx) < 0.5
+            if not np.any(slice_mask):
+                continue
+            
+            xy_slice = matrix_points_float[slice_mask, :2]
+            xy_points_shifted = np.rint(xy_slice * (2 ** shift)).astype(np.int32)
+            xy_points_shifted = np.ascontiguousarray(xy_points_shifted)
+            
+            if slice_idx not in slice_contours:
+                slice_contours[slice_idx] = []
+            slice_contours[slice_idx].append(xy_points_shifted)
+        
+        for slice_idx, contours in slice_contours.items():
+            cv2.fillPoly(mask[slice_idx], contours, color=1, shift=shift, lineType=cv2.LINE_8)
 
         # Verify transformation: Physical (10,10,20) → matrix (10,10,10) with spacing [1,1,2]
         # In (slice,row,col) format: Z=20mm/2mm = slice 10
@@ -298,7 +431,7 @@ class TestContourFilling:
     def test_oblique_orientation_handling(self):
         """
         Test oblique image orientation handling.
-        References data_manager.py:68 direction cosines transformation.
+        References data_manager direction cosines transformation.
         """
         # Oblique orientation - 45° rotation around Z-axis
         cos45 = np.cos(np.pi/4)
@@ -326,10 +459,34 @@ class TestContourFilling:
         A_inv_T = np.linalg.inv(direction_array @ np.diag(spacing_array)).T
 
         contour_points_3d = np.array(contour_data_flat, dtype=np.float32).reshape(-1, 3)
-        matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
+        dense_points_3d = resample_contour_dense(contour_points_3d, spacing=spacing_array)
+        matrix_points_float = (dense_points_3d - origin_array) @ A_inv_T
 
+        # Process using slice grouping
         mask = np.zeros(volume_shape, dtype=np.uint8)
-        numpy_roi_mask_generation(mask, matrix_points, "CLOSED_PLANAR")
+        shift = 4
+        slice_contours = {}
+        z_values = matrix_points_float[:, 2]
+        unique_slices = np.unique(np.round(z_values).astype(int))
+        
+        for slice_idx in unique_slices:
+            if not (0 <= slice_idx < volume_shape[0]):
+                continue
+            
+            slice_mask = np.abs(z_values - slice_idx) < 0.5
+            if not np.any(slice_mask):
+                continue
+            
+            xy_slice = matrix_points_float[slice_mask, :2]
+            xy_points_shifted = np.rint(xy_slice * (2 ** shift)).astype(np.int32)
+            xy_points_shifted = np.ascontiguousarray(xy_points_shifted)
+            
+            if slice_idx not in slice_contours:
+                slice_contours[slice_idx] = []
+            slice_contours[slice_idx].append(xy_points_shifted)
+        
+        for slice_idx, contours in slice_contours.items():
+            cv2.fillPoly(mask[slice_idx], contours, color=1, shift=shift, lineType=cv2.LINE_8)
 
         # Verify mask exists and has reasonable size
         total_voxels = np.sum(mask)
@@ -343,7 +500,7 @@ class TestContourFilling:
     def test_invalid_contour_handling(self):
         """
         Test handling of malformed contour data.
-        References data_manager.py:58-66 contour validation.
+        References data_manager contour validation.
         """
         # Image parameters
         volume_shape = (15, 30, 30)  # (slices, rows, cols)
@@ -368,14 +525,44 @@ class TestContourFilling:
             try:
                 if len(contour_data_flat) >= 3:
                     contour_points_3d = np.array(contour_data_flat, dtype=np.float32).reshape(-1, 3)
-                    matrix_points = np.rint((contour_points_3d - origin_array) @ A_inv_T).astype(np.int32)
+                    dense_points_3d = resample_contour_dense(contour_points_3d, spacing=spacing_array)
+                    matrix_points_float = (dense_points_3d - origin_array) @ A_inv_T
+
                     mask = np.zeros(volume_shape, dtype=np.uint8)
-                    numpy_roi_mask_generation(mask, matrix_points, "CLOSED_PLANAR")
-                    # Small valid dataset should produce minimal mask
+                    shift = 4
+                    slice_contours = {}
+                    z_values = matrix_points_float[:, 2]
+                    unique_slices = np.unique(np.round(z_values).astype(int))
+                    
+                    for slice_idx in unique_slices:
+                        if not (0 <= slice_idx < volume_shape[0]):
+                            continue
+                        
+                        slice_mask = np.abs(z_values - slice_idx) < 0.5
+                        if not np.any(slice_mask):
+                            continue
+                        
+                        xy_slice = matrix_points_float[slice_mask, :2]
+                        xy_points_shifted = np.rint(xy_slice * (2 ** shift)).astype(np.int32)
+                        xy_points_shifted = np.ascontiguousarray(xy_points_shifted)
+                        
+                        if slice_idx not in slice_contours:
+                            slice_contours[slice_idx] = []
+                        slice_contours[slice_idx].append(xy_points_shifted)
+                    
+                    for slice_idx, contours in slice_contours.items():
+                        if len(contours) == 1 and len(contours[0]) == 1:
+                            x = contours[0][0][0] >> shift
+                            y = contours[0][0][1] >> shift
+                            if 0 <= y < volume_shape[1] and 0 <= x < volume_shape[2]:
+                                mask[slice_idx, y, x] = 1
+                        else:
+                            cv2.fillPoly(mask[slice_idx], contours, color=1, shift=shift, lineType=cv2.LINE_8)
+                    
                     assert np.sum(mask) <= 10, "Minimal data should produce small mask"
                 else:
-                    # Empty or insufficient data should fail gracefully
                     assert len(contour_data_flat) < 3, "Expected insufficient data"
             except (ValueError, IndexError):
                 # Expected for invalid input
                 pass
+    

@@ -17,6 +17,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def resample_contour_dense(
+    contour_pts: np.ndarray,
+    spacing: np.ndarray,
+    density_divisor: float = 8.0,
+) -> np.ndarray:
+    """Densify contour by resampling based on voxel spacing."""
+    if len(contour_pts) < 2:
+        return contour_pts
+    
+    # Use minimum spacing dimension as target resolution
+    target_resolution = min(spacing) / density_divisor
+    
+    resampled = []
+    
+    # Include the closing segment (last point back to first)
+    for i in range(len(contour_pts)):
+        p1 = contour_pts[i]
+        p2 = contour_pts[(i + 1) % len(contour_pts)]  # Wrap around
+        
+        distance = np.linalg.norm(p2 - p1)
+        n_segments = max(1, int(np.ceil(distance / target_resolution)))
+        
+        # Add interpolated points (exclude last to avoid duplication on next iteration)
+        for j in range(n_segments):
+            t = j / n_segments
+            resampled.append(p1 + t * (p2 - p1))
+    
+    return np.array(resampled, dtype=np.float32)
+
+
 def numpy_roi_mask_generation(
     mask: np.ndarray,  # Pre-allocated 3D uint8 mask array in [slices, rows, cols] order
     matrix_points: np.ndarray,  # (N, 3) array of (x, y, z) coordinates, where x=col, y=row, z=slice. dtype=int32
