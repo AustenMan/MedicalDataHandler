@@ -90,7 +90,7 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
             
             # Transform physical coordinates to image matrix indices
             contour_points_3d = np.array(contour_points_flat, dtype=np.float32).reshape(-1, 3)
-            dense_points_3d = resample_contour_dense(contour_points_3d, max_distance=0.5)
+            dense_points_3d = resample_contour_dense(contour_points_3d, spacing=spacing_array)
             matrix_points_float = (dense_points_3d - origin_array) @ A_inv_T
             
             if contour_geom_type == "OPEN_NONPLANAR":
