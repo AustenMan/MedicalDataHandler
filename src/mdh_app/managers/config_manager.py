@@ -110,7 +110,7 @@ class ConfigManager:
         
         if atomic_save(
             filepath=file_path, 
-            write_func=lambda file: json.dump(new_config, file),
+            write_func=lambda file: json.dump(new_config, file, indent=4, sort_keys=True),
             error_message=f"Failed to save configuration for '{key}' to '{file_path}'."
         ):
             self.configs[key] = new_config
@@ -347,6 +347,25 @@ class ConfigManager:
         """Return the organ matching configuration dictionary."""
         return self.configs.get("organ_matching", {})
 
+    def remove_item_organ_matching_by_template(self, template_name: str, item_to_remove: str) -> None:
+        """Remove item from organ matching for a specific template."""
+        key = "organ_matching"
+        if key not in self.configs:
+            logger.error(f"Configuration key '{key}' is missing; cannot update configuration.")
+            return
+
+        organ_matching = self.configs[key]
+        if template_name not in organ_matching:
+            return  # Nothing to remove
+
+        current_set = set(organ_matching[template_name])
+        formatted_item = format_name(item_to_remove, lowercase=True)
+        if formatted_item in current_set:
+            current_set.remove(formatted_item)
+            organ_matching[template_name] = sorted(list(current_set))
+            self._save_config(key, organ_matching)
+            logger.info(f"Removed '{item_to_remove}' from organ matching for '{template_name}'.")
+    
     def get_window_presets(self) -> Dict[str, Any]:
         """Return the window presets configuration dictionary."""
         return self.configs.get("window_presets", {})

@@ -1,165 +1,1293 @@
 {
-        "A_Aorta": ["aorta"], 
-        "A_Carotid": ["carotid", "carotids"],
-        "A_Carotid_L": ["carotidarteryl", "carotidl", "lcarotid", "lcarotidartery", "carotidlhd"],
-        "A_Carotid_R": ["carotidarteryr", "carotidr", "rcarotid", "rcarotidartery", "carotidrhd"],
-        "A_LAD": ["lad", "ltanteriordesc"],
-        "Acetabulum_L": ["acetabuluml", "acetabulumleft", "acetabulumlt", "lacetabulum", "leftacetabulum", "ltacetabulum"],
-        "Acetabulum_R": ["acetabulumr", "acetabulumright", "acetabulumrt", "racetabulum", "rightacetabulum", "rtacetabulum"],
-        "Bladder": ["bladder"],
-        "Bladder_Trigone": ["bladdertrigone", "trigone", "trigonebladder"],
-        "Bladder_Wall": ["bladderwall"],
-        "Body": ["body", "humanbody", "patientbody"],
-        "Bolus": ["bolus"],
-        "Bone": ["bone", "bones"],
-        "Bone_Mandible": ["mandible"],
-        "Bowel": ["bagbowel", "bowel", "bowelbag", "bowelspace"],
-        "Bowel_PRV": ["bowelprv"],
-        "Bowel_Large": ["bowellarge", "bowellg", "largebowel", "lgbowel", "bowelbaglarge", "largebowelbag"],
-        "Bowel_Small": ["bowelsmall", "smallbowel", "smallbowelloop", "bowelbagsmall", "smallbowelbag"],
-        "BrachialPlex_L": ["bpleft", "bplexusl", "bplexusleft", "bplexuslt", "brachialplexl"],
-        "BrachialPlex_R": ["bpright", "bplexusr", "bplexusright", "bplexusrt", "brachialplexr"],
-        "BrachialPlexs": ["brachialplexii"],
-        "Brain": ["brain"],
-        "Brainstem": ["brainstem", "bstem"],
-        "Brainstem_Core": ["brainstemcore"],
-        "Brainstem_PRV": ["brainstemprv"],
-        "Brainstem_Surf": ["brainstemsurf", "brainstemsurface"],
-        "Breast_L": ["breastl", "breastleft", "breastlt", "brstl", "brstleft", "brstlt", "lbreast", "lbrst", "leftbreast", "leftbrst", "ltbreast", "ltbrst"],
-        "Breast_R": ["breastr", "breastright", "breastrt", "brstr", "brstright", "brstrt", "rbrst", "rightbreast", "rightbrst", "rtbreast", "rtbrst"],
-        "Breasts": ["bothbreast", "bothbreasts", "breasts", "brst", "brstboth", "brstlr", "brstltrt", "brstrl", "brstrtlt", "brsts", "brstsboth"],
-        "Bronchus": ["bronchialtree"],
-        "Bronchus_Main": ["mainbronchus"],
-        "Canal_Anal": ["analc", "analcanal", "canalanal"],
-        "Carina": ["carina"],
-        "CaudaEquina": ["cauda", "caudaequina", "equina", "equinacauda"],
-        "CaudaEquina_PRV": ["prvcauda", "caudaprv", "prvcaudaequina", "caudaequinaprv", "prvequina", "equinaprv", "prvequinacauda", "equinacaudaprv"],
-        "Cavity_Oral": ["cavityoral", "oralcavity"],
-        "Cerebellum": ["cerebellum"],
-        "Cerebellum_L": ["cerebelluml"],
-        "Cerebellum_R": ["cerebellumr"],
-        "Chestwall": ["chestwall"],
-        "Chestwall_L": ["chestwalll", "chestwallleft", "chestwalllt", "lchestwall", "leftchestwall", "ltchestwall"],
-        "Chestwall_R": ["chestwallr", "chestwallright", "chestwallrt", "rchestwall", "rightchestwall", "rtchestwall"],
-        "Cochlea": ["cochleas"],
-        "Cochlea_L": ["cochleal", "cochlealeft", "cochlealt", "lcochlea", "leftcochlea", "ltcochlea"],
-        "Cochlea_R": ["cochlear", "cochlearight", "cochleart", "rcochlea", "rightcochlea", "rtcochlea"],
-        "Colon_Sigmoid": ["colonsigmoid", "sigmoid", "sigmoidcolon"],
-        "CouchInterior": ["couchinterior"],
-        "CouchSurface": ["couchexterior", "couchsurface"],
-        "Cricoid": ["cricoid"],
-        "Cricopharyngeus": ["cricopharyngeus"],
-        "Epiglottis": ["epiglottis"],
-        "Esophagus": ["esoph", "esophagus"],
-        "Eye_L": ["eyel", "eyelt", "eyeleft", "leye", "lteye", "lefteye"],
-        "Eye_R": ["eyer", "eyert", "eyeright", "reye", "rteye", "righteye"],
-        "External": [], 
-        "Eyes": ["eyes"],
-        "Femur_Head_L": ["femoralheadl", "femoralheadleft", "femoralheadlt", "femoralhl", "femoralhlt", "femoralleft", "femorallt", "femurheadl", "femurheadleft", "femurheadlt", "femurhl", "femurhlt", "leftfemoralhea", "leftfemoralhead", "leftfemurhead", "ltfemoral", "ltfemoralhead", "ltfemurhead"],
-        "Femur_Head_R": ["femoralheadr", "femoralheadright", "femoralheadrt", "femoralhr", "femoralhrt", "femoralright", "femoralrt", "femurheadr", "femurheadright", "femurheadrt", "femurhr", "femurhrt", "rightfemoralhe", "rightfemoralhead", "rightfemurhead", "rtfemoral", "rtfemoralhead", "rtfemurhead"],
-        "Femur_L": ["feml", "femleft", "femlt", "femurl", "femurleft", "femurlt", "leftfem", "leftfemur", "lfem", "lfemur", "ltfem", "ltfemur", "femurleftneck", "femurleftneck", "femurleftnecklt", "femurleftnecklt", "femurneckleft", "femurneck"],
-        "Femur_R": ["femr", "femright", "femrt", "femurr", "femurright", "femurrt", "rfem", "rfemur", "rightfem", "rightfemur", "rtfem", "rtfemur", "femurrightneck", "femurrightneck", "femurrightneckrt", "femurrightneckrt", "femurneckright", "femurneck"],
-        "Femurs": ["bothfemur", "bothfemurs", "femoralhead", "femoralheads", "femur", "femurboth", "femurhead", "femurheads", "femurlr", "femurltrt", "femurrl", "femurrtlt", "femurs", "femursboth"],
-        "Fossa_Posterior": ["fossapost", "fossaposterior", "posteriorfossa", "postfossa"],
-        "Genitals": ["genital", "genitalia"],
-        "Glnd_Lacrimal": ["lacrimals", "lacrimalsglands", "glndslacrimal", "glndlacrimal"],
-        "Glnd_Lacrimal_L": ["glndlacrimall", "glndlacrimalleft", "glndlacrimallt", "glndlacriml", "glndlacrimleft", "glndlacrimlt", "lacrimalglandl", "lacrimalglandleft", "lacrimalglandlt", "lacrimalglndl"],
-        "Glnd_Lacrimal_R": ["glndlacrimalr", "glndlacrimalright", "glndlacrimalrt", "glndlacrimr", "glndlacrimright", "glndlacrimrt", "lacrimalglandr", "lacrimalglandright", "lacrimalglandrt", "lacrimalglndr"],
-        "Glnd_Submand_L": ["glndsubmandl", "glndsubmandleft", "glndsubmandlt", "leftsmg", "leftsubmandibular", "lsmg", "lsubmandibular", "ltsmg", "ltsubmandibular", "smgl", "smgleft", "smglt", "submandibularglandl", "submandibularglandleft", "submandibularglandlt", "submandibularl", "submandibularleft", "submandibularlt"],
-        "Glnd_Submand_R": ["glndsubmandr", "glndsubmandright", "glndsubmandrt", "rightsmg", "rightsubmandibular", "rsmg", "rsubmandibular", "rtsmg", "rtsubmandibular", "smgr", "smgright", "smgrt", "submandibularglandr", "submandibularglandright", "submandibularglandrt", "submandibularr", "submandibularright", "submandibularrt"],
-        "Glnd_Submands": ["bothsubmand", "bothsubmands", "glndssubmand", "glndssubmands", "glndsubmand", "smg", "smgs", "submand", "submandboth", "submandglnd", "submandglnds", "submandlr", "submandltrt", "submandrl", "submandrtlt", "submands", "submandsboth", "submandslr", "submandsltrt", "submandsrl", "submandsrtlt"],
-        "Glnd_Thyroid": ["thyr", "thyrd", "thyroid"],
-        "GreatVes": ["greatvessel", "greatvessels"],
-        "Heart": ["heart"],
-        "Hippocampi": ["bothhippocampi", "bothhippocampus", "hippocampi", "hippocampiboth"],
-        "Hippocampus_L": ["hippocampl", "hippocampleft", "hippocamplt", "hippocampusl", "hippocampusleft", "hippocampuslt", "hippol", "hippoleft", "hippolt", "lefthippo", "lefthippocamp", "lefthippocampus", "lhippo", "lhippocamp", "lhippocampus"],
-        "Hippocampus_R": ["hippocampr", "hippocampright", "hippocamprt", "hippocampusr", "hippocampusright", "hippocampusrt", "hippor", "hipporight", "hipport", "righthippo", "righthippocamp", "righthippocampus", "rhippo", "rhippocamp", "rhippocampus"],
-        "Humerus_L": ["humerusl", "humerusleft", "humeruslt", "huml", "humleft", "humlt", "lefthum", "lefthumerus", "lhum", "lhumerus", "lthum", "lthumerus"],
-        "Humerus_R": ["humerusr", "humerusright", "humerusrt", "humr", "humright", "humrt", "rhum", "rhumerus", "righthum", "righthumerus", "rthum", "rthumerus"],
-        "Hypothalamus": ["hypothal", "hypothalamus", "hypothalamusl", "hypothalamusleft", "hypothalamuslt", "hypothalamusr", "hypothalamusright", "hypothalamusrt", "Hypothalamus", "Hypothalamusii", "lefthypothalamus", "lhypothalamus", "lthypothalamus", "rhypothalamus", "righthypothalamus", "rthypothalamus"],
-        "Kidney_L": ["kidl", "kidleft", "kidlt", "kidneyl", "kidneyleft", "kidneylt", "leftkid", "leftkidney", "lkid", "lkidney", "ltkid", "ltkidney"],
-        "Kidney_R": ["kidneyr", "kidneyright", "kidneyrt", "kidr", "kidright", "kidrt", "rightkid", "rightkidney", "rkid", "rkidney", "rtkid", "rtkidney"],
-        "Kidneys": ["bothkidney", "bothkidneys", "kidney", "kidneyboth", "kidneylr", "kidneyltrt", "kidneyrl", "kidneyrtlt", "kidneys", "kidneysboth", "kidneyslr", "kidneysltrt", "kidneysrl", "kidneysrtlt", "kids"],
-        "Larynx": ["lary", "larynx"],
-        "Larynx_SG": ["larynxsgl"],
-        "Lens": ["bothlens", "bothlenses", "lens", "lensboth", "lenses", "lenslr", "lensltrt", "lensrl", "lensrtlt", "lrlens", "rllens"],
-        "Lens_L": ["leftlens", "lensl", "lensleft", "lenslt", "llens", "ltlens"],
-        "Lens_R": ["lensr", "lensright", "lensrt", "rightlens", "rlens", "rtlens"],
-        "Lips": ["lip", "lips"],
-        "Liver": ["liv", "liver", "livr"],
-        "Lobe_Frontal": ["frontal", "lobefrontal"],
-        "Lobe_Frontal_L": ["frontall", "frontalleft", "frontallt", "leftfrontal", "leftlobefrontal", "lfrontal", "llobefrontal", "lobefrontall", "lobefrontalleft", "lobefrontallt", "ltfrontal", "ltlobefrontal"],
-        "Lobe_Frontal_R": ["frontalr", "frontalright", "frontalrt", "lobefrontalr", "lobefrontalright", "lobefrontalrt", "rfrontal", "rightfrontal", "rightlobefrontal", "rlobefrontal", "rtfrontal", "rtlobefrontal"],
-        "Lobe_Occipital": ["lobeoccipital", "occipital", "occipitallobe"],
-        "Lobe_Occipital_L": ["leftlobeoccipital", "leftoccipital", "llobeoccipital", "lobeoccipitall", "lobeoccipitalleft", "lobeoccipitallt", "loccipital", "ltlobeoccipital", "ltoccipital", "occipitall", "occipitalleft", "occipitallt"],
-        "Lobe_Occipital_R": ["lobeoccipitalr", "lobeoccipitalright", "lobeoccipitalrt", "occipitalr", "occipitalright", "occipitalrt", "rightlobeoccipital", "rightoccipital", "rlobeoccipital", "roccipital", "rtlobeoccipital", "rtoccipital"],
-        "Lobe_Parietal": ["lobeparietal", "parietal", "parietallobe"],
-        "Lobe_Parietal_L": ["leftlobeparietal", "leftparietal", "llobeparietal", "lobeparietall", "lobeparietalleft", "lobeparietallt", "lparietal", "ltlobeparietal", "ltparietal", "parietall", "parietalleft", "parietallt"],
-        "Lobe_Parietal_R": ["lobeparietalr", "lobeparietalright", "lobeparietalrt", "parietalr", "parietalright", "parietalrt", "rightlobeparietal", "rightparietal", "rlobeparietal", "rparietal", "rtlobeparietal", "rtparietal"],
-        "Lobe_Temporal": ["lobetemporal", "temporal", "temporallobe"],
-        "Lobe_Temporal_L": ["leftlobetemporal", "lefttemporal", "llobetemporal", "lobetemporall", "lobetemporalleft", "lobetemporallt", "ltemporal", "ltlobetemporal", "lttemplobe", "lttemporal", "templobel", "temporall", "temporalleft","temporallobel", "temporallobeleft", "temporallobelt", "temporallt"],
-        "Lobe_Temporal_R": ["lobetemporalr", "lobetemporalright", "lobetemporalrt", "lobetemporar", "rightlobetemporal", "righttemporal", "rlobetemporal", "rtemporal", "rtlobetemporal", "rttemplobe", "rttemporal", "templober", "temporallober", "temporalloberight", "temporallobert", "temporalr", "temporalright", "temporalrt"],
-        "Lung_L": ["leftlung", "llung", "ltlung", "lungl", "lungleft", "lunglt"],
-        "Lung_R": ["lungr", "lungright", "lungrt", "rightlung", "rlung", "rtlung"],
-        "Lungs": ["bothlungs", "totallungs", "lungs"],
-        "Lungs-CTV": ["lungsctvs"],
-        "Lungs-GTV": ["lungsgtvs"],
-        "Lungs-ITV": ["lungsitvs"],
-        "Lungs-PTV": ["lungsptvs"],
-        "Musc_Constrict": ["constrict", "constrictor", "constrictors", "constricts", "muscconstrict", "muscconstricts"],
-        "Musc_Constrict_I": ["consti", "constricti", "constrictinf", "constrictori", "constrictorinf", "muscconstrici", "muscconstricinf", "muscconstricti", "muscconstrictinf"],
-        "Musc_Constrict_M": ["constm", "constrictm", "constrictormid", "constrictorm", "constrictormid", "muscconstrictm", "muscconstrictmid", "muscconstrictorm", "muscconstrictormid"],
-        "Musc_Constrict_S": ["consts", "constricts", "constrictorsup", "constrictors", "muscconstricts", "muscconstrictors", "muscconstrictorsup", "muscconstricts"],
-        "Musc_Masseter": ["masseter", "massetermuscle", "massetermuscles", "masseters", "massmuscle", "massmuscles", "musclemasseter", "musclemasseters", "muscmasseter", "muscmasseters"],
-        "Musc_Masseter_L": ["leftmass", "leftmasseter", "leftmassetermuscle", "leftmassmuscle", "leftmasster", "leftmusclemasseter", "leftmuscmasseter", "massl", "massleft", "masslt", "massmusclel", "massmuscleleft", "massmusclelt", "massterl", "massterleft", "massterlt", "musclemasseterl", "musclemasseterleft", "musclemasseterlt", "muscmasseterl", "muscmasseterleft", "muscmasseterlt"],
-        "Musc_Masseter_R": ["massetermuscler", "massetermuscleright", "massetermusclert", "masseterr", "masseterright", "masseterrt", "massmuscler", "massmuscleright", "massmusclert", "massr", "massright", "massrt", "massterr", "massterright", "massterrt", "musclemasseterr", "musclemasseterright", "musclemasseterrt", "muscmasseterr", "muscmasseterright", "muscmasseterrt", "rightmass", "rightmasseter", "rightmassetermuscle", "rightmassmuscle", "rightmasster", "rightmusclemasseter", "rightmuscmasseter", "rmass", "rmasseter", "rmassetermuscle", "rmassmuscle", "rmasster", "rmusclemasseter", "rmuscmasseter", "rtmass", "rtmasseter", "rtmassetermuscle", "rtmassmuscle", "rtmasster", "rtmusclemasseter", "rtmuscmasseter"],
-        "Neurovasc_Bundle": ["neurovasc", "neurovascbundle", "nvb", "nvbs", "vascneuro"],
-        "Neurovasc_Bundle_L": ["leftneurovasc", "leftnvb", "lnvb", "ltnvb", "neurovascleft", "nvbl", "nvbleft", "nvblt"],
-        "Neurovasc_Bundle_R": ["neurovascright", "nvbr", "nvbright", "nvbrt", "rightneurovasc", "rightnvb", "rnvb", "rtnvb"],
-        "OpticChiasm": ["chiasm", "chiasmoptic", "opticchiasm"],
-        "OpticChiasm_PRV": ["chiasmprv", "opticchiasmprv", "prvchiasm", "prvopticchiasm"],
-        "OpticNrv": ["opticn", "opticnerve", "opticnrv"],
-        "OpticNrv_L": ["leftoptic", "leftopticn", "leftopticnerve", "loptic", "lopticn", "lopticnerve", "ltoptic", "ltopticn", "ltopticnerve", "opricnrvl", "opticl", "opticleft", "opticlt", "opticnervel", "opticnerveleft", "opticnervelt", "opticnrvl", "opticnrvleft", "opticnrvlt"],
-        "OpticNrv_PRV": ["opticnerveprv", "opticnrvprv"],
-        "OpticNrv_PRV_L": ["opticnrvlprv"],
-        "OpticNrv_PRV_R": ["opticnrvrprv"],
-        "OpticNrv_R": ["opticnrvr", "opticnrvright", "opticr", "opticright", "opticrt", "rightoptic", "rightopticn", "rightopticnerve", "roptic", "ropticn", "ropticnerve", "rtoptic", "rtopticn", "rtopticnerve"],
-        "Pacemaker": ["pacemaker"],
-        "Palate_Soft": ["palatesoft", "softpalate"],
-        "Parotid_L": ["glandparotidl", "glndparotidl", "lparotid"],
-        "Parotid_R": ["glandparotidr", "glndparotidr", "rparotid"],
-        "Parotids": ["parotids", "parotidsglands", "bothparotids"],
-        "PenileBulb": ["bulbpenile", "pbulb", "penilbulb", "penilebulb"],
-        "Pharynx": ["pharynx"],
-        "Pituitary": ["pit", "pituitary", "ptuitary"],
-        "Pituitary_PRV": ["pitprv", "pituitaryprv", "ptuitaryprv"],
-        "Prostate": ["prostate"],
-        "Rectal_Wall": ["rectalwall", "rectumwall", "wallrectal", "wallrectum"],
-        "Rectum": ["rectum"],
-        "Retina_L": ["leftretina", "lretina", "ltretina", "retinal", "retinaleft"],
-        "Retina_R": ["retinar", "retinaright", "retinart", "rightretina", "rretina", "rtretina"],
-        "Retinas": ["bothretina", "bothretinas", "retina", "retinaboth", "retinas", "retinasboth"],
-        "Rib": ["rib", "ribs"],
-        "SacralPlex": ["sacralplexus", "plexussacral", "sacralplexusl", "sacralplexl", "sacralplxl", "lsacralplexus", "lsacralplex", "lsacralplx", "sacralplexusr", "sacralplexr", "sacralplxr", "rsacralplexus", "rsacralplex", "rsacralplx", "sacralplexuss", "sacralplexuses", "sacralplexii", "sacralplexi", "sacralplexs"],
-        "SeminalVes": ["seminal", "seminalv", "seminalves", "seminalvesc", "seminalvescicle", "seminalvesicle", "seminalvesicles", "seminalvessicle", "semves", "sv"],
-        "SeminalVes_Dist": ["distalsv", "distseminalves", "distsv", "seminalvesdist", "semvesdist", "svdist"],
-        "SeminalVes_Prox": ["proximalsv", "proxseminalves", "proxsemves", "proxsv", "seminalvesprox", "semvesprox", "svprox"],
-        "Skin": ["skin"],
-        "SpinalCanal": ["canal", "spcanal", "spinalcanal", "spinecanal"],
-        "SpinalCanal_PRV": ["prvspinalcanal", "spinalcanalprv"],
-        "SpinalCord": ["cord", "cordspinal", "spcord", "spinalcord"],
-        "SpinalCord_PRV": ["cordprv", "prvcord", "prvspinalcord"],
-        "Spleen": ["spleen"],
-        "Stomach": ["stomach"],
-        "Tongue": ["tongue"],
-        "Tongue_Base": ["basetongue", "tonguebase"],
-        "Tongue_Oral": ["oraltongue", "tongueoral"],
-        "Trachea": ["trachea"],
-        "Urethra": ["urethra"],
-        "Ventricle": ["ventricle", "ventricles"],
-        "Ventricle_L": ["leftventricle", "lventricle", "lventricles","ventriclel", "ventricleleft", "ventriclesl", "ventriclesleft"],
-        "Ventricle_R": ["rightventricle", "rventricle", "rventricles", "ventricler", "ventricleright", "ventriclesr", "ventriclesright"],
-        "VocalCords": ["vocalcord", "vocalcords"],
-        "VocalCords_L": ["leftvocalcord", "lvocalcord", "lvocalcords", "vocalcordl", "vocalcordleft", "vocalcordsl", "vocalcordsleft"],
-        "VocalCords_R": ["rightvocalcord", "rvocalcord", "rvocalcords", "vocalcordr", "vocalcordright", "vocalcordsr", "vocalcordsright"]
-    }
+    "A_Aorta": [
+        "aorta"
+    ],
+    "A_Carotid": [
+        "carotid",
+        "carotids"
+    ],
+    "A_Carotid_L": [
+        "carotidarteryl",
+        "carotidl",
+        "lcarotid",
+        "lcarotidartery",
+        "carotidlhd"
+    ],
+    "A_Carotid_R": [
+        "carotidarteryr",
+        "carotidr",
+        "rcarotid",
+        "rcarotidartery",
+        "carotidrhd"
+    ],
+    "A_LAD": [
+        "lad",
+        "ltanteriordesc"
+    ],
+    "Acetabulum_L": [
+        "acetabuluml",
+        "acetabulumleft",
+        "acetabulumlt",
+        "lacetabulum",
+        "leftacetabulum",
+        "ltacetabulum"
+    ],
+    "Acetabulum_R": [
+        "acetabulumr",
+        "acetabulumright",
+        "acetabulumrt",
+        "racetabulum",
+        "rightacetabulum",
+        "rtacetabulum"
+    ],
+    "Bladder": [
+        "bladder"
+    ],
+    "Bladder_Trigone": [
+        "bladdertrigone",
+        "trigone",
+        "trigonebladder"
+    ],
+    "Bladder_Wall": [
+        "bladderwall"
+    ],
+    "Body": [
+        "body",
+        "humanbody",
+        "patientbody"
+    ],
+    "Bolus": [
+        "bolus"
+    ],
+    "Bone": [
+        "bone",
+        "bones"
+    ],
+    "Bone_Mandible": [
+        "mandible"
+    ],
+    "Bowel": [
+        "bagbowel",
+        "bowel",
+        "bowelbag",
+        "bowelspace"
+    ],
+    "Bowel_Large": [
+        "bowellarge",
+        "bowellg",
+        "largebowel",
+        "lgbowel",
+        "bowelbaglarge",
+        "largebowelbag"
+    ],
+    "Bowel_PRV": [
+        "bowelprv"
+    ],
+    "Bowel_Small": [
+        "bowelsmall",
+        "smallbowel",
+        "smallbowelloop",
+        "bowelbagsmall",
+        "smallbowelbag"
+    ],
+    "BrachialPlex_L": [
+        "bpleft",
+        "bplexusl",
+        "bplexusleft",
+        "bplexuslt",
+        "brachialplexl"
+    ],
+    "BrachialPlex_R": [
+        "bplexusr",
+        "bplexusright",
+        "bplexusrt",
+        "bpright",
+        "brachialplexr",
+        "rtbp"
+    ],
+    "BrachialPlexs": [
+        "brachialplexii"
+    ],
+    "Brain": [
+        "brain"
+    ],
+    "Brainstem": [
+        "brainstem",
+        "bstem"
+    ],
+    "Brainstem_Core": [
+        "brainstemcore"
+    ],
+    "Brainstem_PRV": [
+        "brainstemprv"
+    ],
+    "Brainstem_Surf": [
+        "brainstemsurf",
+        "brainstemsurface"
+    ],
+    "Breast_L": [
+        "breastl",
+        "breastleft",
+        "breastlt",
+        "brstl",
+        "brstleft",
+        "brstlt",
+        "lbreast",
+        "lbrst",
+        "leftbreast",
+        "leftbrst",
+        "ltbreast",
+        "ltbrst"
+    ],
+    "Breast_R": [
+        "breastr",
+        "breastright",
+        "breastrt",
+        "brstr",
+        "brstright",
+        "brstrt",
+        "rbrst",
+        "rightbreast",
+        "rightbrst",
+        "rtbreast",
+        "rtbrst"
+    ],
+    "Breasts": [
+        "bothbreast",
+        "bothbreasts",
+        "breasts",
+        "brst",
+        "brstboth",
+        "brstlr",
+        "brstltrt",
+        "brstrl",
+        "brstrtlt",
+        "brsts",
+        "brstsboth"
+    ],
+    "Bronchus": [
+        "bronchialtree"
+    ],
+    "Bronchus_Main": [
+        "mainbronchus"
+    ],
+    "Canal_Anal": [
+        "analc",
+        "analcanal",
+        "canalanal"
+    ],
+    "Carina": [
+        "carina"
+    ],
+    "CaudaEquina": [
+        "cauda",
+        "caudaequina",
+        "equina",
+        "equinacauda"
+    ],
+    "CaudaEquina_PRV": [
+        "prvcauda",
+        "caudaprv",
+        "prvcaudaequina",
+        "caudaequinaprv",
+        "prvequina",
+        "equinaprv",
+        "prvequinacauda",
+        "equinacaudaprv"
+    ],
+    "Cavity_Oral": [
+        "cavityoral",
+        "oralcavity"
+    ],
+    "Cerebellum": [
+        "cerebellum"
+    ],
+    "Cerebellum_L": [
+        "cerebelluml",
+        "ltcerebellum"
+    ],
+    "Cerebellum_R": [
+        "cerebellumr",
+        "rtcerebellum"
+    ],
+    "Chestwall": [
+        "chestwall"
+    ],
+    "Chestwall_L": [
+        "chestwalll",
+        "chestwallleft",
+        "chestwalllt",
+        "lchestwall",
+        "leftchestwall",
+        "ltchestwall"
+    ],
+    "Chestwall_R": [
+        "chestwallr",
+        "chestwallright",
+        "chestwallrt",
+        "rchestwall",
+        "rightchestwall",
+        "rtchestwall"
+    ],
+    "Cochlea": [
+        "cochleas"
+    ],
+    "Cochlea_L": [
+        "cochleal",
+        "cochlealeft",
+        "cochlealt",
+        "lcochlea",
+        "leftcochlea",
+        "ltcochlea"
+    ],
+    "Cochlea_R": [
+        "cochlear",
+        "cochlearight",
+        "cochleart",
+        "rcochlea",
+        "rightcochlea",
+        "rtcochlea"
+    ],
+    "Colon_Sigmoid": [
+        "colonsigmoid",
+        "sigmoid",
+        "sigmoidcolon"
+    ],
+    "CouchInterior": [
+        "couchinterior"
+    ],
+    "CouchSurface": [
+        "couchexterior",
+        "couchsurface"
+    ],
+    "Cricoid": [
+        "cricoid",
+        "pacs"
+    ],
+    "Cricopharyngeus": [
+        "cricopharyngeus"
+    ],
+    "Epiglottis": [
+        "epiglottis"
+    ],
+    "Esophagus": [
+        "esoph",
+        "esophagus"
+    ],
+    "External": [],
+    "Eye_L": [
+        "eyel",
+        "eyelt",
+        "eyeleft",
+        "leye",
+        "lteye",
+        "lefteye"
+    ],
+    "Eye_R": [
+        "eyer",
+        "eyert",
+        "eyeright",
+        "reye",
+        "rteye",
+        "righteye"
+    ],
+    "Eyes": [
+        "eyes"
+    ],
+    "Femur_Head_L": [
+        "femoralheadl",
+        "femoralheadleft",
+        "femoralheadlt",
+        "femoralhl",
+        "femoralhlt",
+        "femoralleft",
+        "femorallt",
+        "femurheadl",
+        "femurheadleft",
+        "femurheadlt",
+        "femurhl",
+        "femurhlt",
+        "leftfemoralhea",
+        "leftfemoralhead",
+        "leftfemurhead",
+        "ltfemoral",
+        "ltfemoralhead",
+        "ltfemurhead"
+    ],
+    "Femur_Head_R": [
+        "femoralheadr",
+        "femoralheadright",
+        "femoralheadrt",
+        "femoralhr",
+        "femoralhrt",
+        "femoralright",
+        "femoralrt",
+        "femurheadr",
+        "femurheadright",
+        "femurheadrt",
+        "femurhr",
+        "femurhrt",
+        "rightfemoralhe",
+        "rightfemoralhead",
+        "rightfemurhead",
+        "rtfemoral",
+        "rtfemoralhead",
+        "rtfemurhead"
+    ],
+    "Femur_L": [
+        "feml",
+        "femleft",
+        "femlt",
+        "femurl",
+        "femurleft",
+        "femurlt",
+        "leftfem",
+        "leftfemur",
+        "lfem",
+        "lfemur",
+        "ltfem",
+        "ltfemur",
+        "femurleftneck",
+        "femurleftneck",
+        "femurleftnecklt",
+        "femurleftnecklt",
+        "femurneckleft",
+        "femurneck"
+    ],
+    "Femur_R": [
+        "femr",
+        "femright",
+        "femrt",
+        "femurr",
+        "femurright",
+        "femurrt",
+        "rfem",
+        "rfemur",
+        "rightfem",
+        "rightfemur",
+        "rtfem",
+        "rtfemur",
+        "femurrightneck",
+        "femurrightneck",
+        "femurrightneckrt",
+        "femurrightneckrt",
+        "femurneckright",
+        "femurneck"
+    ],
+    "Femurs": [
+        "bothfemur",
+        "bothfemurs",
+        "femoralhead",
+        "femoralheads",
+        "femur",
+        "femurboth",
+        "femurhead",
+        "femurheads",
+        "femurlr",
+        "femurltrt",
+        "femurrl",
+        "femurrtlt",
+        "femurs",
+        "femursboth"
+    ],
+    "Fossa_Posterior": [
+        "fossapost",
+        "fossaposterior",
+        "posteriorfossa",
+        "postfossa"
+    ],
+    "Genitals": [
+        "genital",
+        "genitalia"
+    ],
+    "Glnd_Lacrimal": [
+        "lacrimals",
+        "lacrimalsglands",
+        "glndslacrimal",
+        "glndlacrimal"
+    ],
+    "Glnd_Lacrimal_L": [
+        "glndlacrimall",
+        "glndlacrimalleft",
+        "glndlacrimallt",
+        "glndlacriml",
+        "glndlacrimleft",
+        "glndlacrimlt",
+        "lacrimalglandl",
+        "lacrimalglandleft",
+        "lacrimalglandlt",
+        "lacrimalglndl"
+    ],
+    "Glnd_Lacrimal_R": [
+        "glndlacrimalr",
+        "glndlacrimalright",
+        "glndlacrimalrt",
+        "glndlacrimr",
+        "glndlacrimright",
+        "glndlacrimrt",
+        "lacrimalglandr",
+        "lacrimalglandright",
+        "lacrimalglandrt",
+        "lacrimalglndr"
+    ],
+    "Glnd_Submand_L": [
+        "glndsubmandl",
+        "glndsubmandleft",
+        "glndsubmandlt",
+        "leftsmg",
+        "leftsubmandibular",
+        "lsmg",
+        "lsubmandibular",
+        "ltsmg",
+        "ltsubmandibular",
+        "smgl",
+        "smgleft",
+        "smglt",
+        "submandibularglandl",
+        "submandibularglandleft",
+        "submandibularglandlt",
+        "submandibularl",
+        "submandibularleft",
+        "submandibularlt"
+    ],
+    "Glnd_Submand_R": [
+        "glndsubmandr",
+        "glndsubmandright",
+        "glndsubmandrt",
+        "rightsmg",
+        "rightsubmandibular",
+        "rsmg",
+        "rsubmandibular",
+        "rtsmg",
+        "rtsubmandibular",
+        "smgr",
+        "smgright",
+        "smgrt",
+        "submandibularglandr",
+        "submandibularglandright",
+        "submandibularglandrt",
+        "submandibularr",
+        "submandibularright",
+        "submandibularrt"
+    ],
+    "Glnd_Submands": [
+        "bothsubmand",
+        "bothsubmands",
+        "glndssubmand",
+        "glndssubmands",
+        "glndsubmand",
+        "smg",
+        "smgs",
+        "submand",
+        "submandboth",
+        "submandglnd",
+        "submandglnds",
+        "submandlr",
+        "submandltrt",
+        "submandrl",
+        "submandrtlt",
+        "submands",
+        "submandsboth",
+        "submandslr",
+        "submandsltrt",
+        "submandsrl",
+        "submandsrtlt"
+    ],
+    "Glnd_Thyroid": [
+        "thyr",
+        "thyrd",
+        "thyroid"
+    ],
+    "GreatVes": [
+        "greatvessel",
+        "greatvessels"
+    ],
+    "Heart": [
+        "heart"
+    ],
+    "Hippocampi": [
+        "bothhippocampi",
+        "bothhippocampus",
+        "hippocampi",
+        "hippocampiboth"
+    ],
+    "Hippocampus_L": [
+        "hippocampl",
+        "hippocampleft",
+        "hippocamplt",
+        "hippocampusl",
+        "hippocampusleft",
+        "hippocampuslt",
+        "hippol",
+        "hippoleft",
+        "hippolt",
+        "lefthippo",
+        "lefthippocamp",
+        "lefthippocampus",
+        "lhippo",
+        "lhippocamp",
+        "lhippocampus"
+    ],
+    "Hippocampus_R": [
+        "hippocampr",
+        "hippocampright",
+        "hippocamprt",
+        "hippocampusr",
+        "hippocampusright",
+        "hippocampusrt",
+        "hippor",
+        "hipporight",
+        "hipport",
+        "righthippo",
+        "righthippocamp",
+        "righthippocampus",
+        "rhippo",
+        "rhippocamp",
+        "rhippocampus"
+    ],
+    "Humerus_L": [
+        "humerusl",
+        "humerusleft",
+        "humeruslt",
+        "huml",
+        "humleft",
+        "humlt",
+        "lefthum",
+        "lefthumerus",
+        "lhum",
+        "lhumerus",
+        "lthum",
+        "lthumerus"
+    ],
+    "Humerus_R": [
+        "humerusr",
+        "humerusright",
+        "humerusrt",
+        "humr",
+        "humright",
+        "humrt",
+        "rhum",
+        "rhumerus",
+        "righthum",
+        "righthumerus",
+        "rthum",
+        "rthumerus"
+    ],
+    "Hypothalamus": [
+        "hypothal",
+        "hypothalamus",
+        "hypothalamusl",
+        "hypothalamusleft",
+        "hypothalamuslt",
+        "hypothalamusr",
+        "hypothalamusright",
+        "hypothalamusrt",
+        "Hypothalamus",
+        "Hypothalamusii",
+        "lefthypothalamus",
+        "lhypothalamus",
+        "lthypothalamus",
+        "rhypothalamus",
+        "righthypothalamus",
+        "rthypothalamus"
+    ],
+    "Kidney_L": [
+        "kidl",
+        "kidleft",
+        "kidlt",
+        "kidneyl",
+        "kidneyleft",
+        "kidneylt",
+        "leftkid",
+        "leftkidney",
+        "lkid",
+        "lkidney",
+        "ltkid",
+        "ltkidney"
+    ],
+    "Kidney_R": [
+        "kidneyr",
+        "kidneyright",
+        "kidneyrt",
+        "kidr",
+        "kidright",
+        "kidrt",
+        "rightkid",
+        "rightkidney",
+        "rkid",
+        "rkidney",
+        "rtkid",
+        "rtkidney"
+    ],
+    "Kidneys": [
+        "bothkidney",
+        "bothkidneys",
+        "kidney",
+        "kidneyboth",
+        "kidneylr",
+        "kidneyltrt",
+        "kidneyrl",
+        "kidneyrtlt",
+        "kidneys",
+        "kidneysboth",
+        "kidneyslr",
+        "kidneysltrt",
+        "kidneysrl",
+        "kidneysrtlt",
+        "kids"
+    ],
+    "Larynx": [
+        "lary",
+        "larynx"
+    ],
+    "Larynx_SG": [
+        "larynxsgl"
+    ],
+    "Lens": [
+        "bothlens",
+        "bothlenses",
+        "lens",
+        "lensboth",
+        "lenses",
+        "lenslr",
+        "lensltrt",
+        "lensrl",
+        "lensrtlt",
+        "lrlens",
+        "rllens"
+    ],
+    "Lens_L": [
+        "leftlens",
+        "lensl",
+        "lensleft",
+        "lenslt",
+        "llens",
+        "ltlens"
+    ],
+    "Lens_R": [
+        "lensr",
+        "lensright",
+        "lensrt",
+        "rightlens",
+        "rlens",
+        "rtlens"
+    ],
+    "Lips": [
+        "lip",
+        "lips"
+    ],
+    "Liver": [
+        "liv",
+        "liver",
+        "livr"
+    ],
+    "Lobe_Frontal": [
+        "frontal",
+        "lobefrontal"
+    ],
+    "Lobe_Frontal_L": [
+        "frontall",
+        "frontalleft",
+        "frontallt",
+        "leftfrontal",
+        "leftlobefrontal",
+        "lfrontal",
+        "llobefrontal",
+        "lobefrontall",
+        "lobefrontalleft",
+        "lobefrontallt",
+        "ltfrontal",
+        "ltlobefrontal"
+    ],
+    "Lobe_Frontal_R": [
+        "frontalr",
+        "frontalright",
+        "frontalrt",
+        "lobefrontalr",
+        "lobefrontalright",
+        "lobefrontalrt",
+        "rfrontal",
+        "rightfrontal",
+        "rightlobefrontal",
+        "rlobefrontal",
+        "rtfrontal",
+        "rtlobefrontal"
+    ],
+    "Lobe_Occipital": [
+        "lobeoccipital",
+        "occipital",
+        "occipitallobe"
+    ],
+    "Lobe_Occipital_L": [
+        "leftlobeoccipital",
+        "leftoccipital",
+        "llobeoccipital",
+        "lobeoccipitall",
+        "lobeoccipitalleft",
+        "lobeoccipitallt",
+        "loccipital",
+        "ltlobeoccipital",
+        "ltoccipital",
+        "occipitall",
+        "occipitalleft",
+        "occipitallt"
+    ],
+    "Lobe_Occipital_R": [
+        "lobeoccipitalr",
+        "lobeoccipitalright",
+        "lobeoccipitalrt",
+        "occipitalr",
+        "occipitalright",
+        "occipitalrt",
+        "rightlobeoccipital",
+        "rightoccipital",
+        "rlobeoccipital",
+        "roccipital",
+        "rtlobeoccipital",
+        "rtoccipital"
+    ],
+    "Lobe_Parietal": [
+        "lobeparietal",
+        "parietal",
+        "parietallobe"
+    ],
+    "Lobe_Parietal_L": [
+        "leftlobeparietal",
+        "leftparietal",
+        "llobeparietal",
+        "lobeparietall",
+        "lobeparietalleft",
+        "lobeparietallt",
+        "lparietal",
+        "ltlobeparietal",
+        "ltparietal",
+        "parietall",
+        "parietalleft",
+        "parietallt"
+    ],
+    "Lobe_Parietal_R": [
+        "lobeparietalr",
+        "lobeparietalright",
+        "lobeparietalrt",
+        "parietalr",
+        "parietalright",
+        "parietalrt",
+        "rightlobeparietal",
+        "rightparietal",
+        "rlobeparietal",
+        "rparietal",
+        "rtlobeparietal",
+        "rtparietal"
+    ],
+    "Lobe_Temporal": [
+        "lobetemporal",
+        "temporal",
+        "temporallobe"
+    ],
+    "Lobe_Temporal_L": [
+        "leftlobetemporal",
+        "lefttemporal",
+        "llobetemporal",
+        "lobetemporall",
+        "lobetemporalleft",
+        "lobetemporallt",
+        "ltemporal",
+        "ltlobetemporal",
+        "lttemplobe",
+        "lttemporal",
+        "templobel",
+        "temporall",
+        "temporalleft",
+        "temporallobel",
+        "temporallobeleft",
+        "temporallobelt",
+        "temporallt"
+    ],
+    "Lobe_Temporal_R": [
+        "lobetemporalr",
+        "lobetemporalright",
+        "lobetemporalrt",
+        "lobetemporar",
+        "rightlobetemporal",
+        "righttemporal",
+        "rlobetemporal",
+        "rtemporal",
+        "rtlobetemporal",
+        "rttemplobe",
+        "rttemporal",
+        "templober",
+        "temporallober",
+        "temporalloberight",
+        "temporallobert",
+        "temporalr",
+        "temporalright",
+        "temporalrt"
+    ],
+    "Lung_L": [
+        "leftlung",
+        "llung",
+        "ltlung",
+        "lungl",
+        "lungleft",
+        "lunglt"
+    ],
+    "Lung_R": [
+        "lungr",
+        "lungright",
+        "lungrt",
+        "rightlung",
+        "rlung",
+        "rtlung"
+    ],
+    "Lungs": [
+        "bothlungs",
+        "totallungs",
+        "lungs"
+    ],
+    "Lungs-CTV": [
+        "lungsctvs"
+    ],
+    "Lungs-GTV": [
+        "lungsgtvs"
+    ],
+    "Lungs-ITV": [
+        "lungsitvs"
+    ],
+    "Lungs-PTV": [
+        "lungsptvs"
+    ],
+    "Musc_Constrict": [
+        "constrict",
+        "constrictor",
+        "constrictors",
+        "constricts",
+        "muscconstrict",
+        "muscconstricts"
+    ],
+    "Musc_Constrict_I": [
+        "consti",
+        "constricti",
+        "constrictinf",
+        "constrictori",
+        "constrictorinf",
+        "muscconstrici",
+        "muscconstricinf",
+        "muscconstricti",
+        "muscconstrictinf"
+    ],
+    "Musc_Constrict_M": [
+        "constm",
+        "constrictm",
+        "constrictormid",
+        "constrictorm",
+        "constrictormid",
+        "muscconstrictm",
+        "muscconstrictmid",
+        "muscconstrictorm",
+        "muscconstrictormid"
+    ],
+    "Musc_Constrict_S": [
+        "consts",
+        "constricts",
+        "constrictorsup",
+        "constrictors",
+        "muscconstricts",
+        "muscconstrictors",
+        "muscconstrictorsup",
+        "muscconstricts"
+    ],
+    "Musc_Masseter": [
+        "masseter",
+        "massetermuscle",
+        "massetermuscles",
+        "masseters",
+        "massmuscle",
+        "massmuscles",
+        "musclemasseter",
+        "musclemasseters",
+        "muscmasseter",
+        "muscmasseters"
+    ],
+    "Musc_Masseter_L": [
+        "leftmass",
+        "leftmasseter",
+        "leftmassetermuscle",
+        "leftmassmuscle",
+        "leftmasster",
+        "leftmusclemasseter",
+        "leftmuscmasseter",
+        "ltmasseter",
+        "massl",
+        "massleft",
+        "masslt",
+        "massmusclel",
+        "massmuscleleft",
+        "massmusclelt",
+        "massterl",
+        "massterleft",
+        "massterlt",
+        "musclemasseterl",
+        "musclemasseterleft",
+        "musclemasseterlt",
+        "muscmasseterl",
+        "muscmasseterleft",
+        "muscmasseterlt"
+    ],
+    "Musc_Masseter_R": [
+        "massetermuscler",
+        "massetermuscleright",
+        "massetermusclert",
+        "masseterr",
+        "masseterright",
+        "masseterrt",
+        "massmuscler",
+        "massmuscleright",
+        "massmusclert",
+        "massr",
+        "massright",
+        "massrt",
+        "massterr",
+        "massterright",
+        "massterrt",
+        "musclemasseterr",
+        "musclemasseterright",
+        "musclemasseterrt",
+        "muscmasseterr",
+        "muscmasseterright",
+        "muscmasseterrt",
+        "rightmass",
+        "rightmasseter",
+        "rightmassetermuscle",
+        "rightmassmuscle",
+        "rightmasster",
+        "rightmusclemasseter",
+        "rightmuscmasseter",
+        "rmass",
+        "rmasseter",
+        "rmassetermuscle",
+        "rmassmuscle",
+        "rmasster",
+        "rmusclemasseter",
+        "rmuscmasseter",
+        "rtmass",
+        "rtmasseter",
+        "rtmassetermuscle",
+        "rtmassmuscle",
+        "rtmasster",
+        "rtmusclemasseter",
+        "rtmuscmasseter"
+    ],
+    "Neurovasc_Bundle": [
+        "neurovasc",
+        "neurovascbundle",
+        "nvb",
+        "nvbs",
+        "vascneuro"
+    ],
+    "Neurovasc_Bundle_L": [
+        "leftneurovasc",
+        "leftnvb",
+        "lnvb",
+        "ltnvb",
+        "neurovascleft",
+        "nvbl",
+        "nvbleft",
+        "nvblt"
+    ],
+    "Neurovasc_Bundle_R": [
+        "neurovascright",
+        "nvbr",
+        "nvbright",
+        "nvbrt",
+        "rightneurovasc",
+        "rightnvb",
+        "rnvb",
+        "rtnvb"
+    ],
+    "OpticChiasm": [
+        "chiasm",
+        "chiasmoptic",
+        "opticchiasm"
+    ],
+    "OpticChiasm_PRV": [
+        "chiasmprv",
+        "opticchiasmprv",
+        "prvchiasm",
+        "prvopticchiasm"
+    ],
+    "OpticNrv": [
+        "opticn",
+        "opticnerve",
+        "opticnrv"
+    ],
+    "OpticNrv_L": [
+        "leftoptic",
+        "leftopticn",
+        "leftopticnerve",
+        "loptic",
+        "lopticn",
+        "lopticnerve",
+        "ltoptic",
+        "ltopticn",
+        "ltopticnerve",
+        "opricnrvl",
+        "opticl",
+        "opticleft",
+        "opticlt",
+        "opticnervel",
+        "opticnerveleft",
+        "opticnervelt",
+        "opticnrvl",
+        "opticnrvleft",
+        "opticnrvlt"
+    ],
+    "OpticNrv_PRV": [
+        "opticnerveprv",
+        "opticnrvprv"
+    ],
+    "OpticNrv_PRV_L": [
+        "opticnrvlprv"
+    ],
+    "OpticNrv_PRV_R": [
+        "opticnrvrprv"
+    ],
+    "OpticNrv_R": [
+        "opticnrvr",
+        "opticnrvright",
+        "opticr",
+        "opticright",
+        "opticrt",
+        "rightoptic",
+        "rightopticn",
+        "rightopticnerve",
+        "roptic",
+        "ropticn",
+        "ropticnerve",
+        "rtoptic",
+        "rtopticn",
+        "rtopticnerve"
+    ],
+    "Pacemaker": [
+        "pacemaker"
+    ],
+    "Palate_Soft": [
+        "palatesoft",
+        "softpalate"
+    ],
+    "Parotid_L": [
+        "glandparotidl",
+        "glndparotidl",
+        "lparotid",
+        "ltparotid"
+    ],
+    "Parotid_R": [
+        "glandparotidr",
+        "glndparotidr",
+        "rparotid",
+        "rtsupparotid"
+    ],
+    "Parotids": [
+        "parotids",
+        "parotidsglands",
+        "bothparotids"
+    ],
+    "PenileBulb": [
+        "bulbpenile",
+        "pbulb",
+        "penilbulb",
+        "penilebulb"
+    ],
+    "Pharynx": [
+        "pharynx"
+    ],
+    "Pituitary": [
+        "pit",
+        "pituitary",
+        "ptuitary"
+    ],
+    "Pituitary_PRV": [
+        "pitprv",
+        "pituitaryprv",
+        "ptuitaryprv"
+    ],
+    "Prostate": [
+        "prostate"
+    ],
+    "Rectal_Wall": [
+        "rectalwall",
+        "rectumwall",
+        "wallrectal",
+        "wallrectum"
+    ],
+    "Rectum": [
+        "rectum"
+    ],
+    "Retina_L": [
+        "leftretina",
+        "lretina",
+        "ltretina",
+        "retinal",
+        "retinaleft"
+    ],
+    "Retina_R": [
+        "retinar",
+        "retinaright",
+        "retinart",
+        "rightretina",
+        "rretina",
+        "rtretina"
+    ],
+    "Retinas": [
+        "bothretina",
+        "bothretinas",
+        "retina",
+        "retinaboth",
+        "retinas",
+        "retinasboth"
+    ],
+    "Rib": [
+        "rib",
+        "ribs"
+    ],
+    "SacralPlex": [
+        "sacralplexus",
+        "plexussacral",
+        "sacralplexusl",
+        "sacralplexl",
+        "sacralplxl",
+        "lsacralplexus",
+        "lsacralplex",
+        "lsacralplx",
+        "sacralplexusr",
+        "sacralplexr",
+        "sacralplxr",
+        "rsacralplexus",
+        "rsacralplex",
+        "rsacralplx",
+        "sacralplexuss",
+        "sacralplexuses",
+        "sacralplexii",
+        "sacralplexi",
+        "sacralplexs"
+    ],
+    "SeminalVes": [
+        "seminal",
+        "seminalv",
+        "seminalves",
+        "seminalvesc",
+        "seminalvescicle",
+        "seminalvesicle",
+        "seminalvesicles",
+        "seminalvessicle",
+        "semves",
+        "sv"
+    ],
+    "SeminalVes_Dist": [
+        "distalsv",
+        "distseminalves",
+        "distsv",
+        "seminalvesdist",
+        "semvesdist",
+        "svdist"
+    ],
+    "SeminalVes_Prox": [
+        "proximalsv",
+        "proxseminalves",
+        "proxsemves",
+        "proxsv",
+        "seminalvesprox",
+        "semvesprox",
+        "svprox"
+    ],
+    "Skin": [
+        "skin"
+    ],
+    "SpinalCanal": [
+        "canal",
+        "spcanal",
+        "spinalcanal",
+        "spinecanal"
+    ],
+    "SpinalCanal_PRV": [
+        "prvspinalcanal",
+        "spinalcanalprv"
+    ],
+    "SpinalCord": [
+        "cord",
+        "cordspinal",
+        "spcord",
+        "spinalcord"
+    ],
+    "SpinalCord_PRV": [
+        "cordprv",
+        "prvcord",
+        "prvspinalcord"
+    ],
+    "Spleen": [
+        "spleen"
+    ],
+    "Stomach": [
+        "stomach"
+    ],
+    "Tongue": [
+        "tongue"
+    ],
+    "Tongue_Base": [
+        "basetongue",
+        "tonguebase"
+    ],
+    "Tongue_Oral": [
+        "oraltongue",
+        "tongueoral"
+    ],
+    "Trachea": [
+        "trachea"
+    ],
+    "Urethra": [
+        "urethra"
+    ],
+    "Ventricle": [
+        "ventricle",
+        "ventricles"
+    ],
+    "Ventricle_L": [
+        "leftventricle",
+        "lventricle",
+        "lventricles",
+        "ventriclel",
+        "ventricleleft",
+        "ventriclesl",
+        "ventriclesleft"
+    ],
+    "Ventricle_R": [
+        "rightventricle",
+        "rventricle",
+        "rventricles",
+        "ventricler",
+        "ventricleright",
+        "ventriclesr",
+        "ventriclesright"
+    ],
+    "VocalCords": [
+        "vocalcord",
+        "vocalcords"
+    ],
+    "VocalCords_L": [
+        "leftvocalcord",
+        "lvocalcord",
+        "lvocalcords",
+        "vocalcordl",
+        "vocalcordleft",
+        "vocalcordsl",
+        "vocalcordsleft"
+    ],
+    "VocalCords_R": [
+        "rightvocalcord",
+        "rvocalcord",
+        "rvocalcords",
+        "vocalcordr",
+        "vocalcordright",
+        "vocalcordsr",
+        "vocalcordsright"
+    ]
+}

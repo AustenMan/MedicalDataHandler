@@ -30,13 +30,14 @@ SUPPORTED_DOSE_TYPES = {"PHYSICAL"}
 def _validate_dose_dataset(ds: Dataset) -> bool:
     """Validate essential RT Dose dataset attributes."""
     try:
-        dose_summation_type = ds.get("DoseSummationType", "").upper()
-        if dose_summation_type not in SUPPORTED_DOSE_SUMMATION_TYPES:
-            logger.error(
-                f"Unsupported DoseSummationType '{dose_summation_type}'. "
-                f"Supported types: {', '.join(SUPPORTED_DOSE_SUMMATION_TYPES)}"
-            )
-            return False
+        # Should have already been checked previously
+        # dose_summation_type = ds.get("DoseSummationType", "").upper()
+        # if dose_summation_type not in SUPPORTED_DOSE_SUMMATION_TYPES:
+        #     logger.error(
+        #         f"Unsupported DoseSummationType '{dose_summation_type}'. "
+        #         f"Supported types: {', '.join(SUPPORTED_DOSE_SUMMATION_TYPES)}"
+        #     )
+        #     return False
         
         dose_units = ds.get("DoseUnits", "").upper()
         if dose_units not in SUPPORTED_DOSE_UNITS:

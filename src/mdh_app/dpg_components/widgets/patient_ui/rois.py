@@ -514,6 +514,20 @@ def _on_template_selected(sender: Any, app_data: str, user_data: Tuple) -> None:
     rts_sopiuid, roi_number = dpg.get_item_user_data(roi_button_tag)
 
     data_mgr: DataManager = get_user_data("data_manager")
+    conf_mgr: ConfigManager = get_user_data("config_manager")
+    
+    # Get original DICOM name for matching
+    original_roi_name = data_mgr.get_rtstruct_roi_ds_value_by_uid(rts_sopiuid, roi_number, "ROIName", "")
+
+    # Remove from previous template's matching list (if any)
+    previous_template = data_mgr.get_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, "base_template_name", None)
+    if previous_template and previous_template != app_data:
+        conf_mgr.remove_item_organ_matching_by_template(previous_template, original_roi_name)
+
+    # Add to new template's matching list
+    conf_mgr.add_item_organ_matching(app_data, original_roi_name)
+
+    # Update metadata
     data_mgr.set_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, "base_template_name", app_data)
 
     _update_roi_derived_metadata(rts_sopiuid, roi_number)

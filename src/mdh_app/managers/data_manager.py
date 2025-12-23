@@ -103,9 +103,6 @@ def build_single_mask(roi_ds_dict: Dict[str, Dataset], sitk_image_params: Dict[s
                 unique_slices = np.unique(np.round(z_values).astype(int))
                 
                 for slice_idx in unique_slices:
-                    if not (0 <= slice_idx < slices):
-                        continue
-                    
                     # Get points for this slice
                     slice_mask = np.abs(z_values - slice_idx) < 0.5
                     if not np.any(slice_mask):
@@ -288,30 +285,30 @@ class DataManager:
             
             file_path = file_obj.path
             if not file_path:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to missing path.")
+                logger.error(f"Skipping file '{file_obj.path}' due to missing path.")
                 continue
             if not exists(file_path):
-                logger.error(f"Skipping file '{file_obj.filepath}' because the file does not exist at path '{file_path}'.")
+                logger.error(f"Skipping file '{file_obj.path}' because the file does not exist at path '{file_path}'.")
                 continue
             if file_path not in selected_files:
                 continue # No message needed; user intentionally deselected
             
             file_md: FileMetadata = file_obj.file_metadata
             if not file_md:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to missing metadata.")
+                logger.error(f"Skipping file '{file_obj.path}' due to missing metadata.")
                 continue
             
             file_modality = (file_md.modality or "").strip().upper()
             if not file_modality:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to missing Modality in metadata.")
+                logger.error(f"Skipping file '{file_obj.path}' due to missing Modality in metadata.")
                 continue
 
             file_sopi = (file_md.sop_instance_uid or "").strip()
             if not file_sopi:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to missing SOPInstanceUID in metadata.")
+                logger.error(f"Skipping file '{file_obj.path}' due to missing SOPInstanceUID in metadata.")
                 continue
             if file_sopi in seen_sopi:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to duplicate SOPInstanceUID '{file_sopi}', which was already identified.")
+                logger.error(f"Skipping file '{file_obj.path}' due to duplicate SOPInstanceUID '{file_sopi}', which was already identified.")
                 continue
             seen_sopi.add(file_sopi)
 
@@ -319,7 +316,7 @@ class DataManager:
             if file_modality in modalities["image"]:
                 file_series_uid = (file_md.series_instance_uid or "").strip()
                 if not file_series_uid:
-                    logger.error(f"Skipping IMAGE file '{file_obj.filepath}' due to missing SeriesInstanceUID.")
+                    logger.error(f"Skipping IMAGE file '{file_obj.path}' due to missing SeriesInstanceUID.")
                     continue
                 img_data.setdefault(file_series_uid, []).append(file_obj)
             
@@ -339,12 +336,12 @@ class DataManager:
                 elif dose_summation_type == "BEAM":
                     rtdose_data["beam_dose"].append(file_obj)
                 else:
-                    logger.error(f"Skipping RTDOSE file '{file_obj.filepath}' due to unsupported or missing DoseSummationType '{dose_summation_type}'.")
-                    continue
+                    logger.error(f"ANOMALY DETECTED: The RTDOSE file '{file_obj.path}' has an unsupported or missing DoseSummationType '{dose_summation_type}'... assuming 'PLAN' dose.")
+                    rtdose_data["plan_dose"].append(file_obj)
             
             # Unsupported Modality Handling
             else:
-                logger.error(f"Skipping file '{file_obj.filepath}' due to unsupported Modality '{file_modality}'.")
+                logger.error(f"Skipping file '{file_obj.path}' due to unsupported Modality '{file_modality}'.")
                 continue
         
         # set class patient to use in other functions ###

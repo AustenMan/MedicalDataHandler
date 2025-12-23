@@ -41,6 +41,7 @@ def _read_and_validate_files(
         return None
 
     valid_files_count = 0
+    spacing_between_slices: Optional[float] = None
     image_orientation_patient: Optional[List[float]] = None
     normal_vector: Optional[npt.NDArray[np.float32]] = None
     distances: List[Tuple[float, str]] = []
@@ -70,6 +71,24 @@ def _read_and_validate_files(
         if image_orientation is None:
             logger.warning(f"Missing ImageOrientationPatient in {filepath}")
             continue
+        
+        # Extract and validate sign of Spacing Between Slices (0018,0088) if available
+        spacing_bs = ds.get("SpacingBetweenSlices", None)
+        try:
+            spacing_bs = float(spacing_bs) if spacing_bs is not None else None
+        except ValueError:
+            logger.warning(f"Invalid SpacingBetweenSlices value in {filepath}: {spacing_bs}")
+            spacing_bs = None
+        
+        if spacing_bs is not None:
+            if spacing_between_slices is None:
+                spacing_between_slices = spacing_bs
+            elif (spacing_between_slices >= 0) != (spacing_bs >= 0):
+                logger.error(
+                    f"Inconsistent SpacingBetweenSlices sign in {filepath}. "
+                    f"Previous: {spacing_between_slices}, Current: {spacing_bs}"
+                )
+                return None
         
         # Establish reference orientation from first valid file
         if image_orientation_patient is None:
@@ -106,17 +125,24 @@ def _read_and_validate_files(
     
     logger.info(f"Validated {valid_files_count} DICOM image files for series construction")
     
-    sorted_files = _sort_files(distances)
+    sorted_files = _sort_files(distances, spacing_between_slices)
     
     return sorted_files
 
 
-def _sort_files(distances: List[Tuple[float, str]]) -> List[str]:
+def _sort_files(distances: List[Tuple[float, str]], spacing_between_slices: Optional[float]) -> List[str]:
     """Sort files by spatial position for 3D reconstruction."""
     distances.sort(key=lambda distance_file_pair: distance_file_pair[0])
+    
+    # Validate direction if we have multiple slices and expected spacing
+    if len(distances) >= 2 and spacing_between_slices is not None:
+        computed_spacing = distances[1][0] - distances[0][0]
+        if (computed_spacing * spacing_between_slices) < 0:  # Sign mismatch
+            distances.reverse()
+    
     sorted_files = [filepath for _, filepath in distances]
     
-    logger.debug(
+    logger.info(
         f"Sorted {len(sorted_files)} files by spatial position. "
         f"Distance range: {distances[0][0]:.2f} to {distances[-1][0]:.2f}"
     )

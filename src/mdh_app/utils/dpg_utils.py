@@ -436,21 +436,24 @@ def add_dicom_dataset_to_tree(
             delay_search=(current_depth > 0), # Delay search for non-root nodes
         )
         
-        for elem in data:
-            if is_aborted():
-                window_states["aborted"] = True
-                return
-            add_dicom_dataset_to_tree(
-                window_tag=window_tag,
-                window_states=window_states,
-                data=elem,
-                parent=new_parent,
-                text_wrap_width=text_wrap_width,
-                text_color_one=text_color_one,
-                text_color_two=text_color_two,
-                max_depth=max_depth,
-                current_depth=current_depth + 1
-            )
+        try:
+            for elem in data:
+                if is_aborted():
+                    window_states["aborted"] = True
+                    return
+                add_dicom_dataset_to_tree(
+                    window_tag=window_tag,
+                    window_states=window_states,
+                    data=elem,
+                    parent=new_parent,
+                    text_wrap_width=text_wrap_width,
+                    text_color_one=text_color_one,
+                    text_color_two=text_color_two,
+                    max_depth=max_depth,
+                    current_depth=current_depth + 1
+                )
+        except Exception as e:
+            logger.error(f"Error while adding Dataset to tree: {e}")
         return
 
     # DataElement: show node and its value(s)
