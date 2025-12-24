@@ -1067,6 +1067,9 @@
         "rtopticn",
         "rtopticnerve"
     ],
+    "PTV": [
+        "ptvlung300010"
+    ],
     "Pacemaker": [
         "pacemaker"
     ],
@@ -1243,6 +1246,7 @@
     "Trachea": [
         "trachea"
     ],
+    "UnknownStruct": [],
     "Urethra": [
         "urethra"
     ],

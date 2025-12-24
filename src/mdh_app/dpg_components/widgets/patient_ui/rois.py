@@ -98,8 +98,59 @@ def _create_roi_configuration_popup(roi_button_tag: Union[str, int], rts_sopiuid
         no_title_bar=False,
         no_open_over_existing_popup=False
     ):
+        # Read-only information
+        add_custom_button(label="Read-Only Information", theme_tag=get_hidden_button_theme(), add_spacer_after=True)
+        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
+            dpg.add_table_column(init_width_or_weight=0.4)
+            dpg.add_table_column(init_width_or_weight=0.6)
+
+            with dpg.table_row():
+                dpg.add_text("Original DICOM Name:")
+                dpg.add_input_text(default_value=original_dicom_name, readonly=True)
+
+            with dpg.table_row():
+                dpg.add_text("ROI Number:")
+                dpg.add_input_int(default_value=roi_number, readonly=True)
+
+            with dpg.table_row():
+                dpg.add_text("Current Display Name:")
+                dpg.add_input_text(default_value=display_name, readonly=True)
+
+            if is_template_based:
+                with dpg.table_row():
+                    dpg.add_text("Base Template:")
+                    dpg.add_input_text(default_value=base_template_name, readonly=True)
+
+                if custom_suffix:
+                    with dpg.table_row():
+                        dpg.add_text("Customization:")
+                        dpg.add_input_text(default_value=custom_suffix, readonly=True)
+
+            with dpg.table_row():
+                dpg.add_text("Interpreted Type:")
+                dpg.add_input_text(default_value=rt_roi_interpreted_type, readonly=True)
+
+            with dpg.table_row():
+                dpg.add_text("Display Color (RGB):")
+                dpg.add_input_intx(
+                    default_value=roi_display_color,
+                    size=3,
+                    readonly=True,
+                    min_value=0,
+                    max_value=255,
+                    min_clamped=True,
+                    max_clamped=True
+                )
+
+            with dpg.table_row():
+                dpg.add_text("Relative Electron Density (RED) Override Value:")
+                dpg.add_input_text(
+                    default_value=str(roi_phys_prop_value) if roi_phys_prop_value is not None else "N/A",
+                    readonly=True
+                )
+        
         # Configuration Section
-        add_custom_button(label="ROI Display Name Configuration", theme_tag=get_hidden_button_theme(), add_separator_after=True)
+        add_custom_button(label="ROI Display Name Configuration", theme_tag=get_hidden_button_theme(), add_spacer_before=True, add_spacer_after=True, add_separator_before=True, add_separator_after=False)
 
         with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
             dpg.add_table_column(init_width_or_weight=0.4)
@@ -170,12 +221,25 @@ def _create_roi_configuration_popup(roi_button_tag: Union[str, int], rts_sopiuid
 
             with dpg.table_row(tag=ptv_site_row, show=is_ptv):
                 dpg.add_text("PTV Disease Site:")
-                dpg.add_combo(
-                    items=disease_sites,
-                    default_value=roi_rx_site or disease_sites[0],
-                    callback=_on_ptv_parameter_changed,
-                    user_data=(roi_button_tag, "roi_rx_site")
-                )
+                selected_site = roi_rx_site or disease_sites[0]
+                
+                ds_table_w = size_dict["table_w"] * 0.4
+                ds_table_n_columns = 5
+                ds_table_col_w = ds_table_w / ds_table_n_columns
+                with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=ds_table_w):
+                    for _ in range(ds_table_n_columns):
+                        dpg.add_table_column(init_width_or_weight=ds_table_col_w)
+                    
+                    for i in range(0, len(disease_sites), ds_table_n_columns):
+                        with dpg.table_row():
+                            for site in disease_sites[i:i + ds_table_n_columns]:
+                                dpg.add_selectable(
+                                    label=site,
+                                    default_value=(site == selected_site),
+                                    callback=_on_ptv_site_selected,
+                                    user_data=(roi_button_tag, site),
+                                    disable_popup_close=True,
+                                )
 
         # ROI Goals
         add_custom_button(label="ROI Goals Configuration", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_spacer_after=True)
@@ -257,57 +321,6 @@ def _create_roi_configuration_popup(roi_button_tag: Union[str, int], rts_sopiuid
                 "}"
             )
         )
-
-        # Read-only information
-        add_custom_button(label="Read-Only Information", theme_tag=get_hidden_button_theme(), add_separator_before=True, add_spacer_after=True)
-        with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp, width=size_dict["table_w"]):
-            dpg.add_table_column(init_width_or_weight=0.4)
-            dpg.add_table_column(init_width_or_weight=0.6)
-
-            with dpg.table_row():
-                dpg.add_text("Original DICOM Name:")
-                dpg.add_input_text(default_value=original_dicom_name, readonly=True)
-
-            with dpg.table_row():
-                dpg.add_text("ROI Number:")
-                dpg.add_input_int(default_value=roi_number, readonly=True)
-
-            with dpg.table_row():
-                dpg.add_text("Current Display Name:")
-                dpg.add_input_text(default_value=display_name, readonly=True)
-
-            if is_template_based:
-                with dpg.table_row():
-                    dpg.add_text("Base Template:")
-                    dpg.add_input_text(default_value=base_template_name, readonly=True)
-
-                if custom_suffix:
-                    with dpg.table_row():
-                        dpg.add_text("Customization:")
-                        dpg.add_input_text(default_value=custom_suffix, readonly=True)
-
-            with dpg.table_row():
-                dpg.add_text("Interpreted Type:")
-                dpg.add_input_text(default_value=rt_roi_interpreted_type, readonly=True)
-
-            with dpg.table_row():
-                dpg.add_text("Display Color (RGB):")
-                dpg.add_input_intx(
-                    default_value=roi_display_color,
-                    size=3,
-                    readonly=True,
-                    min_value=0,
-                    max_value=255,
-                    min_clamped=True,
-                    max_clamped=True
-                )
-
-            with dpg.table_row():
-                dpg.add_text("Relative Electron Density (RED) Override Value:")
-                dpg.add_input_text(
-                    default_value=str(roi_phys_prop_value) if roi_phys_prop_value is not None else "N/A",
-                    readonly=True
-                )
 
 
 def update_roi_display_and_tooltip(roi_button_tag: Union[str, int]) -> None:
@@ -566,6 +579,29 @@ def _on_ptv_parameter_changed(sender: Any, app_data: Any, user_data: Tuple[Any, 
         new_param_value = data_mgr.get_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, parameter_key, None)
         if new_param_value is not None:
             dpg.set_value(sender, new_param_value if new_param_value is not None else "")
+
+    update_roi_display_and_tooltip(roi_button_tag)
+
+
+def _on_ptv_site_selected(sender, app_data, user_data):
+    """
+    Handle single-selection logic for PTV disease site grid.
+    """
+    roi_button_tag, selected_site = user_data
+    rts_sopiuid, roi_number = dpg.get_item_user_data(roi_button_tag)
+
+    data_mgr: DataManager = get_user_data("data_manager")
+    data_mgr.set_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, "roi_rx_site", selected_site)
+
+    # Rebuild derived metadata if template-based
+    is_template_based = data_mgr.get_roi_gui_metadata_value_by_uid_and_key(rts_sopiuid, roi_number, "is_template_based", False)
+    if is_template_based:
+        _update_roi_derived_metadata(rts_sopiuid, roi_number)
+
+    # Update UI: enforce single selection
+    parent = dpg.get_item_parent(sender)
+    for child in dpg.get_item_children(parent, 1):
+        dpg.set_value(child, child == sender)
 
     update_roi_display_and_tooltip(roi_button_tag)
 
