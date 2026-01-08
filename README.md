@@ -5,6 +5,7 @@
 <h1 align="center">MedicalDataHandler</h1>  
 <p align="center"><em>A Research-Oriented GUI for DICOM Data Management</em></p>
 <p align="center"><em><a href="https://github.com/AustenMan/MedicalDataHandler/releases"><strong>🔗 Only looking for the latest EXE? Click here!</strong></a></em></p>
+<p align="center"><em><a href="https://aapm.onlinelibrary.wiley.com/doi/full/10.1002/mp.70240"><strong>🔗 We're published in the Medical Physics journal!</strong></a></em></p>
 
 ---
 
