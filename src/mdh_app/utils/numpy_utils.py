@@ -22,29 +22,37 @@ def resample_contour_dense(
     spacing: np.ndarray,
     density_divisor: float = 8.0,
 ) -> np.ndarray:
-    """Densify contour by resampling based on voxel spacing."""
+    """Densify contour by resampling based on voxel spacing (vectorized)."""
     if len(contour_pts) < 2:
         return contour_pts
-    
-    # Use minimum spacing dimension as target resolution
-    target_resolution = min(spacing) / density_divisor
-    
-    resampled = []
-    
-    # Include the closing segment (last point back to first)
-    for i in range(len(contour_pts)):
-        p1 = contour_pts[i]
-        p2 = contour_pts[(i + 1) % len(contour_pts)]  # Wrap around
-        
-        distance = np.linalg.norm(p2 - p1)
-        n_segments = max(1, int(np.ceil(distance / target_resolution)))
-        
-        # Add interpolated points (exclude last to avoid duplication on next iteration)
-        for j in range(n_segments):
-            t = j / n_segments
-            resampled.append(p1 + t * (p2 - p1))
-    
-    return np.array(resampled, dtype=np.float32)
+
+    pts = np.asarray(contour_pts, dtype=np.float64)
+    target_resolution = float(np.min(spacing)) / density_divisor
+
+    # Close the contour: p1[i] = closed[:-1], p2[i] = closed[1:]
+    closed = np.concatenate([pts, pts[0:1]], axis=0)  # (N+1, 3)
+    p1 = closed[:-1]                                   # (N, 3)
+    p2 = closed[1:]                                    # (N, 3)
+
+    # Edge lengths and segment counts
+    edge_lengths = np.linalg.norm(p2 - p1, axis=1)    # (N,)
+    n_segments = np.maximum(1, np.ceil(edge_lengths / target_resolution).astype(np.int64))
+
+    # Build per-sample t values: t = local_j / n_segments[i] for j in 0..n_segments[i]-1
+    total_pts = int(n_segments.sum())
+    offsets = np.arange(total_pts, dtype=np.float64)
+    edge_cum = np.empty(len(n_segments) + 1, dtype=np.int64)
+    edge_cum[0] = 0
+    np.cumsum(n_segments, out=edge_cum[1:])
+    local_j = offsets - np.repeat(edge_cum[:-1], n_segments).astype(np.float64)
+    t = local_j / np.repeat(n_segments, n_segments).astype(np.float64)  # (total_pts,)
+
+    # Vectorized per-edge lerp: result = p1 + t * (p2 - p1)
+    p1_rep = np.repeat(p1, n_segments, axis=0)         # (total_pts, 3)
+    p2_rep = np.repeat(p2, n_segments, axis=0)         # (total_pts, 3)
+    result = p1_rep + t[:, None] * (p2_rep - p1_rep)
+
+    return result.astype(np.float32)
 
 
 def numpy_roi_mask_generation(
